@@ -2,7 +2,7 @@
 
 ## TODO
 
-* write cursor rules
+* write cursor rules: experiments layout structure TODO
 * import tests, run, validate tests
 * import benchmarks
 * write tests (models, tokenizers, trainer, scripts)

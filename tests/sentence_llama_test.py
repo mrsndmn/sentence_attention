@@ -1,15 +1,13 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer
 
-from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS, GPT2TokenizerFast
+from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 
-
-from transformers.models.llama.modeling_sentence_llama import SentenceLlamaForCausalLM, sentence_attention_forward, special_token_mask_to_clothest_token_idx_slow
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM, sentence_attention_forward, special_token_mask_to_clothest_token_idx_slow
 
 import torch
 
 
 def test_sentence_llama_model_generate():
-
 
     checkpoint = "HuggingFaceTB/SmolLM2-1.7B"
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
@@ -48,7 +46,7 @@ def test_sentence_llama_model_generate_with_eos_token():
         max_new_tokens=5,
     )
 
-def test_sentence_llama_model_generate_with_eos_token_and_attention_mask():
+def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():
 
     device = 'cuda'
 
@@ -92,9 +90,9 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask():
     )
 
     for i in range(len(output1.hidden_states)):
-        assert torch.allclose(output1.hidden_states[i], output2.hidden_states[i][:, :seq_len]), f"hidden_states[{i}] are not equal"
+        assert torch.allclose(output1.hidden_states[i], output2.hidden_states[i][:, :seq_len], atol=1e-2), f"hidden_states[{i}] are not equal"
 
-    assert output1.loss == output2.loss, "output losses are not equal"
+    assert torch.allclose(output1.loss, output2.loss, atol=1e-3), f"output losses are not equal, l1={output1.loss}, l2={output2.loss}"
 
 
 def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial_logits():

@@ -1,10 +1,10 @@
+import pytest
 import torch
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
 import torch.nn as nn
 import torch.nn.functional as F
 
-from transformers.models.llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 
 def test_flex_attention_full():
     # Create a random tensor of shape (batch_size, seq_len, hidden_size)
@@ -58,6 +58,7 @@ def test_flex_attention_causal():
     assert torch.allclose(output, output_2)
     assert torch.allclose(output, output_3)
 
+@pytest.mark.skip(reason="Not implemented")
 def test_flex_attention_custom():
     # Create a random tensor of shape (batch_size, seq_len, hidden_size)
     batch_size = 1
@@ -106,25 +107,3 @@ def test_flex_attention_custom():
     query, key, value = tensor, tensor, tensor
     output = flex_attention(query, key, value, score_mod=custom_mask)
 
-
-    breakpoint()
-
-
-
-
-def test_special_token_mask_to_clothest_token_idx():
-
-    # Simple
-    eos_tokens_mask = torch.tensor([[ 0, 1, 0, 0, 1, 0, 0, 1, 0, 1 ]]).bool()
-    clothest_eos_token_idx = torch.tensor([[ 0, 0, 1, 1, 1, 4, 4, 4, 7, 7 ]])
-    assert torch.allclose(clothest_eos_token_idx, special_token_mask_to_clothest_token_idx_slow(eos_tokens_mask))
-
-    # With multiple eos tokens
-    eos_tokens_mask = torch.tensor([[ 0, 1, 1, 0, 1, 0, 0, 1, 0, 1 ]]).bool()
-    clothest_eos_token_idx = torch.tensor([[ 0, 0, 1, 2, 2, 4, 4, 4, 7, 7 ]])
-    assert torch.allclose(clothest_eos_token_idx, special_token_mask_to_clothest_token_idx_slow(eos_tokens_mask))
-
-    # With first token being eos
-    eos_tokens_mask = torch.tensor([[ 1, 1, 0, 0, 1, 0, 0, 1, 0, 1 ]]).bool()
-    clothest_eos_token_idx = torch.tensor([[ 0, 0, 1, 1, 1, 4, 4, 4, 7, 7 ]])
-    assert torch.allclose(clothest_eos_token_idx, special_token_mask_to_clothest_token_idx_slow(eos_tokens_mask))
