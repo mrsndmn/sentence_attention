@@ -28,45 +28,22 @@ import torch
 import transformers
 from transformers import AutoTokenizer, DataCollatorForLanguageModeling
 
-from transformers import Trainer
-from transformers import TrainingArguments
-
 import os
 import torch
 import torch.nn as nn
-from transformers import Trainer
-from transformers.trainer import (
-    ALL_LAYERNORM_LAYERS,
-    logger,
-)
-from typing import List, Optional, Union, Any, Union, Dict, Tuple
-
-import numpy as np
-
-from dataclasses import dataclass, field
-import transformers
-from transformers import GenerationConfig
-from transformers.trainer import nested_detach
-from transformers.trainer_pt_utils import EvalLoopContainer, find_batch_size, IterableDatasetShard
-from transformers.trainer_utils import has_length, denumpify_detensorize, EvalLoopOutput, PREFIX_CHECKPOINT_DIR
-
-from torch.utils.data import DataLoader
-
-import time
-
 import torch
-from typing import Any, Dict
-from typing import List, Optional
 
 import torch.profiler
 
 from sentence_attention.trainer.arguments import AVAILABLE_OPTIMIZED_PARAMS
 
+from sentence_attention.trainer.arguments import SentenceTrainingArguments
+from sentence_attention.trainer.trainer import SentenceTrainer
+
 
 def freeze_model(model: nn.Module):
     for p in model.parameters():
         p.requires_grad = False
-
 
 
 def build_model(training_args: SentenceTrainingArguments):
@@ -216,20 +193,6 @@ if __name__ == "__main__":
                     all_datasets.append(dataset)
 
                 smollm_corpus = datasets.concatenate_datasets(all_datasets)
-            elif isinstance(tokenizer, GPT2TokenizerFast) and isinstance(model, LlamaForCausalLM) and 'slm2' in training_args.output_dir:
-                print("Loading fineweb edu tokenized with gpt2")
-                current_dir = '/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out'
-
-                dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2'
-                output_dir = sorted(os.listdir(dataset_path))[:30]
-                print(output_dir)
-
-                all_datasets = []
-                for data_file in tqdm(output_dir, desc='Loading datasets'):
-                    dataset = Dataset.load_from_disk(f'{dataset_path}/{data_file}')
-                    all_datasets.append(dataset)
-
-                smollm_corpus = datasets.concatenate_datasets(all_datasets)
             else:
                 data_files = []
                 for i in range(6):
@@ -266,13 +229,7 @@ if __name__ == "__main__":
         if len(collate_dummy['attention_mask'].shape) == 3:
             collate_dummy['attention_mask'] = collate_dummy['attention_mask'].squeeze(1)
 
-        if 'special_embeddings_mask' not in collate_dummy:
-            collate_dummy['special_embeddings_mask'] = collate_dummy['attention_mask'].cumsum(-1)
-            collate_dummy['special_embeddings_mask'][ collate_dummy['special_embeddings_mask'] > 1 ] = 0
-
-            if training_args.add_end_of_sentence_token:
-                end_of_sentence_token_id = tokenizer.convert_tokens_to_ids('<end_of_sentence>')
-                collate_dummy['special_embeddings_mask'][ collate_dummy['input_ids'] == end_of_sentence_token_id ] = 1
+        assert 'special_embeddings_mask' in collate_dummy
 
         return collate_dummy
 

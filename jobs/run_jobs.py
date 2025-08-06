@@ -18,10 +18,9 @@ SEED = 1008
 
 INSTANCE_TYPE = "a100.4gpu"
 N_WORKERS = 1
-BASE_IMAGE = "cr.ai.cloud.ru/f51af5b1-d43b-4db4-938d-569d7cfffb7a/cuda12.1-torch2-py310-adaptive_attention:0.0.3"
-# BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
+BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 
-workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out"
+workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 def run_experiments(experiments, job_description_prefix="", dry=False):
 

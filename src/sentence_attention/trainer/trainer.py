@@ -6,25 +6,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from datasets import load_dataset, Dataset
-import datasets
-from accelerate import PartialState
-
 from torch.utils.data import DataLoader
 
 from transformers import Trainer
 
 from transformers.trainer import _is_peft_model, nested_detach, EvalLoopContainer, find_batch_size, IterableDatasetShard, logger
 from transformers.trainer_pt_utils import EvalLoopContainer, find_batch_size, IterableDatasetShard
-from transformers.trainer_utils import has_length, denumpify_detensorize, EvalLoopOutput, PREFIX_CHECKPOINT_DIR
+from transformers.trainer_utils import has_length, denumpify_detensorize, EvalLoopOutput
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 from transformers import GenerationConfig
 
-from transformers.loss.loss_utils import ForCausalLMLoss
-
 
 class SentenceTrainer(Trainer):
-
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None, log_metrics=True, log_prefix='debug', force_log=False):
         """
@@ -44,7 +37,6 @@ class SentenceTrainer(Trainer):
         model_kwargs = {
             "input_ids": inputs['input_ids'],
             "attention_mask": attention_mask,
-            # "token_frequency": token_frequency,
             "use_cache": False,
             "output_attentions": False,
         }
