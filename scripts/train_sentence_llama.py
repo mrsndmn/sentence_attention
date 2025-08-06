@@ -230,6 +230,7 @@ if __name__ == "__main__":
             collate_dummy['attention_mask'] = collate_dummy['attention_mask'].squeeze(1)
 
         assert 'special_embeddings_mask' in collate_dummy
+        assert 'clothest_end_of_sentence_token_idx' in collate_dummy
 
         return collate_dummy
 
