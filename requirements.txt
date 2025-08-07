@@ -1,4 +1,5 @@
 ruff
 black
 pytest
+flake8
 
