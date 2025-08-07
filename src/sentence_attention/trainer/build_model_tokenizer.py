@@ -27,7 +27,7 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
     tokenizer = None
     model_checkpoint = training_args.model_checkpoint
 
-    number_of_eos_tokens = training_args.number_of_eos_tokens = 1
+    number_of_eos_tokens = training_args.number_of_eos_tokens
 
     if training_args.add_end_of_sentence_token:
 
