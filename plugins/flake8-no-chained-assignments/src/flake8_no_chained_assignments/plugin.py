@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from typing import Generator, Tuple
 
-
 ERROR_CODE = "SAC001"
 ERROR_MESSAGE = "SAC001 Chained assignments are prohibited"
 
@@ -26,4 +25,3 @@ class NoChainedAssignmentsChecker:
             elif isinstance(node, ast.AnnAssign):
                 # Annotated assignment cannot be chained syntactically; nothing to do
                 continue
-

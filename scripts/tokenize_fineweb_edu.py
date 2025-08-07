@@ -1,12 +1,10 @@
 import torch
 from datasets import load_dataset
-from transformers.models.llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
-
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
-from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
-from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
 from transformers import AutoTokenizer
-
+from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
+from transformers.models.llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
+from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
+from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 
 if __name__ == "__main__":
 

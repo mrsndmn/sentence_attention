@@ -1,28 +1,18 @@
-import torch
-import torch.profiler
-
+import os
 import shutil
 from pathlib import Path
 
-from transformers import TrainerCallback
-
-
-from transformers.loss.loss_utils import ForCausalLMLoss
-from datasets import load_dataset, Dataset
 import datasets
-from accelerate import PartialState
-
-import transformers
-from transformers import DataCollatorForLanguageModeling
-
-import os
 import torch
-
-
+import torch.profiler
+import transformers
+from accelerate import PartialState
+from datasets import Dataset, load_dataset
 from sentence_attention.trainer.arguments import SentenceTrainingArguments
-from sentence_attention.trainer.trainer import SentenceTrainer
-
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
+from sentence_attention.trainer.trainer import SentenceTrainer
+from transformers import DataCollatorForLanguageModeling, TrainerCallback
+from transformers.loss.loss_utils import ForCausalLMLoss
 
 if __name__ == "__main__":
 
@@ -74,9 +64,6 @@ if __name__ == "__main__":
                 dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos"
 
             fineweb_dataset = Dataset.load_from_disk(dataset_path)
-
-            training_args.limit_dataset_shards
-            training_args.offset_dataset_shards
 
             TOTAL_SHARDS = 14  # CONSTANT
             dataset_shards = []

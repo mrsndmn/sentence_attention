@@ -1,9 +1,8 @@
-from sentence_attention.trainer.arguments import SentenceTrainingArguments
-from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
-
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
 from sentence_attention.tokenization_utils_fast import PreTrainedTokenizerFastEOS
+from sentence_attention.trainer.arguments import SentenceTrainingArguments
+from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 
 
 def test_build_model_tokenizer():

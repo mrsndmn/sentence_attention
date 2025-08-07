@@ -1,20 +1,14 @@
-from typing import List, Optional, Any, Union, Dict, Tuple
-
 import time
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import numpy as np
 import torch
 import torch.nn as nn
-
 from torch.utils.data import DataLoader
-
-from transformers import Trainer
-
-from transformers.trainer import _is_peft_model, nested_detach, EvalLoopContainer, find_batch_size, IterableDatasetShard, logger
-
-from transformers.trainer_utils import has_length, denumpify_detensorize, EvalLoopOutput
+from transformers import GenerationConfig, Trainer
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
-from transformers import GenerationConfig
+from transformers.trainer import EvalLoopContainer, IterableDatasetShard, _is_peft_model, find_batch_size, logger, nested_detach
+from transformers.trainer_utils import EvalLoopOutput, denumpify_detensorize, has_length
 
 
 class SentenceTrainer(Trainer):
@@ -191,7 +185,7 @@ class SentenceTrainer(Trainer):
         # For CLIP-like models capable of returning loss values.
         # If `return_loss` is not specified or being `None` in `inputs`, we check if the default value of `return_loss`
         # is `True` in `model.forward`.
-        return_loss = inputs.get("return_loss", None)
+        return_loss = inputs.get("return_loss")
         if return_loss is None:
             return_loss = self.can_return_loss
 
@@ -323,11 +317,11 @@ class SentenceTrainer(Trainer):
 
             # Update containers
             if losses is not None:
-                losses = self.gather_function((losses.repeat(batch_size)))
+                losses = self.gather_function(losses.repeat(batch_size))
                 all_losses.add(losses)
             if inputs_decode is not None:
                 inputs_decode = self.accelerator.pad_across_processes(inputs_decode, dim=1, pad_index=-100)
-                inputs_decode = self.gather_function((inputs_decode))
+                inputs_decode = self.gather_function(inputs_decode)
                 if not self.args.batch_eval_metrics or description == "Prediction":
                     all_inputs.add(inputs_decode)
             if labels is not None:
@@ -337,11 +331,11 @@ class SentenceTrainer(Trainer):
                 logits = self.accelerator.pad_across_processes(logits, dim=1, pad_index=-100)
                 if self.preprocess_logits_for_metrics is not None:
                     logits = self.preprocess_logits_for_metrics(logits, labels)
-                logits = self.gather_function((logits))
+                logits = self.gather_function(logits)
                 if not self.args.batch_eval_metrics or description == "Prediction":
                     all_preds.add(logits)
             if labels is not None:
-                labels = self.gather_function((labels))
+                labels = self.gather_function(labels)
                 if not self.args.batch_eval_metrics or description == "Prediction":
                     all_labels.add(labels)
 
@@ -372,7 +366,7 @@ class SentenceTrainer(Trainer):
                 all_labels.to_cpu_and_numpy()
                 all_inputs.to_cpu_and_numpy()
 
-                for key in eval_set_kwargs.keys():
+                for key in eval_set_kwargs:
                     eval_set_kwargs[key].to_cpu_and_numpy()
 
                 del losses, logits, labels, inputs
@@ -390,7 +384,7 @@ class SentenceTrainer(Trainer):
         all_labels = all_labels.get_arrays()
         all_inputs = all_inputs.get_arrays()
         eval_set_kwargs_arrays = dict()
-        for key, value in eval_set_kwargs.items():
+        for key in eval_set_kwargs:
             eval_set_kwargs_arrays[key] = eval_set_kwargs[key].get_arrays()
 
         # Number of samples

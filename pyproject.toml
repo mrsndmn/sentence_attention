@@ -35,3 +35,12 @@ select = [
     # isort
     "I",
 ]
+ignore = [
+    # Long lines are handled by black; allow long strings and command templates
+    "E501",
+    # pyupgrade: prefer builtins annotations — allow legacy style in this repo for now
+    "UP006",
+    # simplify rules (ternary / nested-if) — non-blocking for now
+    "SIM108",
+    "SIM102",
+]

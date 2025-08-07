@@ -1,8 +1,7 @@
 import pytest
 import torch
-from torch.nn.attention.flex_attention import flex_attention, create_block_mask
-
 import torch.nn.functional as F
+from torch.nn.attention.flex_attention import create_block_mask, flex_attention
 
 
 def test_flex_attention_full():

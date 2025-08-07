@@ -1,6 +1,7 @@
+import shutil
+
 from datasets import Dataset
 from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
-import shutil
 
 ARTIFACTS_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts"
 

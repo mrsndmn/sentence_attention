@@ -3,7 +3,6 @@ from typing import Optional
 
 from transformers import TrainingArguments
 
-
 AVAILABLE_OPTIMIZED_PARAMS = ["full", "lora", "only_eos_embedding"]
 
 

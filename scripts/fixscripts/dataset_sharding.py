@@ -1,9 +1,10 @@
 import os
+import shutil
+from pathlib import Path
+
 import datasets
 from datasets import Dataset
 from tqdm import tqdm
-import shutil
-from pathlib import Path
 
 
 def merge_sharded_datasets():

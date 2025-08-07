@@ -1,10 +1,10 @@
-import glob
-import client_lib  # импортируем библиотеку для работы с ML Space
-import json
 import copy
-from rich.console import Console
-
+import glob
+import json
 import os
+
+import client_lib  # импортируем библиотеку для работы с ML Space
+from rich.console import Console
 
 REGION = "SR004"
 
@@ -127,7 +127,7 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
 
         for metrics_path in metrics_paths:
 
-            with open(metrics_path, "r") as f:
+            with open(metrics_path) as f:
                 json_data = json.load(f)
 
             for key in tasks:

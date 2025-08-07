@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.
 #
 # This code is based on EleutherAI's GPT-NeoX library and the GPT-NeoX
@@ -17,41 +16,36 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Tuple, Union, Callable, Unpack
 from dataclasses import dataclass
-from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
-
-from transformers.integrations.sdpa_attention import repeat_kv
-
+from typing import Callable, List, Optional, Tuple, Union, Unpack
 
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint
-
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.generation import GenerationMixin
+from transformers.integrations.sdpa_attention import repeat_kv
 from transformers.modeling_attn_mask_utils import AttentionMaskConverter
+from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
 )
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
-
-from transformers.utils import (
-    add_start_docstrings,
-    add_start_docstrings_to_model_forward,
-    logging,
-    is_torch_flex_attn_available,
-)
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import (
+    LlamaMLP,
     LlamaRMSNorm,
     LlamaRotaryEmbedding,
-    LlamaMLP,
     apply_rotary_pos_emb,
     eager_attention_forward,
 )
-
+from transformers.utils import (
+    add_start_docstrings,
+    add_start_docstrings_to_model_forward,
+    is_torch_flex_attn_available,
+    logging,
+)
 
 logger = logging.get_logger(__name__)
 
@@ -62,7 +56,6 @@ CHECK_WITH_PYTHON = False
 
 if is_torch_flex_attn_available():
     from torch.nn.attention.flex_attention import BlockMask
-
     from transformers.integrations.flex_attention import make_flex_block_causal_mask
 
 

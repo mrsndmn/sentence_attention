@@ -1,18 +1,14 @@
 import math
-import time
-import string
-import random
-import client_lib  # импортируем библиотеку для работы с ML Space
-
-from rich.console import Console
-
 import os
-
+import random
+import string
+import time
 from copy import deepcopy
 
-from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
-
+import client_lib  # импортируем библиотеку для работы с ML Space
+from rich.console import Console
 from sentence_attention.integration.job import accelerate_config_by_instance_type
+from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
 
 REGION = "SR004"
 

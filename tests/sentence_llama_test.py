@@ -1,10 +1,7 @@
-from transformers import AutoTokenizer
-
-from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
-
-from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
-
 import torch
+from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
+from transformers import AutoTokenizer
 
 
 def test_sentence_llama_model_generate():

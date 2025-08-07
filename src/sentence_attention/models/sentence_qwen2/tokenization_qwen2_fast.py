@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2024 The Qwen team, Alibaba Group and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,14 +13,13 @@
 # limitations under the License.
 """Tokenization classes for Qwen2."""
 
-from typing import Optional, Tuple, Any
 import re
+from typing import Any, Optional, Tuple
 
+from transformers.models.qwen2.tokenization_qwen2 import Qwen2Tokenizer
 from transformers.tokenization_utils import AddedToken
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from transformers.utils import logging
-from transformers.models.qwen2.tokenization_qwen2 import Qwen2Tokenizer
-
 
 logger = logging.get_logger(__name__)
 

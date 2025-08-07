@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 from mls.manager.job.utils import training_job_api_from_profile
 

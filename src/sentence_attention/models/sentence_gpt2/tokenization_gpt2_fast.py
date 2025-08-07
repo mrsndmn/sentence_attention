@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2018 The Open AI Team Authors and The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,13 +14,12 @@
 """Tokenization classes for OpenAI GPT."""
 
 import re
-from typing import Optional, Tuple, Any
+from typing import Any, Optional, Tuple
 
+from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
 from transformers.tokenization_utils_base import BatchEncoding
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from transformers.utils import logging
-from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
-
 
 logger = logging.get_logger(__name__)
 
