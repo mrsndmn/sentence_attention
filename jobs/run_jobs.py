@@ -34,7 +34,7 @@ def run_experiments(experiments, job_description_prefix="", dry=False):
 
         output_dir += f"_{''.join(random.choices(string.ascii_uppercase + string.digits, k=8))}"
 
-        output_dir_full_path = os.path.join(workdir_prefix, 'artifacts', 'models', output_dir)
+        output_dir_full_path = os.path.join(workdir_prefix, 'artifacts', 'experiments_in_progress', output_dir)
 
         optimized_params = exp.pop('optimized_params')
         for param in optimized_params.split(','):
@@ -430,7 +430,7 @@ if __name__ == "__main__":
             lr_scheduler_type='cosine',
             bf16='0',
             add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}",
+            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
 
     # sys.exit()
@@ -477,6 +477,6 @@ if __name__ == "__main__":
             lr_scheduler_type='cosine',
             bf16='0',
             add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}",
+            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
 
