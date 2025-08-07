@@ -1,146 +1,31 @@
-from tqdm import tqdm
-from dataclasses import dataclass, field
+
 import torch
+import torch.profiler
+
 import shutil
 from pathlib import Path
 
 from transformers import TrainerCallback
-from transformers.models.llama.modeling_llama import LlamaForCausalLM
 
 
 from transformers.loss.loss_utils import ForCausalLMLoss
-
-from transformers.models.llama.modeling_sentence_llama import SentenceLlamaForCausalLM
-from transformers.models.llama.tokenization_llama_fast import EOSTokenizerFast
-from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS, GPT2TokenizerFast
-
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
-from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
-from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
-
-from transformers.models.qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
-
 from datasets import load_dataset, Dataset
 import datasets
 from accelerate import PartialState
 
-from transformers import GenerationConfig
-
-import torch
 import transformers
-from transformers import AutoTokenizer, DataCollatorForLanguageModeling
+from transformers import DataCollatorForLanguageModeling
 
 import os
 import torch
 import torch.nn as nn
 import torch
 
-import torch.profiler
-
-from sentence_attention.trainer.arguments import AVAILABLE_OPTIMIZED_PARAMS
 
 from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.trainer import SentenceTrainer
 
-
-def freeze_model(model: nn.Module):
-    for p in model.parameters():
-        p.requires_grad = False
-
-
-def build_model(training_args: SentenceTrainingArguments):
-    tokenizer = None
-    model_checkpoint = training_args.model_checkpoint
-
-    number_of_eos_tokens = training_args.number_of_eos_tokens = 1
-
-    if training_args.add_end_of_sentence_token:
-
-        tokenizer_class = type(AutoTokenizer.from_pretrained(model_checkpoint)).__name__
-
-        if tokenizer_class in ['GPT2TokenizerFast', 'GPT2TokenizerFastEOS']:
-            tokenizer_class = GPT2TokenizerFastEOS
-        elif tokenizer_class in ['PreTrainedTokenizerFast', 'PreTrainedTokenizerFastEOS']:
-            tokenizer_class = PreTrainedTokenizerFastEOS
-        elif tokenizer_class in ['Qwen2TokenizerFast', 'Qwen2TokenizerFastEOS']:
-            tokenizer_class = Qwen2TokenizerFastEOS
-        else:
-            raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
-
-        print("tokenizer_class", tokenizer_class)
-        tokenizer = tokenizer_class.from_pretrained(model_checkpoint, num_eos_tokens=number_of_eos_tokens)
-
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-
-    print("tokenizer", tokenizer)
-
-    torch_dtype = torch.bfloat16
-
-    if training_args.model_type == 'sentence_pretrained_checkpoint':
-        model_checkpoint = training_args.model_checkpoint
-        print("Load sentence llama model from", model_checkpoint)
-        model_class = None
-        if 'lama' in model_checkpoint.lower() or 'smollm2' in model_checkpoint.lower():
-            model_class = SentenceLlamaForCausalLM
-        elif 'qwen' in model_checkpoint.lower():
-            model_class = SentenceQwen2ForCausalLM
-
-        print("model_class", model_class)
-        model = model_class.from_pretrained(model_checkpoint, torch_dtype=torch_dtype)
-
-        model.config._attn_implementation = 'sentence_attention'
-    else:
-        raise ValueError(f"{training_args.model_type} is not supported")
-
-    tokenizer.padding_side = 'left'
-    tokenizer.pad_token = tokenizer.eos_token
-
-    if training_args.add_end_of_sentence_token and model.config.vocab_size != len(tokenizer):
-        model.resize_token_embeddings(len(tokenizer))
-        print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-        model.config.end_of_sentence_token_ids = tokenizer.end_of_sentence_token_ids
-        print("model.config.end_of_sentence_token_ids", model.config.end_of_sentence_token_ids)
-
-    if training_args.model_type == "sentence_pretrained_checkpoint":
-        optimized_params = training_args.optimized_params
-        print("optimized_params", optimized_params)
-
-        assert optimized_params in AVAILABLE_OPTIMIZED_PARAMS, f'unknown optimized_params value: {optimized_params}. available ones: {AVAILABLE_OPTIMIZED_PARAMS}'
-
-        if 'full' == optimized_params:
-            pass
-        elif 'only_eos_embedding' == optimized_params:
-            freeze_model(model)
-            for p in model.model.embed_tokens.parameters():
-                p.requires_grad = True
-
-            for p in model.lm_head.parameters():
-                p.requires_grad = True
-        elif 'lora' == optimized_params:
-            from peft import LoraConfig, TaskType, get_peft_model
-
-            # create LoRA configuration object
-            lora_config = LoraConfig(
-                task_type=TaskType.CAUSAL_LM, # type of task to train on
-                inference_mode=False, # set to False for training
-                r=8, # dimension of the smaller matrices
-                lora_alpha=32, # scaling factor
-                lora_dropout=0.1 # dropout of LoRA layers
-            )
-            model.add_adapter(lora_config, adapter_name="lora_1")
-
-        else:
-            raise ValueError()
-
-    # print("force full fp32 training!")
-    # model = model.to(torch.float32)
-
-    print("model", type(model))
-    print("num trainable model parameters:", sum(p.numel() for p in model.parameters() if p.requires_grad))
-    print("num freezed model parameters:", sum(p.numel() for p in model.parameters() if not p.requires_grad))
-
-    return model, tokenizer
+from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 
 if __name__ == "__main__":
 
@@ -150,7 +35,7 @@ if __name__ == "__main__":
     hf_parser = transformers.HfArgumentParser(SentenceTrainingArguments)
     (training_args,) = hf_parser.parse_args_into_dataclasses()
 
-    model, tokenizer = build_model(training_args)
+    model, tokenizer = build_model_tokenizer(training_args)
 
     compute_metrics = None
     data_collator = None

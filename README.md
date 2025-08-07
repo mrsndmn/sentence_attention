@@ -4,9 +4,9 @@
 
 - [ ] почему лишний токен добавляется в чекпоинт? - scripts/fixscripts/tokenizer_remove_extra_tokens.py
 - [ ] remove useless arguments from training args
+- [ ] refactor run jobs script - add arguments to scripts, move common code to separate file
 - [ ] Cursor rules
-- [ ] validate tests
-- [ ] write tests (models, tokenizers, trainer, scripts)
+- [ ] write more tests? (models, tokenizers, trainer, scripts)
 - [ ] github runner action
 - [ ] import benchmarks, compute results
 - [ ] update environment requirements file
