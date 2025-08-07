@@ -1,15 +1,20 @@
 import torch
 import torch.nn as nn
-
-from transformers import AutoTokenizer
-
-from sentence_attention.trainer.arguments import SentenceTrainingArguments, AVAILABLE_OPTIMIZED_PARAMS
-
+from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import (
+    GPT2TokenizerFastEOS,
+)
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
+    SentenceLlamaForCausalLM,
+)
+from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import (
+    Qwen2TokenizerFastEOS,
+)
 from sentence_attention.tokenization_utils_fast import PreTrainedTokenizerFastEOS
-from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
-from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
-from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
-
+from sentence_attention.trainer.arguments import (
+    AVAILABLE_OPTIMIZED_PARAMS,
+    SentenceTrainingArguments,
+)
+from transformers import AutoTokenizer
 from transformers.models.qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
 
 
@@ -22,7 +27,7 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
     tokenizer = None
     model_checkpoint = training_args.model_checkpoint
 
-    number_of_eos_tokens = training_args.number_of_eos_tokens
+    number_of_eos_tokens = training_args.number_of_eos_tokens = 1
 
     if training_args.add_end_of_sentence_token:
 
@@ -80,16 +85,16 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
             optimized_params in AVAILABLE_OPTIMIZED_PARAMS
         ), f"unknown optimized_params value: {optimized_params}. available ones: {AVAILABLE_OPTIMIZED_PARAMS}"
 
-        if "full" == optimized_params:
+        if optimized_params == "full":
             pass
-        elif "only_eos_embedding" == optimized_params:
+        elif optimized_params == "only_eos_embedding":
             freeze_model(model)
             for p in model.model.embed_tokens.parameters():
                 p.requires_grad = True
 
             for p in model.lm_head.parameters():
                 p.requires_grad = True
-        elif "lora" == optimized_params:
+        elif optimized_params == "lora":
             from peft import LoraConfig, TaskType
 
             # create LoRA configuration object
