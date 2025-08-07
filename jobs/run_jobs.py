@@ -430,7 +430,7 @@ if __name__ == "__main__":
             lr_scheduler_type='cosine',
             bf16='0',
             add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}",
+            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
 
     # sys.exit()
@@ -477,6 +477,6 @@ if __name__ == "__main__":
             lr_scheduler_type='cosine',
             bf16='0',
             add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}",
+            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
 
