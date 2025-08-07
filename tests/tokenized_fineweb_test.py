@@ -4,8 +4,10 @@ from transformers import AutoTokenizer, GPT2TokenizerFast
 from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 import shutil
 
+ARTIFACTS_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts"
+
 def _test_tokenized_fineweb(tokenizer):
-    dataset = Dataset.load_from_disk("artifacts/data/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token/shard_0/")
+    dataset = Dataset.load_from_disk(f"{ARTIFACTS_PREFIX}/data/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token_merged/")
     item = dataset[0]
     decoded = tokenizer.decode(item['input_ids'])
     assert decoded.count('<end_of_sentence>') == 32, 'decoded content has 32 eos tokens'
@@ -22,7 +24,7 @@ def test_tokenized_fineweb():
     _test_tokenized_fineweb(tokenizer_loaded)
 
 def _test_tokenized_fineweb_4_eos_tokens(tokenizer):
-    dataset = Dataset.load_from_disk("artifacts/data/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token_num_4/shard_0/")
+    dataset = Dataset.load_from_disk(f"{ARTIFACTS_PREFIX}/data/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token_num_4_merged/")
     item = dataset[0]
 
     decoded = tokenizer.decode(item['input_ids'])
@@ -41,4 +43,6 @@ def test_tokenized_fineweb_4_eos_tokens():
     tokenizer_loaded = GPT2TokenizerFastEOS.from_pretrained(tokenizer_path)
     assert tokenizer_loaded.num_eos_tokens == 4, 'reloaded tokenizer has 4 eos tokens'
     _test_tokenized_fineweb_4_eos_tokens(tokenizer_loaded)
+
+    assert '<end_of_sentence>' not in tokenizer.vocab
 
