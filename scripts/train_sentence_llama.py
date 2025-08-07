@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import torch
 import shutil
 from pathlib import Path
+import uuid
 
 from transformers import TrainerCallback
 from transformers.models.llama.modeling_llama import LlamaForCausalLM
@@ -311,19 +312,16 @@ if __name__ == "__main__":
         project_name=trackers_project_name,
     )
 
-    # trainer.train()
+    trainer.train()
+
     out_dir_path = Path(training_args.output_dir)
+    # Use a more robust way to create a unique directory name
+    unique_id = uuid.uuid4().hex[:8]
 
-    finished_target_dir = out_dir_path.parent.parent / 'experiments' / out_dir_path.name
-    print("finished_target_dir", finished_target_dir)
-    while True:
-        if finished_target_dir.exists():
-            finished_target_dir = finished_target_dir.parent / f'{finished_target_dir.name}_duplicate'
-            continue
-        break
+    finished_target_dir = out_dir_path.parent.parent / 'experiments' / f"{out_dir_path.name}_{unique_id}"
 
-    os.makedirs(finished_target_dir, exist_ok=True, parents=True)
+    # Ensure the parent directory exists
+    finished_target_dir.parent.mkdir(parents=True, exist_ok=True)
 
-    shutil.move(out_dir_path, finished_target_dir)
-    print("Moved from", out_dir_path, "to finished_target_dir", finished_target_dir)
-
+    shutil.move(str(out_dir_path), str(finished_target_dir))
+    print(f"Moved from {out_dir_path} to {finished_target_dir}")
