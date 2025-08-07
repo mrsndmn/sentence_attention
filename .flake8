@@ -1,3 +1,4 @@
 [flake8]
 select = SAC001
+exclude = .github
 max-line-length = 128
