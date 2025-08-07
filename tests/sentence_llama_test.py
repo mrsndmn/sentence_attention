@@ -1,10 +1,7 @@
-from transformers import AutoTokenizer
-
-from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
-
-from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM, sentence_attention_forward, special_token_mask_to_clothest_token_idx_slow
-
 import torch
+from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
+from transformers import AutoTokenizer
 
 
 def test_sentence_llama_model_generate():
@@ -22,7 +19,7 @@ def test_sentence_llama_model_generate():
     response = tokenizer.decode(output[0], skip_special_tokens=False)
     print(response)
 
-    assert 'rome' in response.lower()
+    assert "rome" in response.lower()
 
 
 def test_sentence_llama_model_generate_with_eos_token():
@@ -33,22 +30,23 @@ def test_sentence_llama_model_generate_with_eos_token():
 
     model.resize_token_embeddings(len(tokenizer))
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-    model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids('<end_of_sentence>')
+    model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence>")
 
-    model.config._attn_implementation = 'sentence_attention'
+    model.config._attn_implementation = "sentence_attention"
 
     input_ids = tokenizer.encode("Russia - Moscow. France - Paris. Germany - Berlin. Italy - ", return_tensors="pt")
     assert (input_ids == model.config.end_of_sentence_token_id).sum().item() == 3
 
     print("input_ids", input_ids)
-    output = model.generate(
+    model.generate(
         input_ids,
         max_new_tokens=5,
     )
 
+
 def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():
 
-    device = 'cuda'
+    device = "cuda"
 
     checkpoint = "HuggingFaceTB/SmolLM2-1.7B"
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
@@ -56,9 +54,9 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():
 
     model.resize_token_embeddings(len(tokenizer))
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-    model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids('<end_of_sentence>')
+    model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence>")
 
-    model.config._attn_implementation = 'sentence_attention'
+    model.config._attn_implementation = "sentence_attention"
 
     input_ids = tokenizer.encode("Russia - Moscow. France - Paris. Germany - Berlin. Italy - ", return_tensors="pt")
     input_ids = input_ids.to(device)
@@ -90,14 +88,18 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():
     )
 
     for i in range(len(output1.hidden_states)):
-        assert torch.allclose(output1.hidden_states[i], output2.hidden_states[i][:, :seq_len], atol=1e-2), f"hidden_states[{i}] are not equal"
+        assert torch.allclose(
+            output1.hidden_states[i], output2.hidden_states[i][:, :seq_len], atol=1e-2
+        ), f"hidden_states[{i}] are not equal"
 
-    assert torch.allclose(output1.loss, output2.loss, atol=1e-3), f"output losses are not equal, l1={output1.loss}, l2={output2.loss}"
+    assert torch.allclose(
+        output1.loss, output2.loss, atol=1e-3
+    ), f"output losses are not equal, l1={output1.loss}, l2={output2.loss}"
 
 
 def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial_logits():
 
-    device = 'cuda'
+    device = "cuda"
 
     checkpoint = "HuggingFaceTB/SmolLM2-1.7B"
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint, torch_dtype=torch.float32).to(device)
@@ -106,9 +108,9 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial
 
     model.resize_token_embeddings(len(tokenizer))
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-    model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids('<end_of_sentence>')
+    model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence>")
 
-    model.config._attn_implementation = 'sentence_attention'
+    model.config._attn_implementation = "sentence_attention"
 
     input_ids = tokenizer.encode("Russia - Moscow. France - Paris. Germany - Berlin. Italy - ", return_tensors="pt")
     input_ids = input_ids.to(device)
@@ -126,22 +128,22 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial
     )
 
     output2 = model(
-        input_ids[:, :seq_len // 2],
+        input_ids[:, : seq_len // 2],
         use_cache=False,
         output_hidden_states=True,
     )
 
-    tokens_1 = output1.logits[:, :seq_len // 2, :].argmax(dim=-1)
+    tokens_1 = output1.logits[:, : seq_len // 2, :].argmax(dim=-1)
     tokens_2 = output2.logits.argmax(dim=-1)
 
-    print('tokens_1', tokens_1)
-    print('tokens_2', tokens_2)
+    print("tokens_1", tokens_1)
+    print("tokens_2", tokens_2)
 
     assert (tokens_1 == tokens_2).all(), "tokens are not equal"
 
-    logits_diff = (output1.logits[:, :seq_len // 2, :] - output2.logits).norm()
+    logits_diff = (output1.logits[:, : seq_len // 2, :] - output2.logits).norm()
     assert logits_diff < 0.04, "logits diff is low"
-    assert torch.allclose(output1.logits[:, :seq_len // 2, :], output2.logits, atol=1e-2), "logits are not equal"
+    assert torch.allclose(output1.logits[:, : seq_len // 2, :], output2.logits, atol=1e-2), "logits are not equal"
 
 
 if __name__ == "__main__":

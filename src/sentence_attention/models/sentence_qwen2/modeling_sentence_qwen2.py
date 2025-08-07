@@ -1,42 +1,27 @@
-from typing import Callable, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from torch import nn
-
-from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
 from transformers.generation import GenerationMixin
 from transformers.modeling_attn_mask_utils import AttentionMaskConverter
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
-
-from transformers.models.llama.modeling_sentence_llama import sentence_attention_forward, special_token_mask_to_clothest_token_idx_slow
-
-from .modeling_qwen2 import Qwen2Attention, Qwen2MLP, Qwen2PreTrainedModel, Qwen2Config, KwargsForCausalLM, Qwen2DecoderLayer, Qwen2RMSNorm, Qwen2RotaryEmbedding
-
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
-    QuestionAnsweringModelOutput,
-    SequenceClassifierOutputWithPast,
-    TokenClassifierOutput,
 )
-from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
-from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
+from transformers.modeling_utils import PreTrainedModel
+from transformers.models.llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from transformers.processing_utils import Unpack
 from transformers.utils import (
-    LossKwargs,
-    add_code_sample_docstrings,
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
     logging,
-    replace_return_docstrings,
 )
-from transformers.utils.deprecation import deprecate_kwarg
-from transformers.models.qwen2.configuration_qwen2 import Qwen2Config
 
+from .modeling_qwen2 import KwargsForCausalLM, Qwen2Config, Qwen2DecoderLayer, Qwen2RMSNorm, Qwen2RotaryEmbedding
 
 logger = logging.get_logger(__name__)
-
 
 
 QWEN2_START_DOCSTRING = r"""
@@ -171,9 +156,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        self.layers = nn.ModuleList(
-            [Qwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
-        )
+        self.layers = nn.ModuleList([Qwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)])
         self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.rotary_emb = Qwen2RotaryEmbedding(config=config)
         self.gradient_checkpointing = False
@@ -205,9 +188,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         **flash_attn_kwargs: Unpack[FlashAttentionKwargs],
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
+        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -215,9 +196,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
 
         if self.gradient_checkpointing and self.training and use_cache:
-            logger.warning_once(
-                "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
-            )
+            logger.warning_once("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.")
             use_cache = False
 
         # TODO (joao): remove this exception in v4.56 -- it exists for users that try to pass a legacy cache
@@ -244,7 +223,9 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
             if past_key_values is not None:
                 past_key_values_len = past_key_values.get_seq_length()
 
-            attention_mask = torch.ones([input_ids.shape[0], input_ids.shape[1] + past_key_values_len], device=input_ids.device, dtype=torch.long)
+            attention_mask = torch.ones(
+                [input_ids.shape[0], input_ids.shape[1] + past_key_values_len], device=input_ids.device, dtype=torch.long
+            )
 
         if special_embeddings_mask is None:
             special_embeddings_mask = torch.zeros_like(attention_mask)
@@ -257,9 +238,14 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         if clothest_end_of_sentence_token_idx is None:
             clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
 
-
         causal_mask = self._update_causal_mask(
-            attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions, clothest_end_of_sentence_token_idx, special_embeddings_mask
+            attention_mask,
+            inputs_embeds,
+            cache_position,
+            past_key_values,
+            output_attentions,
+            clothest_end_of_sentence_token_idx,
+            special_embeddings_mask,
         )
 
         hidden_states = inputs_embeds
@@ -373,9 +359,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         # DynamicCache or no cache
         else:
             target_length = (
-                attention_mask.shape[-1]
-                if isinstance(attention_mask, torch.Tensor)
-                else past_seen_tokens + sequence_length + 1
+                attention_mask.shape[-1] if isinstance(attention_mask, torch.Tensor) else past_seen_tokens + sequence_length + 1
             )
 
         # In case the provided `attention` mask is 2D, we generate a causal mask here (4D).
@@ -459,9 +443,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
             causal_mask = attention_mask
         else:
             min_dtype = torch.finfo(dtype).min
-            causal_mask = torch.full(
-                (sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=device
-            )
+            causal_mask = torch.full((sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=device)
             diagonal_attend_mask = torch.arange(target_length, device=device) > cache_position.reshape(-1, 1)
             if config.sliding_window is not None:
                 # if we have sliding window, we should not attend to tokens beyond sliding window length, so we mask them out also
@@ -478,15 +460,10 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
                 if attention_mask.shape[-1] > target_length:
                     attention_mask = attention_mask[:, :target_length]
                 mask_length = attention_mask.shape[-1]
-                padding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :].to(
-                    causal_mask.device
-                )
+                padding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :].to(causal_mask.device)
                 padding_mask = padding_mask == 0
-                causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(
-                    padding_mask, min_dtype
-                )
+                causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(padding_mask, min_dtype)
         return causal_mask
-
 
     @staticmethod
     def _prepare_4d_causal_attention_mask_with_cache_position_sentence_attention(
@@ -536,46 +513,46 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         # Convert the 2-D masks to bool for logical operations
         attention_mask_bool = attention_mask.to(dtype=torch.bool)  # [bs, k_len]
 
-        special_embeddings_mask = special_embeddings_mask.to(torch.bool)         # [bs, k_len]
+        special_embeddings_mask = special_embeddings_mask.to(torch.bool)  # [bs, k_len]
 
         # ----------------------------------------------------------------------------
         # Build broadcastable index grids for queries (q) and keys (k)
         # ----------------------------------------------------------------------------
-        q_idx = torch.arange(q_len, device=device).view(1, q_len, 1)         # shape: (1, q_len, 1)
-        k_idx = torch.arange(k_len, device=device).view(1, 1, k_len)         # shape: (1, 1, k_len)
+        q_idx = torch.arange(q_len, device=device).view(1, q_len, 1)  # shape: (1, q_len, 1)
+        k_idx = torch.arange(k_len, device=device).view(1, 1, k_len)  # shape: (1, 1, k_len)
 
         # ----------------------------------------------------------------------------
         # Base causal condition: k ≤ q
         # ----------------------------------------------------------------------------
-        causal_base = k_idx <= q_idx                                            # (1, q_len, k_len)
+        causal_base = k_idx <= q_idx  # (1, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Padding masks for queries and keys
         # ----------------------------------------------------------------------------
-        q_valid = attention_mask_bool.view(bs, q_len, 1)                       # (bs, q_len, 1)
-        k_valid = attention_mask_bool.view(bs, 1, k_len)                       # (bs, 1, k_len)
-        valid_positions = q_valid & k_valid                                    # (bs, q_len, k_len)
+        q_valid = attention_mask_bool.view(bs, q_len, 1)  # (bs, q_len, 1)
+        k_valid = attention_mask_bool.view(bs, 1, k_len)  # (bs, 1, k_len)
+        valid_positions = q_valid & k_valid  # (bs, q_len, k_len)
 
         # Apply base causal & validity
-        causal_and_valid = causal_base & valid_positions                       # (bs, q_len, k_len)
+        causal_and_valid = causal_base & valid_positions  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Block-causal component via EOS index
         # ----------------------------------------------------------------------------
         # clothest_end_of_sentence_token_idx gives, for every query, the index of the closest EOS *at or before* q.
-        eos_idx = clothest_end_of_sentence_token_idx.view(bs, q_len, 1)        # (bs, q_len, 1)
-        block_causal = causal_and_valid & (k_idx >= eos_idx)                   # (bs, q_len, k_len)
+        eos_idx = clothest_end_of_sentence_token_idx.view(bs, q_len, 1)  # (bs, q_len, 1)
+        block_causal = causal_and_valid & (k_idx >= eos_idx)  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Special embedding visibility (within causal window)
         # ----------------------------------------------------------------------------
-        special_keys = special_embeddings_mask.view(bs, 1, k_len)              # (bs, 1, k_len)
-        special_visible = causal_and_valid & special_keys                      # (bs, q_len, k_len)
+        special_keys = special_embeddings_mask.view(bs, 1, k_len)  # (bs, 1, k_len)
+        special_visible = causal_and_valid & special_keys  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Final visibility mask
         # ----------------------------------------------------------------------------
-        allowed = block_causal | special_visible                               # (bs, q_len, k_len)
+        allowed = block_causal | special_visible  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Convert boolean visibility to the floating mask expected by the model
@@ -669,11 +646,8 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
+        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(
@@ -712,4 +686,3 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-

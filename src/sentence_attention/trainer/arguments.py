@@ -3,8 +3,7 @@ from typing import Optional
 
 from transformers import TrainingArguments
 
-
-AVAILABLE_OPTIMIZED_PARAMS = ['full', 'lora', 'only_eos_embedding']
+AVAILABLE_OPTIMIZED_PARAMS = ["full", "lora", "only_eos_embedding"]
 
 
 @dataclass
@@ -15,7 +14,9 @@ class SentenceTrainingArguments(TrainingArguments):
 
     number_of_eos_tokens: int = field(default=1)
 
-    output_dir: str = field(default="llama_for_sequential_numbers",)
+    output_dir: str = field(
+        default="llama_for_sequential_numbers",
+    )
     learning_rate: float = field(default=2e-4)
     max_grad_norm: float = field(default=1.0)
 
@@ -27,11 +28,11 @@ class SentenceTrainingArguments(TrainingArguments):
     per_device_eval_batch_size: int = field(default=4)
     num_train_epochs: int = field(default=1)
 
-    lr_scheduler_type: str = field(default='constant_with_warmup')
+    lr_scheduler_type: str = field(default="constant_with_warmup")
 
     average_tokens_across_devices: bool = field(default=True)
 
-    model_checkpoint: str = field(default='')
+    model_checkpoint: str = field(default="")
 
     weight_decay: float = field(default=0.01)
     eval_strategy: str = field(default="steps")
@@ -50,9 +51,9 @@ class SentenceTrainingArguments(TrainingArguments):
 
     bf16: bool = field(default=False)
 
-    optimized_params: str = field(default='full') # checkout AVAILABLE_OPTIMIZED_PARAMS
+    optimized_params: str = field(default="full")  # checkout AVAILABLE_OPTIMIZED_PARAMS
 
-    model_type: str = "dummy" # dummy | pretrained | SmolLM-1.7B
+    model_type: str = "dummy"  # dummy | pretrained | SmolLM-1.7B
 
     hcg_loss_weight: float = 0.0
     hcg_loss_weight_dynamic: bool = False
@@ -61,4 +62,3 @@ class SentenceTrainingArguments(TrainingArguments):
 
     select_train_dataset_items: int = 20000
     add_end_of_sentence_token: bool = field(default=False)
-

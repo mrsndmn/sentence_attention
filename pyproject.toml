@@ -1,0 +1,46 @@
+
+[tool.black]
+line-length = 128
+target-version = ['py38', 'py39', 'py310']
+exclude = '''
+/(
+    \.git
+    | \.github
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 128
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+]
+ignore = [
+    # Long lines are handled by black; allow long strings and command templates
+    "E501",
+    # pyupgrade: prefer builtins annotations — allow legacy style in this repo for now
+    "UP006",
+    # simplify rules (ternary / nested-if) — non-blocking for now
+    "SIM108",
+    "SIM102",
+]

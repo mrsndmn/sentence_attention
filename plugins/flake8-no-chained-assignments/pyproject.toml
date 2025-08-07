@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flake8-no-chained-assignments"
+version = "0.1.0"
+description = "Flake8 plugin to prohibit chained assignments (e.g., a = b = c)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "Apache-2.0"}
+authors = [{ name = "Sentence Attention", email = "noreply@example.com" }]
+classifiers = [
+  "Framework :: Flake8",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Homepage = "https://example.com"
+
+[project.entry-points."flake8.extension"]
+SAC001 = "flake8_no_chained_assignments.plugin:NoChainedAssignmentsChecker"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["flake8_no_chained_assignments"]
+

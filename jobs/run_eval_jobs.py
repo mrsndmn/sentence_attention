@@ -1,11 +1,10 @@
-import glob
-import time
-import client_lib # импортируем библиотеку для работы с ML Space
-import json
 import copy
-from rich.console import Console
-
+import glob
+import json
 import os
+
+import client_lib  # импортируем библиотеку для работы с ML Space
+from rich.console import Console
 
 REGION = "SR004"
 
@@ -20,6 +19,7 @@ BASE_IMAGE = "cr.ai.cloud.ru/f51af5b1-d43b-4db4-938d-569d7cfffb7a/cuda12.1-torch
 
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out"
 
+
 def run_eval_experiments(experiments, job_description_prefix="eval", dry=False, tasks=None):
 
     experiments = copy.deepcopy(experiments)
@@ -30,8 +30,8 @@ def run_eval_experiments(experiments, job_description_prefix="eval", dry=False, 
 
     for exp in experiments:
 
-        pretrained_model = exp.pop('pretrained_model')
-        output_dir = exp.pop('output_dir', './exps_evaluation')
+        pretrained_model = exp.pop("pretrained_model")
+        output_dir = exp.pop("output_dir", "./exps_evaluation")
 
         if len(exp.keys()) > 0:
             raise ValueError("Invalid exp values!")
@@ -51,7 +51,7 @@ def run_eval_experiments(experiments, job_description_prefix="eval", dry=False, 
         job_w_args = client_lib.Job(
             base_image=BASE_IMAGE,
             script=script_str,
-            type='binary', # =='binary' allows to run bash scripts
+            type="binary",  # =='binary' allows to run bash scripts
             region=REGION,
             instance_type=INSTANCE_TYPE,
             n_workers=N_WORKERS,
@@ -62,7 +62,7 @@ def run_eval_experiments(experiments, job_description_prefix="eval", dry=False, 
             env_variables={
                 "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
                 "PYTHONPATH": f"{workdir_prefix}/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
-                "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface"
+                "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
             },
         )
 
@@ -73,44 +73,45 @@ def run_eval_experiments(experiments, job_description_prefix="eval", dry=False, 
 
     return
 
+
 def run_extract_metrics(checkpoints: list[str], tasks=None):
 
     if tasks is None:
         tasks = [
-            'custom|arc:_average|0',
-            'custom|piqa|0',
-            'custom|mmlu_cloze:_average|0',
-            'custom|mmlu_pro_cloze|0',
-            'custom|wikitext_103|0',
+            "custom|arc:_average|0",
+            "custom|piqa|0",
+            "custom|mmlu_cloze:_average|0",
+            "custom|mmlu_pro_cloze|0",
+            "custom|wikitext_103|0",
         ]
     else:
         tasks_mapping = {
-            'custom|arc|0|1': 'custom|arc:_average|0',
-            'custom|openbookqa|0|1': 'custom|openbookqa|0',
-            'custom|mmlu_cloze|0|1': 'custom|mmlu_cloze:_average|0',
-            'custom|mmlu_cloze|5|1': 'custom|mmlu_cloze:_average|5',
-            'custom|mmlu_pro_cloze|0|1': 'custom|mmlu_pro_cloze|0',
-            'custom|wikitext_103|0|1': 'custom|wikitext_103|0',
-            'custom|siqa|0|1': 'custom|siqa|0',
-            'custom|piqa|0|1': 'custom|piqa|0',
-            'custom|hellaswag|0|1': 'custom|hellaswag|0',
-            'custom|winogrande|0|1': 'custom|winogrande|0',
-            'custom|tiny_stories|0|1': 'custom|tiny_stories|0',
-            'custom|tiny_stories_with_end_of_sentence|0|1': 'custom|tiny_stories_with_end_of_sentence|0',
-            'custom|gsm8k|4|1': 'custom|gsm8k|4',
+            "custom|arc|0|1": "custom|arc:_average|0",
+            "custom|openbookqa|0|1": "custom|openbookqa|0",
+            "custom|mmlu_cloze|0|1": "custom|mmlu_cloze:_average|0",
+            "custom|mmlu_cloze|5|1": "custom|mmlu_cloze:_average|5",
+            "custom|mmlu_pro_cloze|0|1": "custom|mmlu_pro_cloze|0",
+            "custom|wikitext_103|0|1": "custom|wikitext_103|0",
+            "custom|siqa|0|1": "custom|siqa|0",
+            "custom|piqa|0|1": "custom|piqa|0",
+            "custom|hellaswag|0|1": "custom|hellaswag|0",
+            "custom|winogrande|0|1": "custom|winogrande|0",
+            "custom|tiny_stories|0|1": "custom|tiny_stories|0",
+            "custom|tiny_stories_with_end_of_sentence|0|1": "custom|tiny_stories_with_end_of_sentence|0",
+            "custom|gsm8k|4|1": "custom|gsm8k|4",
         }
         tasks = list(map(lambda x: tasks_mapping[x], tasks))
 
-    print(" & ".join([ 'checkpoint' ] + tasks), " \\\\")
+    print(" & ".join(["checkpoint"] + tasks), " \\\\")
 
     for checkpoint in checkpoints:
 
-        if 'unsloth/' in checkpoint or 'Qwen/' in checkpoint or 'HuggingFaceTB/' in checkpoint:
+        if "unsloth/" in checkpoint or "Qwen/" in checkpoint or "HuggingFaceTB/" in checkpoint:
             # exps_evaluation/results/unsloth/Meta-Llama-3.1-8B/
-            checkpoint_norm = checkpoint.split('/')
+            checkpoint_norm = checkpoint.split("/")
         else:
-            checkpoint_norm = [ checkpoint.replace('/', '_') ]
-        metrics_mask = os.path.join('exps_evaluation', 'results', *checkpoint_norm, '*.json')
+            checkpoint_norm = [checkpoint.replace("/", "_")]
+        metrics_mask = os.path.join("exps_evaluation", "results", *checkpoint_norm, "*.json")
         metrics_paths = glob.glob(metrics_mask)
         # print("metrics_paths", metrics_paths)
         assert len(metrics_paths) >= 1, f"No metrics files found for {checkpoint}"
@@ -126,25 +127,21 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
 
         for metrics_path in metrics_paths:
 
-            with open(metrics_path, "r") as f:
+            with open(metrics_path) as f:
                 json_data = json.load(f)
 
             for key in tasks:
 
-                metric_dict = json_data['results'].get(key, {})
+                metric_dict = json_data["results"].get(key, {})
 
                 metric = 0
-                metric_stderr = 0
 
-                if 'acc_norm' in metric_dict:
-                    metric = metric_dict['acc_norm']
-                    metric_stderr = metric_dict['acc_norm_stderr']
-                elif 'qem' in metric_dict:
-                    metric = metric_dict['qem']
-                    metric_stderr = metric_dict['qem_stderr']
-                elif 'ppl' in metric_dict:
-                    metric = metric_dict['ppl'] / 100
-                    metric_stderr = metric_dict['ppl_stderr']
+                if "acc_norm" in metric_dict:
+                    metric = metric_dict["acc_norm"]
+                elif "qem" in metric_dict:
+                    metric = metric_dict["qem"]
+                elif "ppl" in metric_dict:
+                    metric = metric_dict["ppl"] / 100
                 elif len(metric_dict.keys()) > 0:
                     raise ValueError("unknown metrics:", metric_dict)
 
@@ -154,8 +151,15 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
         for key in tasks:
             checkpoint_metrics.append(metrics_dict.get(key, ""))
 
-        print(" & ".join([ checkpoint, ] + checkpoint_metrics), " \\\\")
-
+        print(
+            " & ".join(
+                [
+                    checkpoint,
+                ]
+                + checkpoint_metrics
+            ),
+            " \\\\",
+        )
 
 
 def eval_hcg_adaptive_pretrain_all_tasks_parallel(**kwargs):
@@ -175,18 +179,14 @@ def eval_hcg_adaptive_pretrain_all_tasks_parallel(**kwargs):
         #
         # "unsloth/Meta-Llama-3.1-8B",
         "Qwen/Qwen2.5-7B",
-
         # "./adaptive_hcg_llama31_8B_w_1.000_l_22-26_NTWKRP0G/checkpoint-5000",
         # "./adaptive_hcg_llama31_8B_w_1.000_l_22-26_NTWKRP0G/calibr60_checkpoint-5000_left_padding/",
         # "./adaptive_hcg_llama31_8B_l22-26_analytical_pruning",
-
         # "./adaptive_hcg_qwen25_7B_w_1.000_l_12-17_HXIGMJTI/checkpoint-5000",
         # "./adaptive_hcg_qwen25_7B_w_1.000_l_12-17_HXIGMJTI/calib40_checkpoint-5000",
         # "./adaptive_hcg_qwen25_7B_l12-17_analytical_pruning",
-
         # TODO fan out projection + llm layers finetuned
         # TODO fan out projection checkpoint
-
         # Analytical Pruning
         # "./paper_checkpoints/analytical_thshld_0.6/adaptive_hcg_llama31_8B_l18-26_analytical_pruning_q0.25/",
         # "./paper_checkpoints/analytical_thshld_0.6/adaptive_hcg_llama31_8B_l18-26_analytical_pruning_q0.5/",
@@ -198,20 +198,21 @@ def eval_hcg_adaptive_pretrain_all_tasks_parallel(**kwargs):
         "./paper_checkpoints/analytical_thshld_0.6/adaptive_hcg_qwen25_7B_l9-20_analytical_pruning_q1/",
     ]
 
-    tasks = "custom|arc|0|1,custom|openbookqa|0|1,custom|mmlu_cloze|0|1,custom|mmlu_pro_cloze|0|1,custom|wikitext_103|0|1,custom|siqa|0|1,custom|piqa|0|1,custom|hellaswag|0|1,custom|winogrande|0|1".split(",")
+    tasks = "custom|arc|0|1,custom|openbookqa|0|1,custom|mmlu_cloze|0|1,custom|mmlu_pro_cloze|0|1,custom|wikitext_103|0|1,custom|siqa|0|1,custom|piqa|0|1,custom|hellaswag|0|1,custom|winogrande|0|1".split(
+        ","
+    )
 
     checkpoints = [
         "./paper_checkpoints/base_thshld_0.6/adaptive_hcg_llama31_8B_learned_vocab_w_1.000_l_18-26_M0K275CH/checkpoint-5306_calib40",
         "./paper_checkpoints/base_thshld_0.6/adaptive_hcg_qwen25_7B_learned_vocab_w_1.000_l_9-20_J3BTODV3/checkpoint-5306_calib40",
-
-        './paper_checkpoints/base_thshld_0.6/adaptive_hcg_llama31_8B_learned_vocab_w_1.000_l_18-26_M0K275CH/checkpoint-5306_calib90',
-        './paper_checkpoints/base_thshld_0.6/adaptive_hcg_qwen25_7B_learned_vocab_w_1.000_l_9-20_J3BTODV3/checkpoint-5306_calib90',
+        "./paper_checkpoints/base_thshld_0.6/adaptive_hcg_llama31_8B_learned_vocab_w_1.000_l_18-26_M0K275CH/checkpoint-5306_calib90",
+        "./paper_checkpoints/base_thshld_0.6/adaptive_hcg_qwen25_7B_learned_vocab_w_1.000_l_9-20_J3BTODV3/checkpoint-5306_calib90",
     ]
 
     # checkpoints for fan out projection tuned models
     checkpoints = [
-        './adaptive_hcg_llama31_8B_fan_out_projection_w_1.000_l_18-26_GHLL4UA3/checkpoint-60000/',
-        './adaptive_hcg_qwen25_7B_fan_out_projection_w_1.000_l_9-20_8VWXTSOA/checkpoint-60000/',
+        "./adaptive_hcg_llama31_8B_fan_out_projection_w_1.000_l_18-26_GHLL4UA3/checkpoint-60000/",
+        "./adaptive_hcg_qwen25_7B_fan_out_projection_w_1.000_l_9-20_8VWXTSOA/checkpoint-60000/",
     ]
 
     # temporary checkpoints for finetuned models
@@ -240,7 +241,6 @@ def eval_hcg_adaptive_pretrain_all_tasks_parallel(**kwargs):
     # ]
     # tasks = "custom|arc|0|1,custom|siqa|0|1,custom|piqa|0|1,custom|hellaswag|0|1,custom|tiny_stories|0|1".split(",")
 
-
     # Large LLM
     # checkpoints = [
     #     "./adaptive_hcg_llama31_8B_fan_out_projection_w_1.000_l_18-26_R2DI580B/checkpoint-7500/",
@@ -260,18 +260,16 @@ def eval_hcg_adaptive_pretrain_all_tasks_parallel(**kwargs):
 
     # SLM small batch
     checkpoints = [
-        './adaptive_slm2_135M_pretrain_w_0.100_l_10-20_951OTTFF/checkpoint-66241/',
-        './adaptive_slm2_135M_pretrain_with_end_of_sentence_token_w_0.100_l_10-20_CN17H8GB/checkpoint-66241_eos_tokenizer/',
+        "./adaptive_slm2_135M_pretrain_w_0.100_l_10-20_951OTTFF/checkpoint-66241/",
+        "./adaptive_slm2_135M_pretrain_with_end_of_sentence_token_w_0.100_l_10-20_CN17H8GB/checkpoint-66241_eos_tokenizer/",
         # "./adaptive_slm2_135M_pretrain_with_end_of_sentence_token_w_0.100_l_10-20_8WUWMNL1/checkpoint-66241/",
         "./adaptive_slm2_135M_pretrain_with_end_of_sentence_token_ftte_w_0.100_l_10-20_YLMXOZZP/checkpoint-66241/",
-        './vanilla_slm2_135M_pretrain_w_0.000_l_-_IWQ3X999/checkpoint-66241/',
+        "./vanilla_slm2_135M_pretrain_w_0.000_l_-_IWQ3X999/checkpoint-66241/",
         "./vanilla_slm2_127M_20L_pretrain_w_0.000_l_-_STYB64DM/checkpoint-60000/",
-
         # With Large Batch Size
         # "./adaptive_slm2_135M_pretrain_with_end_of_sentence_token_w_0.100_l_10-20_O8T0D1OA/checkpoint-4140/",
     ]
     tasks = "custom|arc|0|1,custom|siqa|0|1,custom|piqa|0|1,custom|hellaswag|0|1,custom|tiny_stories|0|1".split(",")
-
 
     checkpoints = [
         "./vanilla_slm2_1.7B_pretrain_w_0.000_l_-_BM2DG7DH/checkpoint-19000_for_4shot_mmlu/",
@@ -282,16 +280,15 @@ def eval_hcg_adaptive_pretrain_all_tasks_parallel(**kwargs):
 
     # TODO
 
-    hcg_experiments = [ { "pretrained_model": x } for x in checkpoints ]
+    hcg_experiments = [{"pretrained_model": x} for x in checkpoints]
 
-    print('len hcg_experiments:', len(hcg_experiments))
+    print("len hcg_experiments:", len(hcg_experiments))
 
-    if kwargs.pop('extract_metrics', False):
+    if kwargs.pop("extract_metrics", False):
         run_extract_metrics(checkpoints, tasks=tasks)
     else:
         for task in tasks:
             run_eval_experiments(hcg_experiments, job_description_prefix="Eval HCG: ", tasks=task, **kwargs)
-
 
     return
 
@@ -305,12 +302,11 @@ def slm2_mmlu_cloze_5_shot(**kwargs):
 
     tasks = "custom|mmlu_cloze|5|1".split(",")
 
-    hcg_experiments = [ { "pretrained_model": x } for x in checkpoints ]
+    hcg_experiments = [{"pretrained_model": x} for x in checkpoints]
 
-    print('len hcg_experiments:', len(hcg_experiments))
+    print("len hcg_experiments:", len(hcg_experiments))
 
-
-    if kwargs.pop('extract_metrics', False):
+    if kwargs.pop("extract_metrics", False):
         run_extract_metrics(checkpoints, tasks=tasks)
     else:
         for task in tasks:
@@ -319,29 +315,21 @@ def slm2_mmlu_cloze_5_shot(**kwargs):
     return
 
 
-
 def eval_base_models(**kwargs):
 
     checkpoints = [
-
         # EOS Only Embedding
         # "./sentence_Llama-3.2-1B_ft_only_eos_embedding_3DTAMXFX/checkpoint-674/",
         # "./sentence_Llama-3.2-1B_ft_only_eos_embedding_70ODXUT4/checkpoint-2698",
-
         # 'unsloth/Llama-3.2-1B',
         # "./sentence_Llama-3.2-1B_pretrain_with_end_of_sentence_full_BTLCR6IG/checkpoint-2698/",
-
-
         # 'Qwen/Qwen2.5-1.5B',
         # "./sentence_Qwen2.5-1.5B_pretrain_with_end_of_sentence_full_271TTUXM/checkpoint-2698/",
-
         # 'HuggingFaceTB/SmolLM2-1.7B',
         # "./sentence_SmolLM2-1.7B_pretrain_with_end_of_sentence_full_2V0V8WU1/checkpoint-2698/",
-
         # # 3B models
         # 'unsloth/Llama-3.2-3B',
         # "./sentence_Llama-3.2-3B_pretrain_with_end_of_sentence_full_KVSAH64V/checkpoint-2698/",
-
         # # 'Qwen/Qwen2.5-3B',
     ]
 
@@ -354,14 +342,15 @@ def eval_base_models(**kwargs):
 
     # tasks = ["custom|mmlu_cloze|5|1"]
     # tasks = "custom|mmlu_cloze|5|1,custom|mmlu_cloze|0|1,custom|hellaswag|0|1,custom|winogrande|0|1,custom|piqa|0|1,custom|siqa|0|1,custom|openbookqa|0|1".split(",")
-    tasks = "custom|mmlu_cloze|0|1,custom|hellaswag|0|1,custom|winogrande|0|1,custom|piqa|0|1,custom|siqa|0|1,custom|openbookqa|0|1".split(",")
+    tasks = "custom|mmlu_cloze|0|1,custom|hellaswag|0|1,custom|winogrande|0|1,custom|piqa|0|1,custom|siqa|0|1,custom|openbookqa|0|1".split(
+        ","
+    )
 
-    hcg_experiments = [ { "pretrained_model": x } for x in checkpoints ]
+    hcg_experiments = [{"pretrained_model": x} for x in checkpoints]
 
-    print('len hcg_experiments:', len(hcg_experiments))
+    print("len hcg_experiments:", len(hcg_experiments))
 
-
-    if kwargs.pop('extract_metrics', False):
+    if kwargs.pop("extract_metrics", False):
         run_extract_metrics(checkpoints, tasks=tasks)
     else:
         for task in tasks:
@@ -370,15 +359,14 @@ def eval_base_models(**kwargs):
     return
 
 
-
 if __name__ == "__main__":
 
     import sys
 
-    dry = len(sys.argv) > 1 and sys.argv[1] == 'dry'
-    extract_metrics = len(sys.argv) > 1 and sys.argv[1] == 'extract_metrics'
+    dry = len(sys.argv) > 1 and sys.argv[1] == "dry"
+    extract_metrics = len(sys.argv) > 1 and sys.argv[1] == "extract_metrics"
 
-    print("dry", dry, 'extract_metrics', extract_metrics)
+    print("dry", dry, "extract_metrics", extract_metrics)
 
     # eval_hcg_adaptive_pretrain_all_tasks_parallel(dry=dry, extract_metrics=extract_metrics)
     # slm2_mmlu_cloze_5_shot(dry=dry, extract_metrics=extract_metrics)
