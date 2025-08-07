@@ -1,0 +1,17 @@
+name: Run Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test:
+    runs-on: self-hosted
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run pytest
+      env:
+        PYTHONPATH: /workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/src:./src
+        HF_HOME: /workspace-SR004.nfs2/.cache/huggingface
+      run: /home/jovyan/.mlspace/envs/tokens_pruning/bin/pytest -v ./tests/
