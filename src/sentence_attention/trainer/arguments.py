@@ -13,11 +13,12 @@ class SentenceTrainingArguments(TrainingArguments):
     ddp_find_unused_parameters: bool = field(default=False)
     load_best_model_at_end: bool = field(default=False)
 
+    number_of_eos_tokens: int = field(default=1)
+
     output_dir: str = field(default="llama_for_sequential_numbers",)
     learning_rate: float = field(default=2e-4)
     max_grad_norm: float = field(default=1.0)
 
-    dataset: str = field(default='smollm-corpus')
     limit_dataset_shards: int = field(default=0)
     offset_dataset_shards: int = field(default=0)
 

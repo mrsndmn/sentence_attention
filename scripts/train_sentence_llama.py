@@ -50,6 +50,8 @@ def build_model(training_args: SentenceTrainingArguments):
     tokenizer = None
     model_checkpoint = training_args.model_checkpoint
 
+    number_of_eos_tokens = training_args.number_of_eos_tokens = 1
+
     if training_args.add_end_of_sentence_token:
 
         tokenizer_class = type(AutoTokenizer.from_pretrained(model_checkpoint)).__name__
@@ -64,7 +66,7 @@ def build_model(training_args: SentenceTrainingArguments):
             raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
 
         print("tokenizer_class", tokenizer_class)
-        tokenizer = tokenizer_class.from_pretrained(model_checkpoint)
+        tokenizer = tokenizer_class.from_pretrained(model_checkpoint, num_eos_tokens=number_of_eos_tokens)
 
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
@@ -95,8 +97,8 @@ def build_model(training_args: SentenceTrainingArguments):
     if training_args.add_end_of_sentence_token and model.config.vocab_size != len(tokenizer):
         model.resize_token_embeddings(len(tokenizer))
         print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-        model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids('<end_of_sentence>')
-        print("model.config.end_of_sentence_token_id", model.config.end_of_sentence_token_id)
+        model.config.end_of_sentence_token_ids = tokenizer.end_of_sentence_token_ids
+        print("model.config.end_of_sentence_token_ids", model.config.end_of_sentence_token_ids)
 
     if training_args.model_type == "sentence_pretrained_checkpoint":
         optimized_params = training_args.optimized_params
@@ -105,7 +107,7 @@ def build_model(training_args: SentenceTrainingArguments):
         assert optimized_params in AVAILABLE_OPTIMIZED_PARAMS, f'unknown optimized_params value: {optimized_params}. available ones: {AVAILABLE_OPTIMIZED_PARAMS}'
 
         if 'full' == optimized_params:
-            assert len(optimized_params) == 1
+            pass
         elif 'only_eos_embedding' == optimized_params:
             freeze_model(model)
             for p in model.model.embed_tokens.parameters():
@@ -158,67 +160,71 @@ if __name__ == "__main__":
     state = PartialState()
     with state.local_main_process_first():
 
-        if training_args.dataset == 'smollm-corpus':
+        if training_args.add_end_of_sentence_token:
+            print("Loading fineweb edu tokenized with gpt2_eos")
+            datasets_path_prefix = '/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data'
 
-            if training_args.add_end_of_sentence_token:
-                print("Loading fineweb edu tokenized with gpt2_eos")
-                current_dir = '/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out'
+            dataset_suffix = ''
+            if training_args.number_of_eos_tokens > 1:
+                dataset_suffix = f'_num_{training_args.number_of_eos_tokens}'
 
-                if training_args.model_type == 'sentence_pretrained_checkpoint':
-                    # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
-                    if 'llama-3.2' in training_args.model_checkpoint.lower():
-                        dataset_path = f'{current_dir}/fineweb_edu_tokenized_Llama-3.2-1B_with_eos_token'
-                    elif 'qwen2' in training_args.model_checkpoint.lower():
-                        dataset_path = f'{current_dir}/fineweb_edu_tokenized_Qwen2.5-1.5B_with_eos_token'
-                    elif 'smollm2' in training_args.model_checkpoint.lower():
-                        dataset_path = f'{current_dir}/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token'
-                    else:
-                        raise ValueError(f"Unknown model checkpoint: {training_args.model_checkpoint}")
-                        # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx_full'
+            if training_args.model_type == 'sentence_pretrained_checkpoint':
+                # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
+                if 'llama-3.2' in training_args.model_checkpoint.lower():
+                    dataset_path = f'{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_with_eos_token{dataset_suffix}_merged'
+                elif 'qwen2' in training_args.model_checkpoint.lower():
+                    dataset_path = f'{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B_with_eos_token{dataset_suffix}_merged'
+                elif 'smollm2' in training_args.model_checkpoint.lower():
+                    dataset_path = f'{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token{dataset_suffix}_merged'
                 else:
-                    dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_eos'
-
-                output_dir = sorted(os.listdir(dataset_path))
-                if training_args.limit_dataset_shards > 0:
-                    offset = training_args.offset_dataset_shards
-                    end_idx = offset + training_args.limit_dataset_shards
-                    print("Dataset offset end idx:", offset, ":", end_idx)
-                    output_dir = output_dir[offset:end_idx]
-
-                print("loading dataset", dataset_path, 'with', len(output_dir), 'dataset shards', output_dir)
-
-                all_datasets = []
-                for data_file in tqdm(output_dir, desc='Loading datasets'):
-                    dataset = Dataset.load_from_disk(f'{dataset_path}/{data_file}')
-                    all_datasets.append(dataset)
-
-                smollm_corpus = datasets.concatenate_datasets(all_datasets)
+                    raise ValueError(f"Unknown model checkpoint: {training_args.model_checkpoint}")
+                    # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx_full'
             else:
-                data_files = []
-                for i in range(6):
-                    for j in range(10):
-                        data_files.append(f"sample/100BT/{i:03}_{j:05}.parquet")
+                dataset_path = f'{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos'
 
-                smollm_corpus = load_dataset("HuggingFaceFW/fineweb-edu", data_files=data_files, num_proc=48)
-                smollm_corpus = smollm_corpus['train']
+            fineweb_dataset = Dataset.load_from_disk(dataset_path)
+
+            training_args.limit_dataset_shards
+            training_args.offset_dataset_shards
+
+            TOTAL_SHARDS = 14 # CONSTANT
+            dataset_shards = []
+
+            for i in range(TOTAL_SHARDS):
+                if i < training_args.offset_dataset_shards or i >= training_args.offset_dataset_shards + training_args.limit_dataset_shards:
+                    continue
+                dataset_shards.append(fineweb_dataset.shard(index=i, num_shards=TOTAL_SHARDS))
+                print(f"loading shard {i}")
+
+            print(f"loaded {len(dataset_shards)} shards")
+            fineweb_dataset = datasets.concatenate_datasets(dataset_shards)
+
+        else:
+            data_files = []
+            for i in range(6):
+                for j in range(10):
+                    data_files.append(f"sample/100BT/{i:03}_{j:05}.parquet")
+
+            fineweb_dataset = load_dataset("HuggingFaceFW/fineweb-edu", data_files=data_files, num_proc=48)
+            fineweb_dataset = fineweb_dataset['train']
 
 
-                def tokenize_function(examples):
-                    text = examples['text']
+            def tokenize_function(examples):
+                text = examples['text']
 
-                    tokenized_inputs = tokenizer(text, truncation=True, padding='max_length', max_length=1024, return_tensors='pt')
+                tokenized_inputs = tokenizer(text, truncation=True, padding='max_length', max_length=1024, return_tensors='pt')
 
-                    return tokenized_inputs
+                return tokenized_inputs
 
-                smollm_corpus = smollm_corpus.map(tokenize_function, batched=True, num_proc=48)
+            fineweb_dataset = fineweb_dataset.map(tokenize_function, batched=True, num_proc=48)
 
-            print("training_args.select_train_dataset_items", training_args.select_train_dataset_items)
-            if training_args.select_train_dataset_items > 0:
-                smollm_corpus = smollm_corpus.select(range(training_args.select_train_dataset_items))
+        print("training_args.select_train_dataset_items", training_args.select_train_dataset_items)
+        if training_args.select_train_dataset_items > 0:
+            fineweb_dataset = fineweb_dataset.select(range(training_args.select_train_dataset_items))
 
-            # smollm_corpus = smollm_corpus.train_test_split(test_size=100, seed=1)
-            train_dataset = smollm_corpus
-            eval_dataset = smollm_corpus.select(range(100))
+        # smollm_corpus = smollm_corpus.train_test_split(test_size=100, seed=1)
+        train_dataset = fineweb_dataset
+        eval_dataset = fineweb_dataset.select(range(100))
 
     nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
@@ -258,7 +264,7 @@ if __name__ == "__main__":
     # callbacks.append(LogModelLayersGradNorm(model))
 
     if 'only_eos_embedding' in training_args.optimized_params:
-        unfrozen_idx = model.config.end_of_sentence_token_id
+        unfrozen_idxes = model.config.end_of_sentence_token_ids
 
         class ZeroOutGradientsForAllExceptEosEmbedding(TrainerCallback):
             def __init__(self, model):
@@ -269,12 +275,16 @@ if __name__ == "__main__":
                 for p in model.model.embed_tokens.parameters():
                     current_grad = p.grad
                     p.grad = torch.zeros_like(p.grad)
-                    p.grad[unfrozen_idx] = current_grad[unfrozen_idx]
+
+                    for unfrozen_idx in unfrozen_idxes:
+                        p.grad[unfrozen_idx] = current_grad[unfrozen_idx]
 
                 for p in model.lm_head.parameters():
                     current_grad = p.grad
                     p.grad = torch.zeros_like(p.grad)
-                    p.grad[unfrozen_idx] = current_grad[unfrozen_idx]
+
+                    for unfrozen_idx in unfrozen_idxes:
+                        p.grad[unfrozen_idx] = current_grad[unfrozen_idx]
 
                 return control
 

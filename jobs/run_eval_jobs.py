@@ -7,8 +7,6 @@ from rich.console import Console
 
 import os
 
-assert os.environ.get("WANDB_API_KEY", "") != "", "WANDB_API_KEY is required" 
-
 REGION = "SR004"
 
 SEED = 1008
@@ -63,9 +61,6 @@ def run_eval_experiments(experiments, job_description_prefix="eval", dry=False, 
             # stop_timer=600, # в минутах, = 10 часов
             env_variables={
                 "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
-                "WANDB_PROJECT": "adaptive_attention",
-                "WANDB_API_KEY": os.environ.get("WANDB_API_KEY", ""),
-                "WANDB_MODE": "online",
                 "PYTHONPATH": f"{workdir_prefix}/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
                 "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface"
             },
