@@ -18,8 +18,6 @@ from transformers import DataCollatorForLanguageModeling
 
 import os
 import torch
-import torch.nn as nn
-import torch
 
 
 from sentence_attention.trainer.arguments import SentenceTrainingArguments

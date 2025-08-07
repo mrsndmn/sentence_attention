@@ -1,6 +1,5 @@
 import torch
 from datasets import load_dataset
-import sys
 from transformers.models.llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS

@@ -1,6 +1,4 @@
-from transformers import PreTrainedTokenizerFast, AutoTokenizer
-import re
-from typing import Any
+from transformers import AutoTokenizer
 from transformers.models.llama.tokenization_llama_fast import EOSTokenizerFast
 
 

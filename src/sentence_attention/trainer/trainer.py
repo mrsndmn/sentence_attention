@@ -1,4 +1,4 @@
-from typing import List, Optional, Union, Any, Union, Dict, Tuple
+from typing import List, Optional, Any, Union, Dict, Tuple
 
 import time
 import numpy as np
@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from transformers import Trainer
 
 from transformers.trainer import _is_peft_model, nested_detach, EvalLoopContainer, find_batch_size, IterableDatasetShard, logger
-from transformers.trainer_pt_utils import EvalLoopContainer, find_batch_size, IterableDatasetShard
+
 from transformers.trainer_utils import has_length, denumpify_detensorize, EvalLoopOutput
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 from transformers import GenerationConfig
@@ -33,7 +33,7 @@ class SentenceTrainer(Trainer):
         special_embeddings_mask = inputs.get('special_embeddings_mask')
 
         attention_mask = inputs['attention_mask']
-        token_frequency = inputs.get('token_frequency', None)
+        # token_frequency = inputs.get('token_frequency', None)
         model_kwargs = {
             "input_ids": inputs['input_ids'],
             "attention_mask": attention_mask,
@@ -95,49 +95,49 @@ class SentenceTrainer(Trainer):
 
     def update_eval_set_kwargs_containers(self, model, inputs):
 
-        bos_token_id = 1
-        eos_token_id = 2
-        pad_token_id = 0
-        forced_eos_token_id = eos_token_id
+        # bos_token_id = 1
+        # eos_token_id = 2
+        # pad_token_id = 0
+        # forced_eos_token_id = eos_token_id
 
         if self.processing_class is not None:
-            bos_token_id = self.processing_class.bos_token_id
-            eos_token_id = self.processing_class.eos_token_id
-            pad_token_id = self.processing_class.pad_token_id
-            forced_eos_token_id = eos_token_id
+            # bos_token_id = self.processing_class.bos_token_id
+            # eos_token_id = self.processing_class.eos_token_id
+            # pad_token_id = self.processing_class.pad_token_id
+            pass
 
-        gen_params = {
-            "do_sample": False,
-            "early_stopping": False,
-            "num_beams": 1,
-            "repetition_penalty": 2.5,
-            "remove_invalid_values": True,
-            "bos_token_id": bos_token_id,
-            "eos_token_id": eos_token_id,
-            "pad_token_id": pad_token_id,
-            "forced_eos_token_id": forced_eos_token_id,
-            "use_cache": False,
-            "no_repeat_ngram_size": 4,
-            "num_return_sequences": 1,
-        }
+        # gen_params = {
+        #     "do_sample": False,
+        #     "early_stopping": False,
+        #     "num_beams": 1,
+        #     "repetition_penalty": 2.5,
+        #     "remove_invalid_values": True,
+        #     "bos_token_id": bos_token_id,
+        #     "eos_token_id": eos_token_id,
+        #     "pad_token_id": pad_token_id,
+        #     "forced_eos_token_id": forced_eos_token_id,
+        #     "use_cache": False,
+        #     "no_repeat_ngram_size": 4,
+        #     "num_return_sequences": 1,
+        # }
         genconfig = GenerationConfig()
 
         caption_legth = inputs['input_ids'].shape[1] - 2
         genconfig.max_length = caption_legth
 
-        batch_size, seq_len = inputs['input_ids'].shape[0], 2
-        special_embeddings_mask = inputs.get('special_embeddings_mask', None)
-        attention_mask = torch.ones([batch_size, seq_len], device=inputs['input_ids'].device)
+        # batch_size, seq_len = inputs['input_ids'].shape[0], 2
+        # special_embeddings_mask = inputs.get('special_embeddings_mask', None)
+        # attention_mask = torch.ones([batch_size, seq_len], device=inputs['input_ids'].device)
 
         prefix_ids = inputs['input_ids'][:, :2]
-        all_generation_params = {
-            'generation_config': genconfig,
-            'max_new_tokens': caption_legth,
-            'inputs': prefix_ids,
-            'special_embeddings_mask': special_embeddings_mask,
-            'attention_mask': attention_mask,
-            **gen_params,
-        }
+        # all_generation_params = {
+        #     'generation_config': genconfig,
+        #     'max_new_tokens': caption_legth,
+        #     'inputs': prefix_ids,
+        #     'special_embeddings_mask': special_embeddings_mask,
+        #     'attention_mask': attention_mask,
+        #     **gen_params,
+        # }
 
         result = {
             "prefix_ids": prefix_ids,
@@ -351,7 +351,7 @@ class SentenceTrainer(Trainer):
 
             if self.args.batch_eval_metrics:
                 if self.compute_metrics is not None and logits is not None and labels is not None:
-                    is_last_step = self.accelerator.gradient_state.end_of_dataloader
+                    # is_last_step = self.accelerator.gradient_state.end_of_dataloader
                     batch_kwargs = {}
                     batch_kwargs["losses"] = losses if "loss" in args.include_for_metrics else None
                     batch_kwargs["inputs"] = inputs if "inputs" in args.include_for_metrics else None

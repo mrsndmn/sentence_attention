@@ -1,6 +1,5 @@
 
 from datasets import Dataset
-from transformers import AutoTokenizer, GPT2TokenizerFast
 from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 import shutil
 

@@ -17,52 +17,35 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import math
 from typing import List, Optional, Tuple, Union, Callable, Unpack
+from dataclasses import dataclass
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 
 from transformers.integrations.sdpa_attention import repeat_kv
 
-import os
 
-import copy
-import warnings
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.checkpoint
-from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
-from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.generation import GenerationMixin
 from transformers.modeling_attn_mask_utils import AttentionMaskConverter
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
-    QuestionAnsweringModelOutput,
-    SequenceClassifierOutputWithPast,
-    TokenClassifierOutput,
 )
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
-from transformers.integrations.sdpa_attention import sdpa_attention_forward
 
-from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
-from transformers.modeling_utils import PreTrainedModel
-from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 from transformers.utils import (
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
-    is_flash_attn_greater_or_equal_2_10,
     logging,
-    replace_return_docstrings,
     is_torch_flex_attn_available,
 )
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import (
-    LlamaDecoderLayer,
     LlamaRMSNorm,
     LlamaRotaryEmbedding,
     LlamaMLP,
@@ -70,23 +53,18 @@ from transformers.models.llama.modeling_llama import (
     eager_attention_forward,
 )
 
-from transformers.models.llama.merges_transform.generate_merges import fan_out_restore_residuals, prune_tokens_concrete
 
 
 logger = logging.get_logger(__name__)
 
 _CONFIG_FOR_DOC = "LlamaConfig"
 
-from dataclasses import dataclass
 
-from enum import Enum
-
-from torch.distributions.categorical import Categorical
 
 CHECK_WITH_PYTHON = False
 
 if is_torch_flex_attn_available():
-    from torch.nn.attention.flex_attention import BlockMask, flex_attention
+    from torch.nn.attention.flex_attention import BlockMask
 
     from transformers.integrations.flex_attention import make_flex_block_causal_mask
 

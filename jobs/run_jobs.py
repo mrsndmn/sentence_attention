@@ -238,7 +238,6 @@ def run_training_experiments(
 if __name__ == "__main__":
 
     import sys
-    import subprocess
 
     console = Console()
     console.print(client_lib.get_instance_types(regions="SR004"))
@@ -303,7 +302,7 @@ if __name__ == "__main__":
             instance_type=f'a100.{NGPUS}gpu',
             # model_checkpoint=f'{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_token_w_0.100_l__S9M6BLOE/checkpoint-400/',
             # model_checkpoint=f'{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_token_w_0.100_l__5RHWG2LO/checkpoint-1000/',
-            model_checkpoint=f'HuggingFaceTB/SmolLM2-1.7B',
+            model_checkpoint='HuggingFaceTB/SmolLM2-1.7B',
             dataset='smollm-corpus',
             select_train_dataset_items=0,
             adam_epsilon='1e-8',

@@ -88,7 +88,7 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
             for p in model.lm_head.parameters():
                 p.requires_grad = True
         elif 'lora' == optimized_params:
-            from peft import LoraConfig, TaskType, get_peft_model
+            from peft import LoraConfig, TaskType
 
             # create LoRA configuration object
             lora_config = LoraConfig(

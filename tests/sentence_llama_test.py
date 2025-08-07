@@ -2,7 +2,7 @@ from transformers import AutoTokenizer
 
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 
-from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM, sentence_attention_forward, special_token_mask_to_clothest_token_idx_slow
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 
 import torch
 
@@ -41,7 +41,7 @@ def test_sentence_llama_model_generate_with_eos_token():
     assert (input_ids == model.config.end_of_sentence_token_id).sum().item() == 3
 
     print("input_ids", input_ids)
-    output = model.generate(
+    model.generate(
         input_ids,
         max_new_tokens=5,
     )

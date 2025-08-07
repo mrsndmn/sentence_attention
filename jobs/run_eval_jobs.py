@@ -1,5 +1,4 @@
 import glob
-import time
 import client_lib # импортируем библиотеку для работы с ML Space
 import json
 import copy
@@ -134,17 +133,13 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
                 metric_dict = json_data['results'].get(key, {})
 
                 metric = 0
-                metric_stderr = 0
 
                 if 'acc_norm' in metric_dict:
                     metric = metric_dict['acc_norm']
-                    metric_stderr = metric_dict['acc_norm_stderr']
                 elif 'qem' in metric_dict:
                     metric = metric_dict['qem']
-                    metric_stderr = metric_dict['qem_stderr']
                 elif 'ppl' in metric_dict:
                     metric = metric_dict['ppl'] / 100
-                    metric_stderr = metric_dict['ppl_stderr']
                 elif len(metric_dict.keys()) > 0:
                     raise ValueError("unknown metrics:", metric_dict)
 

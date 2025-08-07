@@ -2,7 +2,6 @@ import pytest
 import torch
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
-import torch.nn as nn
 import torch.nn.functional as F
 
 
@@ -105,5 +104,5 @@ def test_flex_attention_custom():
     assert (expected_mask == generated_mask).all()
 
     query, key, value = tensor, tensor, tensor
-    output = flex_attention(query, key, value, score_mod=custom_mask)
+    flex_attention(query, key, value, score_mod=custom_mask)
 
