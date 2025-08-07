@@ -34,7 +34,7 @@ def run_experiments(experiments, job_description_prefix="", dry=False):
 
         output_dir += f"_{''.join(random.choices(string.ascii_uppercase + string.digits, k=8))}"
 
-        output_dir_full_path = os.path.join(workdir_prefix, 'artifacts', 'models', output_dir)
+        output_dir_full_path = os.path.join(workdir_prefix, 'artifacts', 'experiments_in_progress', output_dir)
 
         optimized_params = exp.pop('optimized_params')
         for param in optimized_params.split(','):

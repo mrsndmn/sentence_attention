@@ -1,6 +1,8 @@
 from tqdm import tqdm
 from dataclasses import dataclass, field
 import torch
+import shutil
+from pathlib import Path
 
 from transformers import TrainerCallback
 from transformers.models.llama.modeling_llama import LlamaForCausalLM
@@ -309,5 +311,19 @@ if __name__ == "__main__":
         project_name=trackers_project_name,
     )
 
-    trainer.train()
+    # trainer.train()
+    out_dir_path = Path(training_args.output_dir)
+
+    finished_target_dir = out_dir_path.parent.parent / 'experiments' / out_dir_path.name
+    print("finished_target_dir", finished_target_dir)
+    while True:
+        if finished_target_dir.exists():
+            finished_target_dir = finished_target_dir.parent / f'{finished_target_dir.name}_duplicate'
+            continue
+        break
+
+    os.makedirs(finished_target_dir, exist_ok=True, parents=True)
+
+    shutil.move(out_dir_path, finished_target_dir)
+    print("Moved from", out_dir_path, "to finished_target_dir", finished_target_dir)
 
