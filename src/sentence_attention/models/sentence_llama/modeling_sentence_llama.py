@@ -60,8 +60,8 @@ from transformers.utils import (
     replace_return_docstrings,
     is_torch_flex_attn_available,
 )
-from .configuration_llama import LlamaConfig
-from .modeling_llama import (
+from transformers.models.llama.configuration_llama import LlamaConfig
+from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer,
     LlamaRMSNorm,
     LlamaRotaryEmbedding,

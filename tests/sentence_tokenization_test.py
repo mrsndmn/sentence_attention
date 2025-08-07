@@ -4,6 +4,7 @@ from typing import Any
 from transformers.models.llama.tokenization_llama_fast import EOSTokenizerFast
 
 
+# TODO check multiple tokens for eos sentences
 def test_eos_tokenizer():
     tokenizer = EOSTokenizerFast.from_pretrained("unsloth/Meta-Llama-3.1-8B")
 
