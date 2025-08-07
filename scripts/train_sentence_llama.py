@@ -1,4 +1,3 @@
-
 import torch
 import torch.profiler
 
@@ -28,7 +27,8 @@ from sentence_attention.trainer.build_model_tokenizer import build_model_tokeniz
 if __name__ == "__main__":
 
     import subprocess
-    subprocess.check_output(['nvidia-smi'])
+
+    subprocess.check_output(["nvidia-smi"])
 
     hf_parser = transformers.HfArgumentParser(SentenceTrainingArguments)
     (training_args,) = hf_parser.parse_args_into_dataclasses()
@@ -40,43 +40,52 @@ if __name__ == "__main__":
 
     base_output_dir = os.path.basename(training_args.output_dir)
 
-    os.environ['CLEARML_TASK'] = f"{base_output_dir}"
+    os.environ["CLEARML_TASK"] = f"{base_output_dir}"
 
     state = PartialState()
     with state.local_main_process_first():
 
         if training_args.add_end_of_sentence_token:
             print("Loading fineweb edu tokenized with gpt2_eos")
-            datasets_path_prefix = '/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data'
+            datasets_path_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data"
 
-            dataset_suffix = ''
+            dataset_suffix = ""
             if training_args.number_of_eos_tokens > 1:
-                dataset_suffix = f'_num_{training_args.number_of_eos_tokens}'
+                dataset_suffix = f"_num_{training_args.number_of_eos_tokens}"
 
-            if training_args.model_type == 'sentence_pretrained_checkpoint':
+            if training_args.model_type == "sentence_pretrained_checkpoint":
                 # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
-                if 'llama-3.2' in training_args.model_checkpoint.lower():
-                    dataset_path = f'{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_with_eos_token{dataset_suffix}_merged'
-                elif 'qwen2' in training_args.model_checkpoint.lower():
-                    dataset_path = f'{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B_with_eos_token{dataset_suffix}_merged'
-                elif 'smollm2' in training_args.model_checkpoint.lower():
-                    dataset_path = f'{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token{dataset_suffix}_merged'
+                if "llama-3.2" in training_args.model_checkpoint.lower():
+                    dataset_path = (
+                        f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_with_eos_token{dataset_suffix}_merged"
+                    )
+                elif "qwen2" in training_args.model_checkpoint.lower():
+                    dataset_path = (
+                        f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B_with_eos_token{dataset_suffix}_merged"
+                    )
+                elif "smollm2" in training_args.model_checkpoint.lower():
+                    dataset_path = (
+                        f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token{dataset_suffix}_merged"
+                    )
                 else:
                     raise ValueError(f"Unknown model checkpoint: {training_args.model_checkpoint}")
                     # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx_full'
             else:
-                dataset_path = f'{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos'
+                dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos"
 
             fineweb_dataset = Dataset.load_from_disk(dataset_path)
 
             training_args.limit_dataset_shards
             training_args.offset_dataset_shards
 
-            TOTAL_SHARDS = 14 # CONSTANT
+            TOTAL_SHARDS = 14  # CONSTANT
             dataset_shards = []
 
             for i in range(TOTAL_SHARDS):
-                if i < training_args.offset_dataset_shards or i >= training_args.offset_dataset_shards + training_args.limit_dataset_shards:
+                if (
+                    i < training_args.offset_dataset_shards
+                    or i >= training_args.offset_dataset_shards + training_args.limit_dataset_shards
+                ):
                     continue
                 dataset_shards.append(fineweb_dataset.shard(index=i, num_shards=TOTAL_SHARDS))
                 print(f"loading shard {i}")
@@ -91,13 +100,12 @@ if __name__ == "__main__":
                     data_files.append(f"sample/100BT/{i:03}_{j:05}.parquet")
 
             fineweb_dataset = load_dataset("HuggingFaceFW/fineweb-edu", data_files=data_files, num_proc=48)
-            fineweb_dataset = fineweb_dataset['train']
-
+            fineweb_dataset = fineweb_dataset["train"]
 
             def tokenize_function(examples):
-                text = examples['text']
+                text = examples["text"]
 
-                tokenized_inputs = tokenizer(text, truncation=True, padding='max_length', max_length=1024, return_tensors='pt')
+                tokenized_inputs = tokenizer(text, truncation=True, padding="max_length", max_length=1024, return_tensors="pt")
 
                 return tokenized_inputs
 
@@ -113,15 +121,14 @@ if __name__ == "__main__":
 
     nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-
     def crutch_collator(examples):
         collate_dummy = nested_data_collator(examples)
 
-        if len(collate_dummy['attention_mask'].shape) == 3:
-            collate_dummy['attention_mask'] = collate_dummy['attention_mask'].squeeze(1)
+        if len(collate_dummy["attention_mask"].shape) == 3:
+            collate_dummy["attention_mask"] = collate_dummy["attention_mask"].squeeze(1)
 
-        assert 'special_embeddings_mask' in collate_dummy
-        assert 'clothest_end_of_sentence_token_idx' in collate_dummy
+        assert "special_embeddings_mask" in collate_dummy
+        assert "clothest_end_of_sentence_token_idx" in collate_dummy
 
         return collate_dummy
 
@@ -132,15 +139,26 @@ if __name__ == "__main__":
 
     callbacks = []
 
-
     class LogModelLayersGradNorm(TrainerCallback):
 
         def __init__(self, model):
             self.model = model
 
         def on_pre_optimizer_step(self, args, state, control, **kwargs):
-            print("model layers up proj grad", [ (i, self.model.model.layers[i].mlp.up_proj.weight.grad.norm(2).item()) for i in range(self.model.config.num_hidden_layers) ])
-            print("model layers down proj grad", [ (i, self.model.model.layers[i].mlp.down_proj.weight.grad.norm(2).item()) for i in range(self.model.config.num_hidden_layers) ])
+            print(
+                "model layers up proj grad",
+                [
+                    (i, self.model.model.layers[i].mlp.up_proj.weight.grad.norm(2).item())
+                    for i in range(self.model.config.num_hidden_layers)
+                ],
+            )
+            print(
+                "model layers down proj grad",
+                [
+                    (i, self.model.model.layers[i].mlp.down_proj.weight.grad.norm(2).item())
+                    for i in range(self.model.config.num_hidden_layers)
+                ],
+            )
             print("model lm_head grad norm", self.model.lm_head.weight.grad.norm(2).item())
 
             print("\n\n\n")
@@ -148,7 +166,7 @@ if __name__ == "__main__":
 
     # callbacks.append(LogModelLayersGradNorm(model))
 
-    if 'only_eos_embedding' in training_args.optimized_params:
+    if "only_eos_embedding" in training_args.optimized_params:
         unfrozen_idxes = model.config.end_of_sentence_token_ids
 
         class ZeroOutGradientsForAllExceptEosEmbedding(TrainerCallback):
@@ -175,18 +193,15 @@ if __name__ == "__main__":
 
         callbacks.append(ZeroOutGradientsForAllExceptEosEmbedding(model))
 
-
     trainer = SentenceTrainer(
         model,
         callbacks=callbacks,
         processing_class=tokenizer,
         args=training_args,
-
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
-
         compute_loss_func=ForCausalLMLoss,
     )
 
@@ -197,11 +212,11 @@ if __name__ == "__main__":
     # trainer.train()
     out_dir_path = Path(training_args.output_dir)
 
-    finished_target_dir = out_dir_path.parent.parent / 'experiments' / out_dir_path.name
+    finished_target_dir = out_dir_path.parent.parent / "experiments" / out_dir_path.name
     print("finished_target_dir", finished_target_dir)
     while True:
         if finished_target_dir.exists():
-            finished_target_dir = finished_target_dir.parent / f'{finished_target_dir.name}_duplicate'
+            finished_target_dir = finished_target_dir.parent / f"{finished_target_dir.name}_duplicate"
             continue
         break
 
@@ -209,4 +224,3 @@ if __name__ == "__main__":
 
     shutil.move(out_dir_path, finished_target_dir)
     print("Moved from", out_dir_path, "to finished_target_dir", finished_target_dir)
-

@@ -1,10 +1,10 @@
-
 import os
 import datasets
 from datasets import Dataset
 from tqdm import tqdm
 import shutil
 from pathlib import Path
+
 
 def merge_sharded_datasets():
     """
@@ -27,7 +27,7 @@ def merge_sharded_datasets():
             try:
                 # Get the list of shard directories
                 output_dir = sorted(os.listdir(dataset_path))
-                
+
                 if not output_dir:
                     print(f"No shards found in {dataset_path}. Skipping.")
                     continue
@@ -35,14 +35,14 @@ def merge_sharded_datasets():
                 print(f"Found {len(output_dir)} shards in {dataset_path}")
 
                 all_datasets = []
-                for data_file in tqdm(output_dir, desc=f'Loading shards for {dataset_dir.name}'):
+                for data_file in tqdm(output_dir, desc=f"Loading shards for {dataset_dir.name}"):
                     shard_path = os.path.join(dataset_path, data_file)
                     if os.path.isdir(shard_path):
                         dataset = Dataset.load_from_disk(shard_path)
                         all_datasets.append(dataset)
                     else:
                         print(f"Skipping non-directory file: {data_file}")
-                
+
                 if not all_datasets:
                     print(f"No valid datasets loaded from shards in {dataset_path}. Skipping.")
                     continue
@@ -67,6 +67,7 @@ def merge_sharded_datasets():
 
             except Exception as e:
                 print(f"An error occurred while processing {dataset_path}: {e}")
+
 
 if __name__ == "__main__":
     merge_sharded_datasets()

@@ -140,13 +140,13 @@ class Qwen2TokenizerFastEOS(PreTrainedTokenizerFast):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.num_eos_tokens = kwargs.get('num_eos_tokens', 1)
+        self.num_eos_tokens = kwargs.get("num_eos_tokens", 1)
 
         if self.num_eos_tokens >= 1:
-            self.end_of_sentence_tokens_list = [ f'<end_of_sentence_{i}>' for i in range(self.num_eos_tokens) ]
+            self.end_of_sentence_tokens_list = [f"<end_of_sentence_{i}>" for i in range(self.num_eos_tokens)]
             if self.num_eos_tokens == 1:
                 # backward compatibility
-                self.end_of_sentence_tokens_list = [ '<end_of_sentence>' ]
+                self.end_of_sentence_tokens_list = ["<end_of_sentence>"]
         else:
             raise ValueError("num_eos_tokens cant be negative")
 
@@ -176,26 +176,22 @@ class Qwen2TokenizerFastEOS(PreTrainedTokenizerFast):
         batch_text_or_text_pairs = [self.prepare_for_tokenization(x) for x in batch_text_or_text_pairs]
         return super().batch_encode_plus(batch_text_or_text_pairs, **kwargs)
 
-    def prepare_for_tokenization(
-        self, text: str
-    ) -> tuple[str, dict[str, Any]]:
+    def prepare_for_tokenization(self, text: str) -> tuple[str, dict[str, Any]]:
 
         end_of_sentence_token = "".join(self.end_of_sentence_tokens_list)
         patterns = [
-            (r'\. ', f'. {end_of_sentence_token}'),
-            (r'\? ', f'? {end_of_sentence_token}'),
-            (r'! ', f'! {end_of_sentence_token}'),
-            (r'\.\n', f'.\n{end_of_sentence_token}'),
-            (r'\?\n', f'?\n{end_of_sentence_token}'),
-            (r'!\n', f'!\n{end_of_sentence_token}'),
-            (r'\.$', f'. {end_of_sentence_token}'),
-            (r'!$', f'!{end_of_sentence_token}'),
-            (r'\?$', f'?{end_of_sentence_token}'),
+            (r"\. ", f". {end_of_sentence_token}"),
+            (r"\? ", f"? {end_of_sentence_token}"),
+            (r"! ", f"! {end_of_sentence_token}"),
+            (r"\.\n", f".\n{end_of_sentence_token}"),
+            (r"\?\n", f"?\n{end_of_sentence_token}"),
+            (r"!\n", f"!\n{end_of_sentence_token}"),
+            (r"\.$", f". {end_of_sentence_token}"),
+            (r"!$", f"!{end_of_sentence_token}"),
+            (r"\?$", f"?{end_of_sentence_token}"),
         ]
 
         for pattern, replacement in patterns:
             text = re.sub(pattern, replacement, text)
 
         return text
-
-

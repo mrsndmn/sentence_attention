@@ -1,0 +1,18 @@
+
+[tool.black]
+line-length = 128
+target-version = ['py38', 'py39', 'py310']
+exclude = '''
+/(
+    \.git
+    | \.github
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+)/
+'''

@@ -28,11 +28,11 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
 
         tokenizer_class = type(AutoTokenizer.from_pretrained(model_checkpoint)).__name__
 
-        if tokenizer_class in ['GPT2TokenizerFast', 'GPT2TokenizerFastEOS']:
+        if tokenizer_class in ["GPT2TokenizerFast", "GPT2TokenizerFastEOS"]:
             tokenizer_class = GPT2TokenizerFastEOS
-        elif tokenizer_class in ['PreTrainedTokenizerFast', 'PreTrainedTokenizerFastEOS']:
+        elif tokenizer_class in ["PreTrainedTokenizerFast", "PreTrainedTokenizerFastEOS"]:
             tokenizer_class = PreTrainedTokenizerFastEOS
-        elif tokenizer_class in ['Qwen2TokenizerFast', 'Qwen2TokenizerFastEOS']:
+        elif tokenizer_class in ["Qwen2TokenizerFast", "Qwen2TokenizerFastEOS"]:
             tokenizer_class = Qwen2TokenizerFastEOS
         else:
             raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
@@ -47,23 +47,23 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
 
     torch_dtype = torch.bfloat16
 
-    if training_args.model_type == 'sentence_pretrained_checkpoint':
+    if training_args.model_type == "sentence_pretrained_checkpoint":
         model_checkpoint = training_args.model_checkpoint
         print("Load sentence llama model from", model_checkpoint)
         model_class = None
-        if 'lama' in model_checkpoint.lower() or 'smollm2' in model_checkpoint.lower():
+        if "lama" in model_checkpoint.lower() or "smollm2" in model_checkpoint.lower():
             model_class = SentenceLlamaForCausalLM
-        elif 'qwen' in model_checkpoint.lower():
+        elif "qwen" in model_checkpoint.lower():
             model_class = SentenceQwen2ForCausalLM
 
         print("model_class", model_class)
         model = model_class.from_pretrained(model_checkpoint, torch_dtype=torch_dtype)
 
-        model.config._attn_implementation = 'sentence_attention'
+        model.config._attn_implementation = "sentence_attention"
     else:
         raise ValueError(f"{training_args.model_type} is not supported")
 
-    tokenizer.padding_side = 'left'
+    tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
 
     if training_args.add_end_of_sentence_token and model.config.vocab_size != len(tokenizer):
@@ -76,27 +76,29 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
         optimized_params = training_args.optimized_params
         print("optimized_params", optimized_params)
 
-        assert optimized_params in AVAILABLE_OPTIMIZED_PARAMS, f'unknown optimized_params value: {optimized_params}. available ones: {AVAILABLE_OPTIMIZED_PARAMS}'
+        assert (
+            optimized_params in AVAILABLE_OPTIMIZED_PARAMS
+        ), f"unknown optimized_params value: {optimized_params}. available ones: {AVAILABLE_OPTIMIZED_PARAMS}"
 
-        if 'full' == optimized_params:
+        if "full" == optimized_params:
             pass
-        elif 'only_eos_embedding' == optimized_params:
+        elif "only_eos_embedding" == optimized_params:
             freeze_model(model)
             for p in model.model.embed_tokens.parameters():
                 p.requires_grad = True
 
             for p in model.lm_head.parameters():
                 p.requires_grad = True
-        elif 'lora' == optimized_params:
+        elif "lora" == optimized_params:
             from peft import LoraConfig, TaskType
 
             # create LoRA configuration object
             lora_config = LoraConfig(
-                task_type=TaskType.CAUSAL_LM, # type of task to train on
-                inference_mode=False, # set to False for training
-                r=8, # dimension of the smaller matrices
-                lora_alpha=32, # scaling factor
-                lora_dropout=0.1 # dropout of LoRA layers
+                task_type=TaskType.CAUSAL_LM,  # type of task to train on
+                inference_mode=False,  # set to False for training
+                r=8,  # dimension of the smaller matrices
+                lora_alpha=32,  # scaling factor
+                lora_dropout=0.1,  # dropout of LoRA layers
             )
             model.add_adapter(lora_config, adapter_name="lora_1")
 
@@ -108,4 +110,3 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
     print("num freezed model parameters:", sum(p.numel() for p in model.parameters() if not p.requires_grad))
 
     return model, tokenizer
-

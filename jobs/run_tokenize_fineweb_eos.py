@@ -5,9 +5,9 @@ from mls.manager.job.utils import training_job_api_from_profile
 
 if __name__ == "__main__":
 
-    dry = len(sys.argv) > 1 and sys.argv[1] == 'dry'
+    dry = len(sys.argv) > 1 and sys.argv[1] == "dry"
 
-    client, extra_options = training_job_api_from_profile('default')
+    client, extra_options = training_job_api_from_profile("default")
 
     workdir = os.getcwd()
 
@@ -17,8 +17,8 @@ if __name__ == "__main__":
 
     num_eos_tokens = 4
 
-    for pretrained_model_name in ['HuggingFaceTB/SmolLM2-1.7B', 'unsloth/Llama-3.2-1B', 'Qwen/Qwen2.5-1.5B']:
-    # for pretrained_model_name in ['Qwen/Qwen2.5-1.5B']:
+    for pretrained_model_name in ["HuggingFaceTB/SmolLM2-1.7B", "unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
+        # for pretrained_model_name in ['Qwen/Qwen2.5-1.5B']:
 
         for shard_i in range(num_shards):
 
@@ -30,21 +30,20 @@ if __name__ == "__main__":
 
             result = client.run_job(
                 payload={
-                    'script': script,
-                    'job_desc': f'Tokenize fineweb EOS model={pretrained_model_name} shard={shard_i} #{author_name} #rnd #multimodal @mrsndmn',
-                    'instance_type': 'a100.1gpu',
-                    'region': extra_options['region'],
-                    'env_variables': {
-                        'PYTHONPATH': './src',
-                        'HF_HOME': '/workspace-SR004.nfs2/.cache/huggingface',
+                    "script": script,
+                    "job_desc": f"Tokenize fineweb EOS model={pretrained_model_name} shard={shard_i} #{author_name} #rnd #multimodal @mrsndmn",
+                    "instance_type": "a100.1gpu",
+                    "region": extra_options["region"],
+                    "env_variables": {
+                        "PYTHONPATH": "./src",
+                        "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
                     },
-                    'type': 'binary_exp',
-                    'shm_size_class': 'medium',
-                    'base_image': 'cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36',
-                    'n_workers': 1,              # Количество воркеров.
-                    'processes_per_worker': 1,   # Количество процессов на воркер. Для accelerate нужно запускать 1 процесс на воркер. Для torchrun лучше не заполнять этот параметр. По умолчанию запускается по количеству GPU на одном воркере - это подходит для torchrun.
+                    "type": "binary_exp",
+                    "shm_size_class": "medium",
+                    "base_image": "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36",
+                    "n_workers": 1,  # Количество воркеров.
+                    "processes_per_worker": 1,  # Количество процессов на воркер. Для accelerate нужно запускать 1 процесс на воркер. Для torchrun лучше не заполнять этот параметр. По умолчанию запускается по количеству GPU на одном воркере - это подходит для torchrun.
                 }
             )
 
             print(pretrained_model_name, shard_i, ":\t", result)
-

@@ -19,7 +19,16 @@ from transformers import GenerationConfig
 
 class SentenceTrainer(Trainer):
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None, log_metrics=True, log_prefix='debug', force_log=False):
+    def compute_loss(
+        self,
+        model,
+        inputs,
+        return_outputs=False,
+        num_items_in_batch=None,
+        log_metrics=True,
+        log_prefix="debug",
+        force_log=False,
+    ):
         """
         How the loss is computed by Trainer. By default, all models return the loss in the first element.
 
@@ -30,12 +39,12 @@ class SentenceTrainer(Trainer):
 
         labels = inputs.pop("labels")
 
-        special_embeddings_mask = inputs.get('special_embeddings_mask')
+        special_embeddings_mask = inputs.get("special_embeddings_mask")
 
-        attention_mask = inputs['attention_mask']
+        attention_mask = inputs["attention_mask"]
         # token_frequency = inputs.get('token_frequency', None)
         model_kwargs = {
-            "input_ids": inputs['input_ids'],
+            "input_ids": inputs["input_ids"],
             "attention_mask": attention_mask,
             "use_cache": False,
             "output_attentions": False,
@@ -50,7 +59,7 @@ class SentenceTrainer(Trainer):
         assert special_embeddings_mask is not None
         model_kwargs["special_embeddings_mask"] = special_embeddings_mask
 
-        model_kwargs['clothest_end_of_sentence_token_idx'] = inputs['clothest_end_of_sentence_token_idx']
+        model_kwargs["clothest_end_of_sentence_token_idx"] = inputs["clothest_end_of_sentence_token_idx"]
 
         assert special_embeddings_mask.shape == attention_mask.shape
 
@@ -69,7 +78,9 @@ class SentenceTrainer(Trainer):
 
             # User-defined compute_loss function
             if self.compute_loss_func is not None:
-                loss = self.compute_loss_func(outputs.logits, labels, vocab_size=unwrapped_model.config.vocab_size, num_items_in_batch=num_items_in_batch)
+                loss = self.compute_loss_func(
+                    outputs.logits, labels, vocab_size=unwrapped_model.config.vocab_size, num_items_in_batch=num_items_in_batch
+                )
             elif model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
                 loss = self.label_smoother(outputs, labels, shift_labels=True)
             else:
@@ -83,10 +94,7 @@ class SentenceTrainer(Trainer):
             # We don't use .loss here since the model may return tuples instead of ModelOutput.
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
 
-        if (
-            self.args.average_tokens_across_devices
-            and (self.model_accepts_loss_kwargs or self.compute_loss_func)
-        ):
+        if self.args.average_tokens_across_devices and (self.model_accepts_loss_kwargs or self.compute_loss_func):
             loss *= self.accelerator.num_processes
 
         outputs.loss = loss
@@ -122,14 +130,14 @@ class SentenceTrainer(Trainer):
         # }
         genconfig = GenerationConfig()
 
-        caption_legth = inputs['input_ids'].shape[1] - 2
+        caption_legth = inputs["input_ids"].shape[1] - 2
         genconfig.max_length = caption_legth
 
         # batch_size, seq_len = inputs['input_ids'].shape[0], 2
         # special_embeddings_mask = inputs.get('special_embeddings_mask', None)
         # attention_mask = torch.ones([batch_size, seq_len], device=inputs['input_ids'].device)
 
-        prefix_ids = inputs['input_ids'][:, :2]
+        prefix_ids = inputs["input_ids"][:, :2]
         # all_generation_params = {
         #     'generation_config': genconfig,
         #     'max_new_tokens': caption_legth,
@@ -141,7 +149,7 @@ class SentenceTrainer(Trainer):
 
         result = {
             "prefix_ids": prefix_ids,
-            "input_ids": inputs['input_ids'],
+            "input_ids": inputs["input_ids"],
         }
 
         return result
@@ -194,7 +202,6 @@ class SentenceTrainer(Trainer):
             else:
                 ignore_keys = []
 
-
         with torch.no_grad():
             # print('inputs shape', inputs['input_ids'].shape)
 
@@ -204,7 +211,7 @@ class SentenceTrainer(Trainer):
                     inputs,
                     return_outputs=True,
                     log_metrics=False,
-                    log_prefix='eval_debug',
+                    log_prefix="eval_debug",
                     force_log=False,
                 )
             loss = loss.mean().detach()
@@ -312,9 +319,7 @@ class SentenceTrainer(Trainer):
             # Prediction step
             losses, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
             main_input_name = getattr(self.model, "main_input_name", "input_ids")
-            inputs_decode = (
-                self._prepare_input(inputs[main_input_name]) if "inputs" in args.include_for_metrics else None
-            )
+            inputs_decode = self._prepare_input(inputs[main_input_name]) if "inputs" in args.include_for_metrics else None
 
             # Update containers
             if losses is not None:
@@ -355,11 +360,7 @@ class SentenceTrainer(Trainer):
                     batch_kwargs = {}
                     batch_kwargs["losses"] = losses if "loss" in args.include_for_metrics else None
                     batch_kwargs["inputs"] = inputs if "inputs" in args.include_for_metrics else None
-                    metrics = self.compute_metrics(
-                        predictions=all_preds,
-                        label_ids=all_labels,
-                        **eval_set_kwargs
-                    )
+                    metrics = self.compute_metrics(predictions=all_preds, label_ids=all_labels, **eval_set_kwargs)
 
                 del losses, logits, labels, inputs, eval_set_kwargs
                 torch.cuda.empty_cache()
@@ -416,11 +417,7 @@ class SentenceTrainer(Trainer):
         ):
             eval_set_kwargs_arrays["losses"] = all_losses if "loss" in args.include_for_metrics else None
             eval_set_kwargs_arrays["inputs"] = all_inputs if "inputs" in args.include_for_metrics else None
-            metrics = self.compute_metrics(
-                predictions=all_preds,
-                label_ids=all_labels,
-                **eval_set_kwargs_arrays
-            )
+            metrics = self.compute_metrics(predictions=all_preds, label_ids=all_labels, **eval_set_kwargs_arrays)
         elif metrics is None:
             metrics = {}
 
@@ -452,4 +449,3 @@ class SentenceTrainer(Trainer):
             except Exception as e:
                 print("Error in saving model", e)
                 time.sleep(300)
-

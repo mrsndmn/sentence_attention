@@ -24,7 +24,6 @@ from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.integrations.sdpa_attention import repeat_kv
 
 
-
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint
@@ -54,11 +53,9 @@ from transformers.models.llama.modeling_llama import (
 )
 
 
-
 logger = logging.get_logger(__name__)
 
 _CONFIG_FOR_DOC = "LlamaConfig"
-
 
 
 CHECK_WITH_PYTHON = False
@@ -67,6 +64,7 @@ if is_torch_flex_attn_available():
     from torch.nn.attention.flex_attention import BlockMask
 
     from transformers.integrations.flex_attention import make_flex_block_causal_mask
+
 
 def special_token_mask_to_clothest_token_idx_slow(special_token_mask):
     # [ bs, seq_len ]
@@ -85,6 +83,7 @@ def special_token_mask_to_clothest_token_idx_slow(special_token_mask):
                 clothest_token_idx[batch_i, seq_len_i] = current_clothest_token_idx
 
     return clothest_token_idx
+
 
 def sentence_attention_forward(
     module: torch.nn.Module,
@@ -143,9 +142,11 @@ ALL_ATTENTION_FUNCTIONS["sentence_attention"] = sentence_attention_forward
 class SentenceBaseModelOutputWithPast(BaseModelOutputWithPast):
     pass
 
+
 @dataclass
 class SentenceCausalLMOutputWithPast(CausalLMOutputWithPast):
     pass
+
 
 class SentenceLlamaAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
@@ -160,18 +161,10 @@ class SentenceLlamaAttention(nn.Module):
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
 
-        self.q_proj = nn.Linear(
-            config.hidden_size, config.num_attention_heads * self.head_dim, bias=config.attention_bias
-        )
-        self.k_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias
-        )
-        self.v_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias
-        )
-        self.o_proj = nn.Linear(
-            config.num_attention_heads * self.head_dim, config.hidden_size, bias=config.attention_bias
-        )
+        self.q_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim, bias=config.attention_bias)
+        self.k_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias)
+        self.v_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias)
+        self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size, bias=config.attention_bias)
 
     def forward(
         self,
@@ -212,8 +205,16 @@ class SentenceLlamaAttention(nn.Module):
             else:
                 attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        attn_output, attn_weights = attention_interface( self, query_states, key_states, value_states, attention_mask, dropout=0.0 if not self.training else self.attention_dropout, scaling=self.scaling, **kwargs,)
-
+        attn_output, attn_weights = attention_interface(
+            self,
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            dropout=0.0 if not self.training else self.attention_dropout,
+            scaling=self.scaling,
+            **kwargs,
+        )
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
         attn_output = self.o_proj(attn_output)
@@ -235,7 +236,6 @@ class SentenceLlamaDecoderLayer(nn.Module):
         self.mlp = LlamaMLP(config)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
 
     def forward(
         self,
@@ -304,8 +304,6 @@ LLAMA_START_DOCSTRING = r"""
 """
 
 
-
-
 @add_start_docstrings(
     "The bare LLaMA Model outputting raw hidden-states without any specific head on top.",
     LLAMA_START_DOCSTRING,
@@ -333,7 +331,6 @@ class SentenceLlamaPreTrainedModel(PreTrainedModel):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
-
 
 
 LLAMA_INPUTS_DOCSTRING = r"""
@@ -430,7 +427,6 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         assert config.num_hidden_layers % 2 == 0
 
-
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
 
         self.layers = nn.ModuleList(
@@ -450,7 +446,20 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
     def set_input_embeddings(self, value):
         self.embed_tokens = value
 
-    def forward_decoder_layer(self, decoder_layer, hidden_states, attention_mask, position_ids, past_key_values, output_attentions, use_cache, cache_position, position_embeddings, special_embeddings_mask, clothest_end_of_sentence_token_idx):
+    def forward_decoder_layer(
+        self,
+        decoder_layer,
+        hidden_states,
+        attention_mask,
+        position_ids,
+        past_key_values,
+        output_attentions,
+        use_cache,
+        cache_position,
+        position_embeddings,
+        special_embeddings_mask,
+        clothest_end_of_sentence_token_idx,
+    ):
 
         if self.gradient_checkpointing and self.training:
             layer_outputs = self._gradient_checkpointing_func(
@@ -482,7 +491,23 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         return layer_outputs
 
-    def forward_decoder_layers(self, decoder_layers, hidden_states, attention_mask, position_ids, past_key_values, output_attentions, output_hidden_states, use_cache, cache_position, position_embeddings, all_hidden_states, all_self_attns, special_embeddings_mask, clothest_end_of_sentence_token_idx):
+    def forward_decoder_layers(
+        self,
+        decoder_layers,
+        hidden_states,
+        attention_mask,
+        position_ids,
+        past_key_values,
+        output_attentions,
+        output_hidden_states,
+        use_cache,
+        cache_position,
+        position_embeddings,
+        all_hidden_states,
+        all_self_attns,
+        special_embeddings_mask,
+        clothest_end_of_sentence_token_idx,
+    ):
 
         for decoder_layer in decoder_layers:
             if output_hidden_states:
@@ -531,9 +556,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         # **flash_attn_kwargs: Unpack[FlashAttentionKwargs],
     ) -> Union[Tuple, SentenceBaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
+        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -547,9 +570,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             use_cache = False
 
         if self.gradient_checkpointing and self.training and use_cache:
-            logger.warning_once(
-                "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
-            )
+            logger.warning_once("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.")
             use_cache = False
 
         if not isinstance(past_key_values, (type(None), Cache)):
@@ -574,7 +595,9 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             if past_key_values is not None:
                 past_key_values_len = past_key_values.get_seq_length()
 
-            attention_mask = torch.ones([input_ids.shape[0], input_ids.shape[1] + past_key_values_len], device=input_ids.device, dtype=torch.long)
+            attention_mask = torch.ones(
+                [input_ids.shape[0], input_ids.shape[1] + past_key_values_len], device=input_ids.device, dtype=torch.long
+            )
 
         if special_embeddings_mask is None:
             special_embeddings_mask = torch.zeros_like(attention_mask)
@@ -586,8 +609,6 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         if clothest_end_of_sentence_token_idx is None:
             clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
-
-
 
         assert len(attention_mask.shape) == 2
 
@@ -630,7 +651,6 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             special_embeddings_mask,
             clothest_end_of_sentence_token_idx,
         )
-
 
         hidden_states = self.norm(hidden_states)
 
@@ -692,14 +712,11 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             target_length = past_key_values.get_max_cache_shape()
         else:
             target_length = (
-                attention_mask.shape[-1]
-                if isinstance(attention_mask, torch.Tensor)
-                else past_seen_tokens + sequence_length + 1
+                attention_mask.shape[-1] if isinstance(attention_mask, torch.Tensor) else past_seen_tokens + sequence_length + 1
             )
 
         # print("update causal mask: target_length", target_length)
         # print("update causal mask: sequence_length", sequence_length)
-
 
         if self.config._attn_implementation in ["sentence_attention"] and not is_sentence_chunked_prefill:
             causal_mask = self._prepare_4d_causal_attention_mask_with_cache_position_sentence_attention(
@@ -777,9 +794,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             causal_mask = attention_mask
         else:
             min_dtype = torch.finfo(dtype).min
-            causal_mask = torch.full(
-                (sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=device
-            )
+            causal_mask = torch.full((sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=device)
             if sequence_length != 1:
                 causal_mask = torch.triu(causal_mask, diagonal=1)
             causal_mask *= torch.arange(target_length, device=device) > cache_position.reshape(-1, 1)
@@ -789,9 +804,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 mask_length = attention_mask.shape[-1]
                 padding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :]
                 padding_mask = padding_mask == 0
-                causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(
-                    padding_mask, min_dtype
-                )
+                causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(padding_mask, min_dtype)
 
         return causal_mask
 
@@ -844,49 +857,49 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         attention_mask_bool = attention_mask.to(dtype=torch.bool)  # [bs, k_len]
 
         clothest_end_of_sentence_token_idx = kwargs["clothest_end_of_sentence_token_idx"]  # [bs, q_len]
-        special_embeddings_mask = kwargs["special_embeddings_mask"].to(torch.bool)         # [bs, k_len]
+        special_embeddings_mask = kwargs["special_embeddings_mask"].to(torch.bool)  # [bs, k_len]
 
         # ----------------------------------------------------------------------------
         # Build broadcastable index grids for queries (q) and keys (k)
         # ----------------------------------------------------------------------------
-        q_idx = torch.arange(q_len, device=device).view(1, q_len, 1)         # shape: (1, q_len, 1)
-        k_idx = torch.arange(k_len, device=device).view(1, 1, k_len)         # shape: (1, 1, k_len)
+        q_idx = torch.arange(q_len, device=device).view(1, q_len, 1)  # shape: (1, q_len, 1)
+        k_idx = torch.arange(k_len, device=device).view(1, 1, k_len)  # shape: (1, 1, k_len)
 
         # ----------------------------------------------------------------------------
         # Base causal condition: k ≤ q
         # ----------------------------------------------------------------------------
         diff_q_idx_k_idx = k_idx.max() - q_idx.max()
 
-        causal_base = k_idx <= (q_idx + diff_q_idx_k_idx)                                            # (1, q_len, k_len)
+        causal_base = k_idx <= (q_idx + diff_q_idx_k_idx)  # (1, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Padding masks for queries and keys
         # ----------------------------------------------------------------------------
         if q_len < attention_mask_bool.shape[1]:
             # assert sequence is left padded
-            q_valid = attention_mask_bool[:, -q_len:].view(bs, q_len, 1)                       # (bs, q_len, 1)
+            q_valid = attention_mask_bool[:, -q_len:].view(bs, q_len, 1)  # (bs, q_len, 1)
         else:
-            q_valid = attention_mask_bool.view(bs, q_len, 1)                       # (bs, q_len, 1)
+            q_valid = attention_mask_bool.view(bs, q_len, 1)  # (bs, q_len, 1)
 
-        k_valid = attention_mask_bool.view(bs, 1, k_len)                       # (bs, 1, k_len)
-        valid_positions = q_valid & k_valid                                    # (bs, q_len, k_len)
+        k_valid = attention_mask_bool.view(bs, 1, k_len)  # (bs, 1, k_len)
+        valid_positions = q_valid & k_valid  # (bs, q_len, k_len)
 
         causal_valid_positions = valid_positions.clone()
         # if q_len < attention_mask_bool.shape[1]:
         #     causal_valid_positions[:, :, :-q_len] = False
 
         # Apply base causal & validity
-        causal_and_valid = causal_base & causal_valid_positions                       # (bs, q_len, k_len)
-        full_causal_and_valid = causal_base & valid_positions                       # (bs, q_len, k_len)
+        causal_and_valid = causal_base & causal_valid_positions  # (bs, q_len, k_len)
+        full_causal_and_valid = causal_base & valid_positions  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Block-causal component via EOS index
         # ----------------------------------------------------------------------------
         # clothest_end_of_sentence_token_idx gives, for every query, the index of the closest EOS *at or before* q.
         if q_len < clothest_end_of_sentence_token_idx.shape[1]:
-            eos_idx = clothest_end_of_sentence_token_idx[:, -q_len:].view(bs, q_len, 1)        # (bs, q_len, 1)
+            eos_idx = clothest_end_of_sentence_token_idx[:, -q_len:].view(bs, q_len, 1)  # (bs, q_len, 1)
         else:
-            eos_idx = clothest_end_of_sentence_token_idx.view(bs, q_len, 1)        # (bs, q_len, 1)
+            eos_idx = clothest_end_of_sentence_token_idx.view(bs, q_len, 1)  # (bs, q_len, 1)
 
         block_causal = causal_and_valid.clone()
         block_causal = causal_and_valid & (k_idx >= eos_idx)
@@ -895,13 +908,13 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         # ----------------------------------------------------------------------------
         # Special embedding visibility (within causal window)
         # ----------------------------------------------------------------------------
-        special_keys = special_embeddings_mask.view(bs, 1, k_len)              # (bs, 1, k_len)
-        special_visible = full_causal_and_valid & special_keys                      # (bs, q_len, k_len)
+        special_keys = special_embeddings_mask.view(bs, 1, k_len)  # (bs, 1, k_len)
+        special_visible = full_causal_and_valid & special_keys  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Final visibility mask
         # ----------------------------------------------------------------------------
-        allowed = block_causal | special_visible                               # (bs, q_len, k_len)
+        allowed = block_causal | special_visible  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Convert boolean visibility to the floating mask expected by the model
@@ -914,7 +927,6 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         # torch.save(final_mask, "final_mask_partial.pt")
 
         return final_mask
-
 
 
 # Mostly Copy paste of LlamaForCausalLM
@@ -939,14 +951,16 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
     ):
-        outputs = super().prepare_inputs_for_generation(input_ids, past_key_values, attention_mask, inputs_embeds, cache_position, **kwargs)
+        outputs = super().prepare_inputs_for_generation(
+            input_ids, past_key_values, attention_mask, inputs_embeds, cache_position, **kwargs
+        )
 
         special_embeddings_mask = torch.zeros_like(attention_mask)
         if self.config.end_of_sentence_token_id is not None:
             special_embeddings_mask[input_ids == self.config.end_of_sentence_token_id] = 1
 
-        outputs['special_embeddings_mask'] = special_embeddings_mask
-        outputs['clothest_end_of_sentence_token_idx'] = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
+        outputs["special_embeddings_mask"] = special_embeddings_mask
+        outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
 
         return outputs
 
@@ -1026,9 +1040,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         ```"""
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
+        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
@@ -1056,12 +1068,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         loss = None
         if labels is not None:
-            loss = self.loss_function(
-                logits=logits,
-                labels=labels,
-                vocab_size=self.config.vocab_size,
-                **kwargs
-            )
+            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -1074,6 +1081,3 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-
-
-
