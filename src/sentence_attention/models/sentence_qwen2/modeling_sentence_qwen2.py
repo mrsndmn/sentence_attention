@@ -12,14 +12,19 @@ from transformers.modeling_outputs import (
 )
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
+from transformers.models.qwen2.modeling_qwen2 import (
+    KwargsForCausalLM,
+    Qwen2Config,
+    Qwen2DecoderLayer,
+    Qwen2RMSNorm,
+    Qwen2RotaryEmbedding,
+)
 from transformers.processing_utils import Unpack
 from transformers.utils import (
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
     logging,
 )
-
-from .modeling_qwen2 import KwargsForCausalLM, Qwen2Config, Qwen2DecoderLayer, Qwen2RMSNorm, Qwen2RotaryEmbedding
 
 logger = logging.get_logger(__name__)
 
