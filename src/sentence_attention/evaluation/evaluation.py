@@ -4,9 +4,20 @@ import os
 import torch
 from lighteval.logging.evaluation_tracker import EnhancedJSONEncoder, EvaluationTracker
 from lighteval.pipeline import EnvConfig, ParallelismManager, Pipeline, PipelineParameters
-from sentence_attention.evaluation.benchmarks import checkpoint_evaluation_file, per_task_default_params
+from sentence_attention.evaluation.benchmarks import checkpoint_evaluation_file
 
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
+
+task_to_default_batch_size = {
+    "arc": 128,
+    "hellaswag": 64,
+    "mmlu_cloze": 16,
+    "mmlu_pro_cloze": 16,
+    "piqa": 128,
+    "siqa": 512,
+    "openbookqa": 256,
+    "winogrande": 512,
+}
 
 
 def evaluate_lighteval_task_save_results(model, model_checkpoint, task_name, override_batch_size=None, num_fewshot_seeds=None):
@@ -29,11 +40,13 @@ def evaluate_lighteval_task(model, task_name, override_batch_size=None, num_fews
 
     evaluation_tracker = EvaluationTracker(output_dir=evaluation_output_dir, save_details=True)
 
-    if override_batch_size is None:
-        override_batch_size = per_task_default_params.get(task_name, {}).get("override_batch_size", 1)
-
     if num_fewshot_seeds is None:
-        num_fewshot_seeds = per_task_default_params.get(task_name, {}).get("num_fewshot_seeds", 0)
+        num_fewshot_seeds = 0
+
+    if override_batch_size is None:
+        override_batch_size = task_to_default_batch_size.get(task_name, 8)
+
+    print(f"Evaluating {task_name} with override_batch_size={override_batch_size} and num_fewshot_seeds={num_fewshot_seeds}")
 
     pipeline_params = PipelineParameters(
         launcher_type=ParallelismManager.ACCELERATE,
@@ -65,7 +78,7 @@ def evaluate_lighteval_task(model, task_name, override_batch_size=None, num_fews
     return results
 
 
-def evaluate_ppl_wikitext_103(model, bincount=None):
+def evaluate_ppl_wikitext_103(model):
 
     results = evaluate_lighteval_task(
         model,
@@ -79,31 +92,31 @@ def evaluate_ppl_wikitext_103(model, bincount=None):
     return results
 
 
-def evaluate_acc_hellaswag(model, bincount=None):
+def evaluate_acc_hellaswag(model):
 
     results = evaluate_lighteval_task(
         model,
         "hellaswag",
-        override_batch_size=128,
+        override_batch_size=32,
         num_fewshot_seeds=0,
     )
 
     return results
 
 
-def evaluate_acc_mmlu_0_shot(model, bincount=None, override_batch_size=16):
+def evaluate_acc_mmlu_0_shot(model):
 
     results = evaluate_lighteval_task(
         model,
         "mmlu_cloze",
-        override_batch_size=override_batch_size,
+        override_batch_size=16,
         num_fewshot_seeds=0,
     )
 
     return results
 
 
-def evaluate_acc_mmlu_5_shot(model, bincount=None):
+def evaluate_acc_mmlu_5_shot(model):
 
     results = evaluate_lighteval_task(
         model,
