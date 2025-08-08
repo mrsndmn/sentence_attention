@@ -2,14 +2,16 @@ import os
 
 from transformers import AutoTokenizer
 
+workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
+
 
 def test_eos_tokens_count():
 
-    for eos_num in os.listdir("artifacts/experiments"):
-        for experiment_dir in os.listdir(os.path.join("artifacts/experiments", eos_num)):
-            for checkpoint in os.listdir(os.path.join("artifacts/experiments", eos_num, experiment_dir)):
+    for eos_num in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments")):
+        for experiment_dir in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num)):
+            for checkpoint in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir)):
                 tokenizer = AutoTokenizer.from_pretrained(
-                    os.path.join("artifacts/experiments", eos_num, experiment_dir, checkpoint)
+                    os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir, checkpoint)
                 )
                 if eos_num == "eos_4":
                     for i in range(4):
@@ -34,9 +36,9 @@ def test_same_name_checkpoints_in_different_eos_tokens():
 
     eos_nums_sets = []
 
-    for eos_num in os.listdir("artifacts/experiments"):
+    for eos_num in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments")):
 
-        experiments = set(os.listdir(os.path.join("artifacts/experiments", eos_num)))
+        experiments = set(os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num)))
 
         for prev_sets in eos_nums_sets:
             assert (
