@@ -25,10 +25,8 @@ flake8 .
 ## Tasks
 
 - [ ] eval all checkpoints, plot graphs
-    * evaluate only last checkpoint
-    * evaluate single benchmark
-    * dynamic evaluation hyperparameters - batch size
-    * check result already exists
+    * results table reporting
+- [ ] Fix auto modeling. create separate config classes for llama and qwen2
 - [ ] remove useless arguments from training args
 - [ ] refactor run jobs script - add arguments to scripts, move common code to separate file
 - [ ] Cursor rules

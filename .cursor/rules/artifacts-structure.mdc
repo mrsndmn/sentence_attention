@@ -1,0 +1,24 @@
+---
+description: Experiments artifacts structure
+globs:
+alwaysApply: true
+---
+
+Here is the artifacts structure:
+
+```
+artifacts/
+    experiments/
+        eos_<number>/
+            <experiment_name>/
+                checkpoint-<train_step>/
+                    evaluation/
+                        <benchmark_name>.json
+                        <other_benchmark_name>.json
+
+```
+
+
+* artifacts/experiments/eos_{1,4} - experiments with different number of `<end_of_sentence>` tokens
+* artifacts/experiments/eos_{1,4}/<experiment_name>/checkpoint-<train_step> - model checkpoint for corresponding train step
+* artifacts/experiments/eos_{1,4}/<experiment_name>/checkpoint-<train_step>/evaluation/<benchmark_name>.json - evaluation results for the benchmark

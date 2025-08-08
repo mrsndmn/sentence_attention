@@ -5,6 +5,7 @@ import os
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from rich.console import Console
+from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks, checkpoint_evaluation_file
 
 REGION = "SR004"
@@ -154,13 +155,6 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
             ),
             " \\\\",
         )
-
-
-def sort_checkpoints(checkpoints: list[str]):
-    for checkpoint in checkpoints:
-        assert checkpoint.startswith("checkpoint-")
-
-    return sorted(checkpoints, key=lambda x: int(x.split("-")[-1]), reverse=True)
 
 
 if __name__ == "__main__":
