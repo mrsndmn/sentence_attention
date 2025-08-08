@@ -32,14 +32,15 @@ def run_eval_experiments(experiment, job_description_prefix="Eval", dry=False):
 
     pretrained_model = experiment.pop("pretrained_model")
     benchmark = experiment.pop("benchmark")
-    output_dir = os.path.join(pretrained_model, "evaluation", benchmark)
 
     if len(experiment.keys()) > 0:
         raise ValueError("Invalid exp values!")
 
     script_str = f"bash -c 'date && cd {workdir_prefix} && {env_bin_path}/python scripts/evaluate.py --checkpoint {pretrained_model} --benchmark {benchmark}'"
 
-    print(f"\n\n{script_str}\n\n")
+    print(f"\n\n{script_str}\n")
+
+    description = f"{job_description_prefix} #rnd #multimodality @mrsndmn"
 
     job_w_args = client_lib.Job(
         base_image=BASE_IMAGE,
@@ -50,7 +51,7 @@ def run_eval_experiments(experiment, job_description_prefix="Eval", dry=False):
         n_workers=N_WORKERS,
         # conda_env="test_client_lib",
         processes_per_worker=1,
-        job_desc=f"{job_description_prefix} {benchmark} #rnd #multimodality @mrsndmn",
+        job_desc=description,
         # stop_timer=600, # в минутах, = 10 часов
         env_variables={
             "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
@@ -62,7 +63,7 @@ def run_eval_experiments(experiment, job_description_prefix="Eval", dry=False):
     if dry:
         print("JOB WAS NOT LAUNCHED")
     else:
-        print(output_dir, job_w_args.submit())
+        print(description, "\n", job_w_args.submit())
 
     return
 
@@ -218,8 +219,6 @@ if __name__ == "__main__":
                         dry=args.dry,
                         job_description_prefix=f"Eval {eos_num}/{experiment_dir}/{checkpoint} {benchmark}",
                     )
-
-                    print(full_experiment_dir)
 
                     processed_models += 1
 
