@@ -119,6 +119,12 @@ def main() -> None:
         choices=["latex", "latex_raw", "latex_booktabs"],
         help="Tabulate LaTeX format",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Filter results by model name",
+    )
     args = parser.parse_args()
 
     last_checkpoints = get_all_last_checkpoints()
@@ -177,6 +183,10 @@ def main() -> None:
 
     table_rows: List[List[str]] = []
     for row in rows:
+
+        if row["family"].lower() != args.model.lower():
+            continue
+
         values = [
             row["eos_tokens"],
             row["family"],
