@@ -171,13 +171,13 @@ if __name__ == "__main__":
     parser.add_argument("--num_checkpoints", type=int, default=1)
     parser.add_argument("--dry", action="store_true")
     parser.add_argument("--benchmark", type=str, default="all")
-    parser.add_argument("--limit_checkpoints", type=int, default=None)
+    parser.add_argument("--limit_jobs", type=int, default=None)
     args = parser.parse_args()
 
     num_checkpoints = args.num_checkpoints
 
-    if args.limit_checkpoints is not None:
-        assert args.limit_checkpoints > 0
+    if args.limit_jobs is not None:
+        assert args.limit_jobs > 0
 
     benchmarks = all_benchmarks if args.benchmark == "all" else [args.benchmark]
 
@@ -195,12 +195,11 @@ if __name__ == "__main__":
             if stop:
                 break
 
-            for checkpoint in sort_checkpoints(os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir)))[
-                :num_checkpoints
-            ]:
+            experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
+            checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
 
+            for checkpoint in checkpoints:
                 for benchmark in benchmarks:
-
                     full_experiment_dir = os.path.join(experiments_dir, eos_num, experiment_dir, checkpoint)
 
                     evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
@@ -222,7 +221,9 @@ if __name__ == "__main__":
 
                     processed_models += 1
 
-                    if args.limit_checkpoints is not None and processed_models >= args.limit_checkpoints:
+                    if args.limit_jobs is not None and processed_models >= args.limit_jobs:
                         print(f"Processed {processed_models} models, stopping")
                         stop = True
                         break
+
+    print(f"Runned {processed_models} jobs")
