@@ -22,8 +22,13 @@ flake8 .
 ```
 
 
-## TODO
+## Tasks
 
+- [ ] eval all checkpoints, plot graphs
+    * evaluate only last checkpoint
+    * evaluate single benchmark
+    * dynamic evaluation hyperparameters - batch size
+    * check result already exists
 - [ ] remove useless arguments from training args
 - [ ] refactor run jobs script - add arguments to scripts, move common code to separate file
 - [ ] Cursor rules
