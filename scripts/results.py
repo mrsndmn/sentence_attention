@@ -79,7 +79,7 @@ def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         with open(eval_file) as f:
             data = json.load(f)
         results_all = data.get("results", {}).get("all", {})
-        preferred_order = ["acc_norm", "acc", "ppl"]
+        preferred_order = ["acc_norm", "ppl"]
         value = None
         for key in preferred_order:
             if key in results_all:
@@ -92,6 +92,16 @@ def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         return str(value)
     except Exception:
         return ""
+
+
+def prettify_experiment_name(experiment_name: str) -> str:
+    return (
+        experiment_name.replace("ft_full_", "")
+        .replace("_num_eos_tokens_4", "")
+        .replace("ft_lora_", "")
+        .replace("ft_only_eos_embedding_", "")
+        .replace("sentence_", "")[:-9]
+    )
 
 
 def main() -> None:
@@ -115,6 +125,13 @@ def main() -> None:
     rows = build_rows(last_checkpoints)
     groups = group_rows(rows)
 
+    training_mapping = {
+        "eos_only": "EOS only",
+        "full finetune": "Full finetune",
+        "lora": "LoRA",
+        "unknown": "Unknown",
+    }
+
     # Controlled ordering: families and training types
     family_order = ["Qwen", "Llama", "Unknown"]
     train_type_order = ["eos_only", "full finetune", "lora", "unknown"]
@@ -136,8 +153,8 @@ def main() -> None:
                 values = [
                     row["eos_tokens"],
                     row["family"],
-                    row["training"],
-                    row["experiment"],
+                    training_mapping[row["training"]],
+                    prettify_experiment_name(row["experiment"]),
                 ]
                 for task in all_benchmarks:
                     metric = read_benchmark_metric(row["full_path"], task)
@@ -155,6 +172,39 @@ def main() -> None:
                 )
             )
             print()
+
+    print("\n\n\n")
+
+    table_rows: List[List[str]] = []
+    for row in rows:
+        values = [
+            row["eos_tokens"],
+            row["family"],
+            training_mapping[row["training"]],
+            prettify_experiment_name(row["experiment"]),
+        ]
+        for task in all_benchmarks:
+            metric = read_benchmark_metric(row["full_path"], task)
+            values.append(metric)
+        table_rows.append(values)
+
+    table_rows = sorted(
+        table_rows,
+        key=lambda x: (
+            x[3],
+            x[2],
+            x[0],
+        ),
+    )
+
+    print(
+        tabulate(
+            table_rows,
+            headers=headers,
+            tablefmt=args.tablefmt,
+            disable_numparse=True,
+        )
+    )
 
 
 if __name__ == "__main__":

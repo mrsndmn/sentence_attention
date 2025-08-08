@@ -415,6 +415,9 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
     def __init__(self, config: LlamaConfig):
         super().__init__(config)
+
+        self.config._attn_implementation = "sentence_attention"
+
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
@@ -568,6 +571,10 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         if not isinstance(past_key_values, (type(None), Cache)):
             raise ValueError("The `past_key_values` should be either a `Cache` object or `None`.")
+
+        assert (
+            self.config._attn_implementation == "sentence_attention"
+        ), f"config._attn_implementation is expected to be 'sentence_attention', but got {self.config._attn_implementation}"
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache()

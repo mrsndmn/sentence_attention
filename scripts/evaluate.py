@@ -1,7 +1,7 @@
 import argparse
 
 from peft import PeftConfig, PeftModel
-from sentence_attention.evaluation.evaluation import evaluate_lighteval_task_save_results
+from sentence_attention.evaluation.evaluation import evaluate_lighteval_task, evaluate_lighteval_task_save_results
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
 from transformers import AutoConfig
@@ -31,6 +31,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--benchmark", type=str, required=True)
+    parser.add_argument("--no-save-results", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -42,4 +43,10 @@ if __name__ == "__main__":
     else:
         model = load_model_from_checkpoint(args.checkpoint)
 
-    evaluate_lighteval_task_save_results(model, args.checkpoint, args.benchmark)
+    if args.no_save_results:
+        print("Evaluating without saving results")
+        results = evaluate_lighteval_task(model, args.benchmark)
+    else:
+        results = evaluate_lighteval_task_save_results(model, args.checkpoint, args.benchmark)
+
+    print(results)

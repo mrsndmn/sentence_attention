@@ -25,7 +25,12 @@ flake8 .
 ## Tasks
 
 - [ ] eval all checkpoints, plot graphs
-    * results table reporting
+    * eval base checkpoints
+    * rerun eval for Llama EOS only Llama-3.2-3B
+    * find missing checkpoints
+    * why 4 tokens has bad results?
+    * simplify experiemnt names
+    * paper table formatting, may be different splits
 - [ ] Fix auto modeling. create separate config classes for llama and qwen2
 - [ ] remove useless arguments from training args
 - [ ] refactor run jobs script - add arguments to scripts, move common code to separate file

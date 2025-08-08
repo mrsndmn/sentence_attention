@@ -157,6 +157,9 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
 
     def __init__(self, config: Qwen2Config):
         super().__init__(config)
+
+        self.config._attn_implementation = "sentence_attention"
+
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
@@ -207,6 +210,10 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         # TODO (joao): remove this exception in v4.56 -- it exists for users that try to pass a legacy cache
         if not isinstance(past_key_values, (type(None), Cache)):
             raise ValueError("The `past_key_values` should be either a `Cache` object or `None`.")
+
+        assert (
+            self.config._attn_implementation == "sentence_attention"
+        ), f"config._attn_implementation is expected to be 'sentence_attention', but got {self.config._attn_implementation}"
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
