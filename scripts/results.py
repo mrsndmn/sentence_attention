@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from sentence_attention.artifacts.experiments import get_all_last_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks
@@ -30,6 +30,9 @@ def infer_training_type(experiment_name: str) -> str:
         return "full finetune"
     if "ft_lora" in name_lower:
         return "lora"
+    if "base_model" in name_lower:
+        return "base model"
+
     return "unknown"
 
 
@@ -95,13 +98,62 @@ def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 
 
 def prettify_experiment_name(experiment_name: str) -> str:
-    return (
+    normalized_name = (
         experiment_name.replace("ft_full_", "")
+        .replace("_base_model", "")
         .replace("_num_eos_tokens_4", "")
         .replace("ft_lora_", "")
         .replace("ft_only_eos_embedding_", "")
-        .replace("sentence_", "")[:-9]
+        .replace("sentence_", "")
     )
+
+    if normalized_name[-9] == "_":
+        normalized_name = normalized_name[:-9]
+
+    return normalized_name
+
+
+def row_to_base_values(row: dict, training_mapping: Dict[str, str]) -> List[str]:
+    return [
+        row["eos_tokens"],
+        row["family"],
+        training_mapping.get(row["training"], row["training"]),
+        prettify_experiment_name(row["experiment"]),
+    ]
+
+
+def build_table(
+    rows: List[dict],
+    benchmarks: List[str],
+    training_mapping: Dict[str, str],
+    row_predicate=None,
+    model_filter: Optional[str] = None,
+    eos_tokens_filter: Optional[int] = None,
+) -> List[List[str]]:
+    table_rows: List[List[str]] = []
+    for row in rows:
+        if model_filter is not None and row["family"].lower() != model_filter.lower():
+            continue
+        if eos_tokens_filter is not None and int(row["eos_tokens"]) != eos_tokens_filter:
+            continue
+        if row_predicate is not None and not row_predicate(row):
+            continue
+
+        values = row_to_base_values(row, training_mapping)
+        for task in benchmarks:
+            metric = read_benchmark_metric(row["full_path"], task)
+            values.append(metric)
+        table_rows.append(values)
+
+    table_rows = sorted(
+        table_rows,
+        key=lambda x: (
+            x[3],  # experiment
+            x[2],  # training
+            x[0],  # #EOS
+        ),
+    )
+    return table_rows
 
 
 def main() -> None:
@@ -125,92 +177,79 @@ def main() -> None:
         default=None,
         help="Filter results by model name",
     )
+    parser.add_argument(
+        "--eos-tokens",
+        type=int,
+        default=None,
+        help="Filter results by number of EOS tokens",
+    )
     args = parser.parse_args()
 
     last_checkpoints = get_all_last_checkpoints()
     rows = build_rows(last_checkpoints)
-    groups = group_rows(rows)
 
     training_mapping = {
         "eos_only": "EOS only",
         "full finetune": "Full finetune",
         "lora": "LoRA",
+        "base model": "Base",
         "unknown": "Unknown",
     }
 
-    # Controlled ordering: families and training types
-    family_order = ["Qwen", "Llama", "Unknown"]
-    train_type_order = ["eos_only", "full finetune", "lora", "unknown"]
-
     headers = ["#EOS", "Family", "Training", "Experiment"] + all_benchmarks
 
-    for family in family_order:
-        for train in train_type_order:
-            key = (family, train)
-            if key not in groups:
-                continue
-            group_rows_list = groups[key]
-            if args.sort_experiment_name:
-                group_rows_list = sorted(group_rows_list, key=lambda r: r["experiment"])
-
-            # Build table rows with benchmark metrics
-            table_rows: List[List[str]] = []
-            for row in group_rows_list:
-                values = [
-                    row["eos_tokens"],
-                    row["family"],
-                    training_mapping[row["training"]],
-                    prettify_experiment_name(row["experiment"]),
-                ]
-                for task in all_benchmarks:
-                    metric = read_benchmark_metric(row["full_path"], task)
-                    values.append(metric)
-                table_rows.append(values)
-
-            # Print a LaTeX comment as a group header
-            print(f"% Group: {family} - {train}")
-            print(
-                tabulate(
-                    table_rows,
-                    headers=headers,
-                    tablefmt=args.tablefmt,
-                    disable_numparse=True,
-                )
-            )
-            print()
-
-    print("\n\n\n")
-
-    table_rows: List[List[str]] = []
-    for row in rows:
-
-        if row["family"].lower() != args.model.lower():
-            continue
-
-        values = [
-            row["eos_tokens"],
-            row["family"],
-            training_mapping[row["training"]],
-            prettify_experiment_name(row["experiment"]),
-        ]
-        for task in all_benchmarks:
-            metric = read_benchmark_metric(row["full_path"], task)
-            values.append(metric)
-        table_rows.append(values)
-
-    table_rows = sorted(
-        table_rows,
-        key=lambda x: (
-            x[3],
-            x[2],
-            x[0],
-        ),
+    # Full table: all benchmarks (CLI filters apply only here)
+    full_table_rows = build_table(
+        rows=rows,
+        benchmarks=all_benchmarks,
+        training_mapping=training_mapping,
+        row_predicate=None,
+        model_filter=args.model,
+        eos_tokens_filter=args.eos_tokens,
     )
 
     print(
         tabulate(
-            table_rows,
+            full_table_rows,
             headers=headers,
+            tablefmt=args.tablefmt,
+            disable_numparse=True,
+        )
+    )
+
+    # Short results benchmark tables
+    short_benchmarks = ["mmlu", "hellaswag", "arc", "winogrande"]
+    short_headers = ["#EOS", "Family", "Training", "Experiment"] + short_benchmarks
+
+    print("\n\nMain results:")
+    # 1) Main results: base models (0 EOS) and fully finetuned models
+    main_short_rows = build_table(
+        rows=rows,
+        benchmarks=short_benchmarks,
+        training_mapping=training_mapping,
+        row_predicate=lambda r: int(r["eos_tokens"]) == 0 or r["training"] == "full finetune",
+    )
+    print(
+        tabulate(
+            main_short_rows,
+            headers=short_headers,
+            tablefmt=args.tablefmt,
+            disable_numparse=True,
+        )
+    )
+
+    print("\n\nLoRA results:")
+    # 2) Do we need LoRA? Fully finetuned and LoRA models
+    lora_rows = build_table(
+        rows=rows,
+        benchmarks=short_benchmarks,
+        training_mapping=training_mapping,
+        row_predicate=lambda r: r["training"] in ("full finetune", "lora"),
+    )
+    print(
+        tabulate(
+            lora_rows,
+            headers=short_headers,
             tablefmt=args.tablefmt,
             disable_numparse=True,
         )

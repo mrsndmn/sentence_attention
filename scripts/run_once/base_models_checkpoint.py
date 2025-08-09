@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
     for model_name in models_names:
 
-        model_slug = model_name.split("/")[-1]
+        model_slug = model_name.split("/")[-1] + "_base_model"
 
         model = AutoModelForCausalLM.from_pretrained(model_name)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
