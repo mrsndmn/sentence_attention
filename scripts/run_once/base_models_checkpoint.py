@@ -20,7 +20,7 @@ if __name__ == "__main__":
         model = AutoModelForCausalLM.from_pretrained(model_name)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        target_path_for_model = os.path.join(target_path, model_slug)
+        target_path_for_model = os.path.join(target_path, model_slug, "checkpoint-0")
         print(f"Saving {model_name} to {target_path_for_model}")
 
         model.save_pretrained(target_path_for_model)
