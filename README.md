@@ -26,11 +26,9 @@ flake8 .
 
 - [ ] eval all checkpoints, plot graphs
     * eval base checkpoints
-    * rerun eval for Llama EOS only Llama-3.2-3B
-    * find missing checkpoints
-    * why 4 tokens has bad results?
     * simplify experiemnt names
     * paper table formatting, may be different splits
+    * run new experiments with 4 eos tokens for Qwen2.5-1.5B, Llama3.2-3B, etc
 - [ ] Fix auto modeling. create separate config classes for llama and qwen2
 - [ ] remove useless arguments from training args
 - [ ] refactor run jobs script - add arguments to scripts, move common code to separate file
