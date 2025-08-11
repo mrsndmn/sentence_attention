@@ -25,7 +25,6 @@ flake8 .
 ## Tasks
 
 - [ ] eval all checkpoints, plot graphs
-    * Count number of pruned tokens for each benchmark. Assert it is not zero. Or maybe tests with special flag
     * paper table formatting, may be different splits
     * run new experiments with 4 eos tokens for Qwen2.5-1.5B, Llama3.2-3B, etc, 8B models
     * how metrics change during training stages?
