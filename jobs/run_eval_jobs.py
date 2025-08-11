@@ -164,7 +164,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_checkpoints", type=int, default=1)
     parser.add_argument("--dry", action="store_true")
-    parser.add_argument("--benchmark", type=str, default="all")
+    parser.add_argument("--benchmark", type=str, default="all", choices=["all", "mmlu_cloze", "hellaswag", "arc", "winogrande"])
+    parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4"])
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
     parser.add_argument("--force", action="store_true")
@@ -187,12 +188,16 @@ if __name__ == "__main__":
         if stop:
             break
 
+        if args.eos_num != "all":
+            if eos_num != args.eos_num:
+                continue
+
         for experiment_dir in os.listdir(os.path.join(experiments_dir, eos_num)):
             if stop:
                 break
 
             if args.model is not None and args.model not in experiment_dir.lower():
-                print(f"Skipping {experiment_dir} because it does not contain {args.model}")
+                # print(f"Skipping {experiment_dir} because it does not contain {args.model}")
                 continue
 
             experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
