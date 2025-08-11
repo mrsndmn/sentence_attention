@@ -416,18 +416,39 @@ def run_group_full(*, dry: bool) -> None:
         )
 
 
+def check_lora_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eos_tokens: int) -> bool:
+    experiment_prefix_base_name_full = (
+        f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}/{experiment_prefix_base_name}"
+    )
+
+    matches = glob.glob(experiment_prefix_base_name_full + "*")
+
+    if len(matches) == 1:
+        if matches[0].startswith(experiment_prefix_base_name_full):
+            return True
+
+        raise ValueError(f"Experiments names collision? Found for {experiment_prefix_base_name_full}")
+    elif len(matches) == 0:
+        return False
+
+
 def run_group_lora(*, dry: bool) -> None:
     ngpus = 4
     num_train_epochs = 1
     save_steps = 250
+    optimized_params = "lora"
 
-    for (
-        model_checkpoint,
-        model_checkpoint_slug,
-        per_device_train_batch_size,
-        number_of_eos_tokens,
-    ) in _eos_tuned_checkpoints():
+    for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
+
+        model_checkpoint = exp_config["model_checkpoint"]
+        model_slug = exp_config["model_slug"]
+        per_device_train_batch_size = exp_config["per_device_train_batch_size"]
+        number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        if check_lora_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
+            print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
+            continue
 
         per_device_train_batch_size = max(per_device_train_batch_size, 16)
 
@@ -439,7 +460,7 @@ def run_group_lora(*, dry: bool) -> None:
             limit_dataset_shards=8,
             offset_dataset_shards=4,
             number_of_eos_tokens=number_of_eos_tokens,
-            optimized_params="lora",
+            optimized_params=optimized_params,
             weight_decay="0.01",
             per_device_train_batch_size=per_device_train_batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
@@ -459,7 +480,7 @@ def run_group_lora(*, dry: bool) -> None:
             lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_lora_num_eos_tokens_{number_of_eos_tokens}",
+            experiment_prefix_base_name=f"sentence_{model_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
 
 
