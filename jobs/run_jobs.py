@@ -7,7 +7,7 @@ import re
 import string
 import time
 from copy import deepcopy
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from sentence_attention.artifacts.experiments import sort_checkpoints
@@ -254,10 +254,14 @@ def _models_for_eos_only() -> List[str]:
     ]
 
 
-def _eos_tuned_checkpoints() -> List[tuple]:
-    # TODO find all
+def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
+    """Collect latest checkpoints from all EOS-tuned experiments.
 
-    all_experiments = []
+    Scans `artifacts/experiments/eos_{1,4}` and for each experiment directory
+    returns a dict with the latest checkpoint path and metadata. This does not
+    filter by training success; callers may implement additional checks.
+    """
+    all_experiments: List[Dict[str, Any]] = []
 
     for number_of_eos_tokens in [1, 4]:
         eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
@@ -268,12 +272,10 @@ def _eos_tuned_checkpoints() -> List[tuple]:
 
             model_slug = experiment.replace("sentence_", "")
             model_slug = re.sub(r"_ft_.*", "", model_slug)
-            print("slug", experiment, "model_slug", model_slug)
 
             all_experiments.append(
                 {
                     "model_checkpoint": os.path.join(eos_dir, experiment, last_checkpoint),
-                    # TODO
                     "model_slug": model_slug,
                     "number_of_eos_tokens": number_of_eos_tokens,
                     "per_device_train_batch_size": 4,
@@ -283,7 +285,13 @@ def _eos_tuned_checkpoints() -> List[tuple]:
     return all_experiments
 
 
-def check_eos_only_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eos_tokens: int) -> bool:
+def check_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eos_tokens: int) -> bool:
+    """Check if there is exactly one matching experiment directory for the given base name.
+
+    Returns True iff exactly one directory exists that starts with the base name.
+    Returns False if none exist.
+    Raises ValueError if multiple matches are found or if a name collision is detected.
+    """
     experiment_prefix_base_name_full = (
         f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}/{experiment_prefix_base_name}"
     )
@@ -293,7 +301,6 @@ def check_eos_only_checkpoint_model_exists(experiment_prefix_base_name: str, num
     if len(matches) == 1:
         if matches[0].startswith(experiment_prefix_base_name_full):
             return True
-
         raise ValueError(f"Experiments names collision? Found for {experiment_prefix_base_name_full}")
     elif len(matches) == 0:
         return False
@@ -318,7 +325,7 @@ def run_group_eos_only(*, dry: bool) -> None:
 
             experiment_path = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
-            if check_eos_only_checkpoint_model_exists(experiment_path, number_of_eos_tokens):
+            if check_checkpoint_model_exists(experiment_path, number_of_eos_tokens):
                 print(f"Experiment eos_{number_of_eos_tokens} / {experiment_path} already exists")
                 continue
 
@@ -351,22 +358,6 @@ def run_group_eos_only(*, dry: bool) -> None:
             )
 
 
-def check_full_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eos_tokens: int) -> bool:
-    experiment_prefix_base_name_full = (
-        f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}/{experiment_prefix_base_name}"
-    )
-
-    matches = glob.glob(experiment_prefix_base_name_full + "*")
-
-    if len(matches) == 1:
-        if matches[0].startswith(experiment_prefix_base_name_full):
-            return True
-
-        raise ValueError(f"Experiments names collision? Found for {experiment_prefix_base_name_full}")
-    elif len(matches) == 0:
-        return False
-
-
 def run_group_full(*, dry: bool) -> None:
     ngpus = 4
     num_train_epochs = 1
@@ -380,7 +371,7 @@ def run_group_full(*, dry: bool) -> None:
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
 
-        if check_full_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
+        if check_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
             continue
 
@@ -416,22 +407,6 @@ def run_group_full(*, dry: bool) -> None:
         )
 
 
-def check_lora_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eos_tokens: int) -> bool:
-    experiment_prefix_base_name_full = (
-        f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}/{experiment_prefix_base_name}"
-    )
-
-    matches = glob.glob(experiment_prefix_base_name_full + "*")
-
-    if len(matches) == 1:
-        if matches[0].startswith(experiment_prefix_base_name_full):
-            return True
-
-        raise ValueError(f"Experiments names collision? Found for {experiment_prefix_base_name_full}")
-    elif len(matches) == 0:
-        return False
-
-
 def run_group_lora(*, dry: bool) -> None:
     ngpus = 4
     num_train_epochs = 1
@@ -446,7 +421,7 @@ def run_group_lora(*, dry: bool) -> None:
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
 
-        if check_lora_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
+        if check_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
             continue
 
