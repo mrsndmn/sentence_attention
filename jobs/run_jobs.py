@@ -3,12 +3,14 @@ import glob
 import math
 import os
 import random
+import re
 import string
 import time
 from copy import deepcopy
 from typing import Dict, List
 
 import client_lib  # импортируем библиотеку для работы с ML Space
+from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.integration.job import accelerate_config_by_instance_type
 from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
 
@@ -23,7 +25,7 @@ BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 # Required interpreter path policy
-PYTHON_INTERPRETER = "/home/jovyan/.mlspace/envs/tokens_pruning/bin/python"
+PYTHON_INTERPRETER = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python"
 
 
 def run_experiments(experiments: List[Dict], job_description_prefix: str = "", dry: bool = False) -> None:
@@ -254,28 +256,31 @@ def _models_for_eos_only() -> List[str]:
 
 def _eos_tuned_checkpoints() -> List[tuple]:
     # TODO find all
-    # for number_of_eos_tokens in [1, 4]:
 
-    return [
-        (
-            f"{workdir_prefix}/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_only_eos_embedding_num_eos_tokens_4_M75ITPDR/checkpoint-674/",
-            "Llama-3.2-3B",
-            4,
-            4,
-        ),
-        (
-            f"{workdir_prefix}/artifacts/experiments/eos_4/sentence_Qwen2.5-1.5B_ft_only_eos_embedding_num_eos_tokens_4_GJQLD3RZ/checkpoint-674/",
-            "Qwen2.5-1.5B",
-            4,
-            4,
-        ),
-        (
-            f"{workdir_prefix}/artifacts/experiments/eos_4/sentence_Qwen2.5-3B_ft_only_eos_embedding_num_eos_tokens_4_JNZK1M0M/checkpoint-674/",
-            "Qwen2.5-3B",
-            4,
-            4,
-        ),
-    ]
+    all_experiments = []
+
+    for number_of_eos_tokens in [1, 4]:
+        eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
+        for experiment in os.listdir(eos_dir):
+            experiment_path = f"{eos_dir}/{experiment}"
+
+            last_checkpoint = sort_checkpoints(os.listdir(experiment_path))[0]
+
+            model_slug = experiment.replace("sentence_", "")
+            model_slug = re.sub(r"_ft_.*", "", model_slug)
+            print("slug", experiment, "model_slug", model_slug)
+
+            all_experiments.append(
+                {
+                    "model_checkpoint": os.path.join(eos_dir, experiment, last_checkpoint),
+                    # TODO
+                    "model_slug": model_slug,
+                    "number_of_eos_tokens": number_of_eos_tokens,
+                    "per_device_train_batch_size": 4,
+                }
+            )
+
+    return all_experiments
 
 
 def check_eos_only_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eos_tokens: int) -> bool:
@@ -284,6 +289,7 @@ def check_eos_only_checkpoint_model_exists(experiment_prefix_base_name: str, num
     )
 
     matches = glob.glob(experiment_prefix_base_name_full + "*")
+
     if len(matches) == 1:
         if matches[0].startswith(experiment_prefix_base_name_full):
             return True
@@ -345,18 +351,38 @@ def run_group_eos_only(*, dry: bool) -> None:
             )
 
 
+def check_full_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eos_tokens: int) -> bool:
+    experiment_prefix_base_name_full = (
+        f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}/{experiment_prefix_base_name}"
+    )
+
+    matches = glob.glob(experiment_prefix_base_name_full + "*")
+
+    if len(matches) == 1:
+        if matches[0].startswith(experiment_prefix_base_name_full):
+            return True
+
+        raise ValueError(f"Experiments names collision? Found for {experiment_prefix_base_name_full}")
+    elif len(matches) == 0:
+        return False
+
+
 def run_group_full(*, dry: bool) -> None:
     ngpus = 4
     num_train_epochs = 1
     save_steps = 250
+    optimized_params = "full"
 
-    for (
-        model_checkpoint,
-        model_checkpoint_slug,
-        per_device_train_batch_size,
-        number_of_eos_tokens,
-    ) in _eos_tuned_checkpoints():
+    for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
+        model_checkpoint = exp_config["model_checkpoint"]
+        model_slug = exp_config["model_slug"]
+        per_device_train_batch_size = exp_config["per_device_train_batch_size"]
+        number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        if check_full_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
+            print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
+            continue
 
         gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
 
@@ -366,7 +392,7 @@ def run_group_full(*, dry: bool) -> None:
             limit_dataset_shards=8,
             offset_dataset_shards=4,
             number_of_eos_tokens=number_of_eos_tokens,
-            optimized_params="full",
+            optimized_params=optimized_params,
             weight_decay="0.01",
             per_device_train_batch_size=per_device_train_batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
@@ -386,7 +412,7 @@ def run_group_full(*, dry: bool) -> None:
             lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_full_num_eos_tokens_{number_of_eos_tokens}",
+            experiment_prefix_base_name=f"sentence_{model_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
 
 
