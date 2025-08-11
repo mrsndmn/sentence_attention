@@ -1,6 +1,7 @@
 import argparse
 
 from peft import PeftConfig, PeftModel
+from sentence_attention.evaluation.benchmarks import all_benchmarks
 from sentence_attention.evaluation.evaluation import evaluate_lighteval_task, evaluate_lighteval_task_save_results
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
@@ -34,7 +35,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("--benchmark", type=str, required=True)
+    parser.add_argument("--benchmark", type=str, required=True, choices=all_benchmarks)
     parser.add_argument("--no-save-results", action="store_true", default=False)
 
     args = parser.parse_args()
