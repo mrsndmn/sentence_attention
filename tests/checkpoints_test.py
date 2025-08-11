@@ -8,6 +8,9 @@ workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 def test_eos_tokens_count():
 
     for eos_num in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments")):
+        if eos_num == "eos_0":
+            continue
+
         for experiment_dir in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num)):
             for checkpoint in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir)):
                 tokenizer = AutoTokenizer.from_pretrained(

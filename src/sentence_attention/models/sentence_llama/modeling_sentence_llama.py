@@ -415,6 +415,9 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
     def __init__(self, config: LlamaConfig):
         super().__init__(config)
+
+        self.config._attn_implementation = "sentence_attention"
+
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
@@ -569,6 +572,10 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         if not isinstance(past_key_values, (type(None), Cache)):
             raise ValueError("The `past_key_values` should be either a `Cache` object or `None`.")
 
+        assert (
+            self.config._attn_implementation == "sentence_attention"
+        ), f"config._attn_implementation is expected to be 'sentence_attention', but got {self.config._attn_implementation}"
+
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache()
 
@@ -594,9 +601,12 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         if special_embeddings_mask is None:
             special_embeddings_mask = torch.zeros_like(attention_mask)
-            if self.config.end_of_sentence_token_id is not None:
-                print("number of end of sentence tokens", (input_ids == self.config.end_of_sentence_token_id).sum())
-                special_embeddings_mask[input_ids == self.config.end_of_sentence_token_id] = 1
+            if self.config.end_of_sentence_token_ids is not None:
+                total_eos_tokens = 0
+                for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                    special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+                    total_eos_tokens += (input_ids == end_of_sentence_token_id).sum().item()
+                print("number of end of sentence tokens", total_eos_tokens)
 
         assert special_embeddings_mask is not None
 
@@ -949,8 +959,9 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         )
 
         special_embeddings_mask = torch.zeros_like(attention_mask)
-        if self.config.end_of_sentence_token_id is not None:
-            special_embeddings_mask[input_ids == self.config.end_of_sentence_token_id] = 1
+        if self.config.end_of_sentence_token_ids is not None:
+            for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
 
         outputs["special_embeddings_mask"] = special_embeddings_mask
         outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)

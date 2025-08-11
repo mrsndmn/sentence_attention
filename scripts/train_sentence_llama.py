@@ -196,18 +196,21 @@ if __name__ == "__main__":
         project_name=trackers_project_name,
     )
 
-    # trainer.train()
+    trainer.train()
     out_dir_path = Path(training_args.output_dir)
 
-    finished_target_dir = out_dir_path.parent.parent / "experiments" / out_dir_path.name
-    print("finished_target_dir", finished_target_dir)
-    while True:
-        if finished_target_dir.exists():
-            finished_target_dir = finished_target_dir.parent / f"{finished_target_dir.name}_duplicate"
-            continue
-        break
+    with state.on_main_process():
+        print("Main process. Moving experiment directory to finished_target_dir")
 
-    os.makedirs(finished_target_dir, exist_ok=True, parents=True)
+        finished_target_dir = out_dir_path.parent.parent / "experiments" / f"eos_{training_args.number_of_eos_tokens}"
+        print("finished_target_dir", finished_target_dir)
+        while True:
+            if finished_target_dir.exists():
+                finished_target_dir = finished_target_dir.parent / f"{finished_target_dir.name}_duplicate"
+                continue
+            break
 
-    shutil.move(out_dir_path, finished_target_dir)
-    print("Moved from", out_dir_path, "to finished_target_dir", finished_target_dir)
+        os.makedirs(finished_target_dir, exist_ok=True)
+
+        shutil.move(out_dir_path, finished_target_dir)
+        print("Moved from", out_dir_path, "to finished_target_dir", finished_target_dir)

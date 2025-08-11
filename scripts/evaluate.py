@@ -1,10 +1,11 @@
 import argparse
 
 from peft import PeftConfig, PeftModel
-from sentence_attention.evaluation.evaluation import evaluate_lighteval_task_save_results
+from sentence_attention.evaluation.benchmarks import all_benchmarks
+from sentence_attention.evaluation.evaluation import evaluate_lighteval_task, evaluate_lighteval_task_save_results
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
-from transformers import AutoConfig
+from transformers import AutoConfig, LlamaForCausalLM, Qwen2ForCausalLM
 
 
 def load_model_from_checkpoint(checkpoint_path):
@@ -16,6 +17,10 @@ def load_model_from_checkpoint(checkpoint_path):
         model_class = SentenceLlamaForCausalLM
     elif model_class_name == "SentenceQwen2ForCausalLM":
         model_class = SentenceQwen2ForCausalLM
+    elif model_class_name == "LlamaForCausalLM":
+        model_class = LlamaForCausalLM
+    elif model_class_name == "Qwen2ForCausalLM":
+        model_class = Qwen2ForCausalLM
     else:
         raise ValueError(f"Model class {model_class_name} not supported")
 
@@ -30,7 +35,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("--benchmark", type=str, required=True)
+    parser.add_argument("--benchmark", type=str, required=True, choices=all_benchmarks)
+    parser.add_argument("--no-save-results", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -42,4 +48,10 @@ if __name__ == "__main__":
     else:
         model = load_model_from_checkpoint(args.checkpoint)
 
-    evaluate_lighteval_task_save_results(model, args.checkpoint, args.benchmark)
+    if args.no_save_results:
+        print("Evaluating without saving results")
+        results = evaluate_lighteval_task(model, args.benchmark)
+    else:
+        results = evaluate_lighteval_task_save_results(model, args.checkpoint, args.benchmark)
+
+    print(results)

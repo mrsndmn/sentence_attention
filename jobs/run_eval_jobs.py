@@ -5,6 +5,7 @@ import os
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from rich.console import Console
+from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks, checkpoint_evaluation_file
 
 REGION = "SR004"
@@ -156,13 +157,6 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
         )
 
 
-def sort_checkpoints(checkpoints: list[str]):
-    for checkpoint in checkpoints:
-        assert checkpoint.startswith("checkpoint-")
-
-    return sorted(checkpoints, key=lambda x: int(x.split("-")[-1]), reverse=True)
-
-
 if __name__ == "__main__":
 
     import argparse
@@ -170,8 +164,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_checkpoints", type=int, default=1)
     parser.add_argument("--dry", action="store_true")
-    parser.add_argument("--benchmark", type=str, default="all")
+    parser.add_argument("--benchmark", type=str, default="all", choices=["all", *all_benchmarks])
+    parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4"])
+    parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
     num_checkpoints = args.num_checkpoints
@@ -191,9 +188,17 @@ if __name__ == "__main__":
         if stop:
             break
 
+        if args.eos_num != "all":
+            if eos_num != args.eos_num:
+                continue
+
         for experiment_dir in os.listdir(os.path.join(experiments_dir, eos_num)):
             if stop:
                 break
+
+            if args.model is not None and args.model not in experiment_dir.lower():
+                # print(f"Skipping {experiment_dir} because it does not contain {args.model}")
+                continue
 
             experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
             checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
@@ -205,8 +210,14 @@ if __name__ == "__main__":
                     evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
 
                     if os.path.exists(evaluation_file):
-                        print(f"Evaluation file {evaluation_file} already exists")
-                        continue
+                        if args.force:
+                            if not args.dry:
+                                os.remove(evaluation_file)
+                            print(f"Force remove metrics {evaluation_file}")
+
+                        else:
+                            print(f"Evaluation file {evaluation_file} already exists")
+                            continue
 
                     experiment = {
                         "pretrained_model": full_experiment_dir,
