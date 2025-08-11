@@ -1,4 +1,5 @@
 import argparse
+import glob
 import math
 import os
 import random
@@ -253,6 +254,7 @@ def _models_for_eos_only() -> List[str]:
 
 def _eos_tuned_checkpoints() -> List[tuple]:
     # TODO find all
+    # for number_of_eos_tokens in [1, 4]:
 
     return [
         (
@@ -276,45 +278,71 @@ def _eos_tuned_checkpoints() -> List[tuple]:
     ]
 
 
+def check_eos_only_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eos_tokens: int) -> bool:
+    experiment_prefix_base_name_full = (
+        f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}/{experiment_prefix_base_name}"
+    )
+
+    matches = glob.glob(experiment_prefix_base_name_full + "*")
+    if len(matches) == 1:
+        if matches[0].startswith(experiment_prefix_base_name_full):
+            return True
+
+        raise ValueError(f"Experiments names collision? Found for {experiment_prefix_base_name_full}")
+    elif len(matches) == 0:
+        return False
+    else:
+        raise ValueError(f"Multiple experiments found for {experiment_prefix_base_name_full}: {matches}")
+
+
 def run_group_eos_only(*, dry: bool) -> None:
     ngpus = 4
     num_train_epochs = 1
     per_device_train_batch_size = 4
     save_steps = 250
-    number_of_eos_tokens = 4
+    optimized_params = "only_eos_embedding"
 
-    for model_checkpoint in _models_for_eos_only():
+    for number_of_eos_tokens in [1, 4]:
 
-        model_checkpoint_slug = model_checkpoint.split("/")[-1]
-        gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
+        for model_checkpoint in _models_for_eos_only():
+            # TODO check sucessful experiment has already been processed
 
-        run_training_experiments(
-            learning_rate=0.0001,
-            model_type="sentence_pretrained_checkpoint",
-            limit_dataset_shards=4,
-            number_of_eos_tokens=number_of_eos_tokens,
-            optimized_params="only_eos_embedding",
-            weight_decay="0.01",
-            per_device_train_batch_size=per_device_train_batch_size,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            adam_beta1="0.9",
-            adam_beta2="0.95",
-            optim="adamw_torch_fused",
-            num_train_epochs=num_train_epochs,
-            max_grad_norm="1.0",
-            save_total_limit=100,
-            save_steps=save_steps,
-            instance_type=f"a100.{ngpus}gpu",
-            model_checkpoint=model_checkpoint,
-            select_train_dataset_items=0,
-            adam_epsilon="1e-8",
-            warmup_steps=500,
-            dry=dry,
-            lr_scheduler_type="cosine",
-            bf16="0",
-            add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_only_eos_embedding_num_eos_tokens_{number_of_eos_tokens}",
-        )
+            model_checkpoint_slug = model_checkpoint.split("/")[-1]
+            gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
+
+            experiment_path = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
+
+            if check_eos_only_checkpoint_model_exists(experiment_path, number_of_eos_tokens):
+                print(f"Experiment eos_{number_of_eos_tokens} / {experiment_path} already exists")
+                continue
+
+            run_training_experiments(
+                learning_rate=0.0001,
+                model_type="sentence_pretrained_checkpoint",
+                limit_dataset_shards=4,
+                number_of_eos_tokens=number_of_eos_tokens,
+                optimized_params=optimized_params,
+                weight_decay="0.01",
+                per_device_train_batch_size=per_device_train_batch_size,
+                gradient_accumulation_steps=gradient_accumulation_steps,
+                adam_beta1="0.9",
+                adam_beta2="0.95",
+                optim="adamw_torch_fused",
+                num_train_epochs=num_train_epochs,
+                max_grad_norm="1.0",
+                save_total_limit=100,
+                save_steps=save_steps,
+                instance_type=f"a100.{ngpus}gpu",
+                model_checkpoint=model_checkpoint,
+                select_train_dataset_items=0,
+                adam_epsilon="1e-8",
+                warmup_steps=500,
+                dry=dry,
+                lr_scheduler_type="cosine",
+                bf16="0",
+                add_end_of_sentence_token=1,
+                experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
+            )
 
 
 def run_group_full(*, dry: bool) -> None:
@@ -328,6 +356,8 @@ def run_group_full(*, dry: bool) -> None:
         per_device_train_batch_size,
         number_of_eos_tokens,
     ) in _eos_tuned_checkpoints():
+        # TODO check sucessful experiment has already been processed
+
         gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
 
         run_training_experiments(
@@ -364,15 +394,18 @@ def run_group_lora(*, dry: bool) -> None:
     ngpus = 4
     num_train_epochs = 1
     save_steps = 250
-    per_device_train_batch_size_fixed = 16
 
     for (
         model_checkpoint,
         model_checkpoint_slug,
-        _per_device_train_batch_size_unused,
+        per_device_train_batch_size,
         number_of_eos_tokens,
     ) in _eos_tuned_checkpoints():
-        gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size_fixed)
+        # TODO check sucessful experiment has already been processed
+
+        per_device_train_batch_size = max(per_device_train_batch_size, 16)
+
+        gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
 
         run_training_experiments(
             learning_rate=0.0001,
@@ -382,7 +415,7 @@ def run_group_lora(*, dry: bool) -> None:
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params="lora",
             weight_decay="0.01",
-            per_device_train_batch_size=per_device_train_batch_size_fixed,
+            per_device_train_batch_size=per_device_train_batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
             adam_beta1="0.9",
             adam_beta2="0.95",
