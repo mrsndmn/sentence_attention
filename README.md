@@ -25,9 +25,12 @@ flake8 .
 ## Tasks
 
 - [ ] eval all checkpoints, plot graphs
+    * Count number of pruned tokens for each benchmark. Assert it is not zero. Or maybe tests with special flag
     * paper table formatting, may be different splits
     * run new experiments with 4 eos tokens for Qwen2.5-1.5B, Llama3.2-3B, etc, 8B models
     * how metrics change during training stages?
+- [ ] Эксперименты воспроизводимость
+    * При евале обученных 4 токено в на одном токене результаты лучше, чем если обучать сразу на 1 токен. Как так?
 - [ ] Fix auto modeling. create separate config classes for llama and qwen2
 - [ ] remove useless arguments from training args
 - [ ] refactor run jobs script - add arguments to scripts, move common code to separate file
