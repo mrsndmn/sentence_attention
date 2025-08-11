@@ -959,8 +959,9 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         )
 
         special_embeddings_mask = torch.zeros_like(attention_mask)
-        if self.config.end_of_sentence_token_id is not None:
-            special_embeddings_mask[input_ids == self.config.end_of_sentence_token_id] = 1
+        if self.config.end_of_sentence_token_ids is not None:
+            for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
 
         outputs["special_embeddings_mask"] = special_embeddings_mask
         outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)

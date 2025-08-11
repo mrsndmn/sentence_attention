@@ -4,7 +4,7 @@ from sentence_attention.models.sentence_llama.modeling_sentence_llama import Sen
 from transformers import AutoTokenizer
 
 
-def test_sentence_llama_model_generate():
+def test_sentence_llama_model_generate_base():
 
     checkpoint = "HuggingFaceTB/SmolLM2-1.7B"
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
