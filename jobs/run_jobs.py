@@ -163,7 +163,6 @@ def run_training_experiments(
     max_grad_norm=1.0,
     warmup_steps=2000,
     bf16="0",
-    dataset=None,
     add_end_of_sentence_token="1",
     **kwargs,
 ):
@@ -180,7 +179,6 @@ def run_training_experiments(
         "weight_decay": weight_decay,
         "adam_beta1": adam_beta1,
         "adam_beta2": adam_beta2,
-        "dataset": dataset,
         "num_train_epochs": num_train_epochs,
         "gradient_checkpointing": gradient_checkpointing,
         "warmup_steps": warmup_steps,
@@ -284,7 +282,6 @@ if __name__ == "__main__":
             # model_checkpoint=f'{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_token_w_0.100_l__S9M6BLOE/checkpoint-400/',
             # model_checkpoint=f'{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_token_w_0.100_l__5RHWG2LO/checkpoint-1000/',
             model_checkpoint="HuggingFaceTB/SmolLM2-1.7B",
-            dataset="smollm-corpus",
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
             warmup_steps=1000,
@@ -304,13 +301,18 @@ if __name__ == "__main__":
     # models_checkpoints = [ 'unsloth/Llama-3.2-1B', 'Qwen/Qwen2.5-1.5B', 'HuggingFaceTB/SmolLM2-1.7B', 'unsloth/Llama-3.2-3B', 'Qwen/Qwen2.5-3B',  ]
     # models_checkpoints = [ 'unsloth/Llama-3.2-1B', 'Qwen/Qwen2.5-1.5B' ]
     models_checkpoints = ["unsloth/Llama-3.2-1B"]
+    models_checkpoints = [
+        "Qwen/Qwen2.5-1.5B",
+        "unsloth/Llama-3.2-3B",
+        "Qwen/Qwen2.5-3B",
+    ]
 
     # 3B
     # models_checkpoints = [ 'unsloth/Llama-3.2-3B', 'Qwen/Qwen2.5-3B' ]
     # models_checkpoints = [ 'unsloth/Llama-3.2-3B' ]
 
     # No eos only experiments tuning
-    models_checkpoints = []
+    # models_checkpoints = []
 
     number_of_eos_tokens = 4
 
@@ -318,7 +320,6 @@ if __name__ == "__main__":
     # model_checkpoint = 'HuggingFaceTB/SmolLM2-1.7B'
     # model_checkpoint = 'Qwen/Qwen2.5-1.5B'
 
-    # Train full params
     for model_checkpoint in models_checkpoints:
         model_checkpoint_slug = model_checkpoint.split("/")[-1]
         gradient_accumulation_steps = math.ceil(4096 / NGPUS / per_device_train_batch_size)
@@ -346,7 +347,6 @@ if __name__ == "__main__":
             model_checkpoint=model_checkpoint,
             # model_checkpoint=f"{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_one_embedding_no_wd_4IQFRDRG/checkpoint-500/",
             # model_checkpoint=f"{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_full_VYE9JVA0/checkpoint-6500/",
-            dataset="smollm-corpus",
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
             warmup_steps=500,
@@ -356,6 +356,8 @@ if __name__ == "__main__":
             add_end_of_sentence_token=1,
             experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
+
+    sys.exit()
 
     model_checkpoints_eos_tuned = [
         # (f"{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/sentence_Llama-3.2-1B_ft_only_eos_embedding_70ODXUT4/checkpoint-2698", "Llama-3.2-1B", 16, 1),
@@ -408,7 +410,6 @@ if __name__ == "__main__":
             model_checkpoint=model_checkpoint,
             # model_checkpoint=f"{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_one_embedding_no_wd_4IQFRDRG/checkpoint-500/",
             # model_checkpoint=f"{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_full_VYE9JVA0/checkpoint-6500/",
-            dataset="smollm-corpus",
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
             warmup_steps=100,
@@ -459,7 +460,6 @@ if __name__ == "__main__":
             model_checkpoint=model_checkpoint,
             # model_checkpoint=f"{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_one_embedding_no_wd_4IQFRDRG/checkpoint-500/",
             # model_checkpoint=f"{workdir_prefix}/sentence_slm2_1.7B_pretrain_with_end_of_sentence_full_VYE9JVA0/checkpoint-6500/",
-            dataset="smollm-corpus",
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
             warmup_steps=100,
