@@ -178,6 +178,12 @@ def main() -> None:
         help="Filter results by model name",
     )
     parser.add_argument(
+        "--benchmarks",
+        type=str,
+        default="all",
+        help="Filter results by benchmark name",
+    )
+    parser.add_argument(
         "--eos-tokens",
         type=int,
         default=None,
@@ -196,12 +202,21 @@ def main() -> None:
         "unknown": "Unknown",
     }
 
-    headers = ["#EOS", "Family", "Training", "Experiment"] + all_benchmarks
+    short_benchmarks = ["mmlu_cloze", "hellaswag", "arc", "winogrande"]
+
+    if args.benchmarks == "all":
+        benchmarks = all_benchmarks
+    elif args.benchmarks == "short":
+        benchmarks = short_benchmarks
+    else:
+        raise ValueError(f"Invalid benchmarks: {args.benchmarks}")
+
+    headers = ["#EOS", "Family", "Training", "Experiment"] + benchmarks
 
     # Full table: all benchmarks (CLI filters apply only here)
     full_table_rows = build_table(
         rows=rows,
-        benchmarks=all_benchmarks,
+        benchmarks=benchmarks,
         training_mapping=training_mapping,
         row_predicate=None,
         model_filter=args.model,
@@ -218,7 +233,6 @@ def main() -> None:
     )
 
     # Short results benchmark tables
-    short_benchmarks = ["mmlu", "hellaswag", "arc", "winogrande"]
     short_headers = ["#EOS", "Family", "Training", "Experiment"] + short_benchmarks
 
     print("\n\nMain results:")

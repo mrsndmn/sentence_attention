@@ -312,7 +312,7 @@ if __name__ == "__main__":
     # models_checkpoints = [ 'unsloth/Llama-3.2-3B' ]
 
     # No eos only experiments tuning
-    # models_checkpoints = []
+    models_checkpoints = []
 
     number_of_eos_tokens = 4
 
@@ -357,17 +357,35 @@ if __name__ == "__main__":
             experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
 
-    sys.exit()
+    # sys.exit()
 
     model_checkpoints_eos_tuned = [
         # (f"{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/sentence_Llama-3.2-1B_ft_only_eos_embedding_70ODXUT4/checkpoint-2698", "Llama-3.2-1B", 16, 1),
         # (f"{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/sentence_Qwen2.5-1.5B_ft_only_eos_embedding_25L1K5XT/checkpoint-2698/", "Qwen2.5-1.5B", 4, 1),
         # (f"{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/sentence_Qwen2.5-3B_ft_only_eos_embedding_UAJKCWG0/checkpoint-674/", "Qwen2.5-3B", 4, 1),
         # (f"{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/sentence_Llama-3.2-3B_ft_only_eos_embedding_U4IS2OTK/checkpoint-674/", "Llama-3.2-3B", 4, 1),
+        # (
+        #     f"{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/sentence_Llama-3.2-1B_ft_only_eos_embedding_num_eos_tokens_4_LIATRTYH/checkpoint-674/",
+        #     "Llama-3.2-1B",
+        #     16,
+        #     4,
+        # ),
         (
-            f"{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/sentence_Llama-3.2-1B_ft_only_eos_embedding_num_eos_tokens_4_LIATRTYH/checkpoint-674/",
-            "Llama-3.2-1B",
-            16,
+            f"{workdir_prefix}/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_only_eos_embedding_num_eos_tokens_4_M75ITPDR/checkpoint-674/",
+            "Llama-3.2-3B",
+            4,
+            4,
+        ),
+        (
+            f"{workdir_prefix}/artifacts/experiments/eos_4/sentence_Qwen2.5-1.5B_ft_only_eos_embedding_num_eos_tokens_4_GJQLD3RZ/checkpoint-674/",
+            "Qwen2.5-1.5B",
+            4,
+            4,
+        ),
+        (
+            f"{workdir_prefix}/artifacts/experiments/eos_4/sentence_Qwen2.5-3B_ft_only_eos_embedding_num_eos_tokens_4_JNZK1M0M/checkpoint-674/",
+            "Qwen2.5-3B",
+            4,
             4,
         ),
     ]
@@ -420,7 +438,7 @@ if __name__ == "__main__":
             experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
         )
 
-    # sys.exit()
+    sys.exit()
 
     # LoRa training
     NGPUS = 4
