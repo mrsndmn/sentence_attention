@@ -14,7 +14,7 @@ task_to_default_batch_size = {
     "mmlu_cloze": 16,
     "mmlu_pro_cloze": 16,
     "piqa": 128,
-    "siqa": 512,
+    "siqa": 256,
     "openbookqa": 256,
     "winogrande": 512,
 }
@@ -154,7 +154,7 @@ def evaluate_acc_siqa(model):
     results = evaluate_lighteval_task(
         model,
         "siqa",
-        override_batch_size=512,
+        override_batch_size=256,
         num_fewshot_seeds=0,
     )
 

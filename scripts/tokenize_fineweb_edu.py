@@ -11,15 +11,11 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--shard_num", type=int, required=True)
-    parser.add_argument("--total_shards", type=int, required=True)
     parser.add_argument("--pretrained_model_name", type=str, required=True)
     parser.add_argument("--with_eos_token", action="store_true")
     parser.add_argument("--num_eos_tokens", type=int, default=1)
     args = parser.parse_args()
 
-    shard_num = args.shard_num
-    total_shards = args.total_shards
     pretrained_model_name = args.pretrained_model_name  # HuggingFaceTB/SmolLM2-1.7B / unsloth/Llama-3.2-1B
 
     pretrained_model_name_short = pretrained_model_name.split("/")[-1]
@@ -27,21 +23,14 @@ if __name__ == "__main__":
     print(f"pretrained_model_name_short: {pretrained_model_name_short}")
 
     if args.with_eos_token:
-        suffix = f"_with_eos_token_num_{args.num_eos_tokens}"
+        suffix = f"_with_eos_token_num_{args.num_eos_tokens}_merged"
     else:
         suffix = ""
 
-    targer_dir = f"./fineweb_edu_tokenized_{pretrained_model_name_short}{suffix}"
-
-    shard_targer_dir = f"{targer_dir}/shard_{shard_num}"
+    target_dir = f"./artifacts/data/fineweb_edu_tokenized_{pretrained_model_name_short}{suffix}"
 
     dataset_name = "HuggingFaceFW/fineweb-edu"
-    dataset = load_dataset(dataset_name, "sample-10BT", num_proc=16, split="train").shard(total_shards, shard_num)
-
-    # dataset = dataset.remove_columns( list(set(dataset.column_names) - set(columns_to_keep)) )
-
-    columns_to_keep = ["input_ids", "attention_mask", "special_embeddings_mask", "clothest_end_of_sentence_token_idx"]
-    columns_to_keep = list(set(dataset.column_names) - set(columns_to_keep))
+    dataset = load_dataset(dataset_name, "sample-10BT", num_proc=16, split="train")
 
     tokenizer_class = type(AutoTokenizer.from_pretrained(pretrained_model_name)).__name__
 
@@ -84,6 +73,9 @@ if __name__ == "__main__":
             "clothest_end_of_sentence_token_idx": clothest_end_of_sentence_token_idx[0].numpy().tolist(),
         }
 
-    dataset = dataset.map(process_dataset_item, num_proc=16, remove_columns=columns_to_keep)
+    columns_to_keep = ["input_ids", "attention_mask", "special_embeddings_mask", "clothest_end_of_sentence_token_idx"]
+    columns_to_remove = list(set(dataset.column_names) - set(columns_to_keep))
 
-    dataset.save_to_disk(shard_targer_dir)
+    dataset = dataset.map(process_dataset_item, num_proc=16, remove_columns=columns_to_remove)
+
+    dataset.save_to_disk(target_dir)
