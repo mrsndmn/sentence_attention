@@ -13,16 +13,12 @@ if __name__ == "__main__":
 
     author_name = "d.tarasov"
 
-    num_shards = 1
+    # for num_eos_tokens in [ 1, 4, 8, 16 ]:
+    for num_eos_tokens in [8, 16]:
 
-    num_eos_tokens = 4
+        for pretrained_model_name in ["unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
 
-    for pretrained_model_name in ["HuggingFaceTB/SmolLM2-1.7B", "unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
-        # for pretrained_model_name in ['Qwen/Qwen2.5-1.5B']:
-
-        for shard_i in range(num_shards):
-
-            script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python src/transformers/models/llama/tmp/tokenize_fineweb_edu.py --shard_num {shard_i} --total_shards {num_shards} --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens}'"
+            script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python scripts/tokenize_fineweb_edu.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens}'"
             print("\n\n", script)
             if dry:
                 print("Skip running job")
@@ -31,7 +27,7 @@ if __name__ == "__main__":
             result = client.run_job(
                 payload={
                     "script": script,
-                    "job_desc": f"Tokenize fineweb EOS model={pretrained_model_name} shard={shard_i} #{author_name} #rnd #multimodal @mrsndmn",
+                    "job_desc": f"Tokenize fineweb EOS model={pretrained_model_name} num_eos_tokens={num_eos_tokens} #{author_name} #rnd #multimodal @mrsndmn",
                     "instance_type": "a100.1gpu",
                     "region": extra_options["region"],
                     "env_variables": {
@@ -46,4 +42,4 @@ if __name__ == "__main__":
                 }
             )
 
-            print(pretrained_model_name, shard_i, ":\t", result)
+            print(pretrained_model_name, "eos", num_eos_tokens, pretrained_model_name, ":\t", result)
