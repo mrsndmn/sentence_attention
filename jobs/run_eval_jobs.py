@@ -2,6 +2,7 @@ import copy
 import glob
 import json
 import os
+import time
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
@@ -158,6 +159,32 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
         )
 
 
+def get_in_progress_jobs(client, statuses=None):
+
+    all_in_progress_jobs = []
+
+    if statuses is None:
+        statuses = ["Pending", "Running"]
+
+    for non_final_status in statuses:
+        non_final_jobs = client.get_list_jobs(
+            region=REGION, allocation_name="alloc-officecds-multimodal-2-sr004", status=non_final_status, limit=1000, offset=0
+        )
+        all_in_progress_jobs.extend(non_final_jobs["jobs"])
+
+    return all_in_progress_jobs
+
+
+def get_in_progress_jobs_descriptions(client):
+
+    in_progress_jobs_descriptions = set()
+
+    for job in get_in_progress_jobs(client):
+        in_progress_jobs_descriptions.add(job["job_desc"])
+
+    return in_progress_jobs_descriptions
+
+
 if __name__ == "__main__":
 
     import argparse
@@ -169,6 +196,7 @@ if __name__ == "__main__":
     parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4"])
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
+    parser.add_argument("--max_jobs_queue_size", type=int, default=1)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
@@ -176,16 +204,7 @@ if __name__ == "__main__":
 
     client, _ = training_job_api_from_profile("default")
 
-    in_progress_jobs_descriptions = set()
-
-    for non_final_status in ["Completing", "Running", "Pending"]:
-        non_final_jobs = client.get_list_jobs(
-            region=REGION, allocation_name="alloc-officecds-multimodal-2-sr004", status=non_final_status, limit=1000, offset=0
-        )
-        for job in non_final_jobs["jobs"]:
-            in_progress_jobs_descriptions.add(job["job_desc"])
-
-    print("In progress jobs descriptions", len(in_progress_jobs_descriptions), in_progress_jobs_descriptions)
+    in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
 
     if args.limit_jobs is not None:
         assert args.limit_jobs > 0
@@ -219,6 +238,24 @@ if __name__ == "__main__":
 
             for checkpoint in checkpoints:
                 for benchmark in benchmarks:
+
+                    if args.max_jobs_queue_size is not None:
+                        while True:
+                            client, _ = training_job_api_from_profile("default")
+
+                            in_queue_jobs = get_in_progress_jobs(client, statuses=["Pending"])
+                            queue_size = len(in_queue_jobs)
+
+                            if queue_size >= args.max_jobs_queue_size:
+                                print(
+                                    f"Max jobs queue size {queue_size} / {args.max_jobs_queue_size} reached, waiting for 60 seconds"
+                                )
+                                time.sleep(60)
+                            else:
+                                # update in_progress_jobs_descriptions
+                                in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
+                                break
+
                     full_experiment_dir = os.path.join(experiments_dir, eos_num, experiment_dir, checkpoint)
 
                     evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
