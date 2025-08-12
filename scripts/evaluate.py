@@ -5,13 +5,18 @@ from sentence_attention.evaluation.benchmarks import all_benchmarks
 from sentence_attention.evaluation.evaluation import evaluate_lighteval_task, evaluate_lighteval_task_save_results
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
-from transformers import AutoConfig, LlamaForCausalLM, Qwen2ForCausalLM
+from transformers import AutoConfig, AutoTokenizer, LlamaForCausalLM, Qwen2ForCausalLM
 
 
 def load_model_from_checkpoint(checkpoint_path):
 
     config = AutoConfig.from_pretrained(checkpoint_path)
     model_class_name = config.architectures[0]
+
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
+    print(
+        "tokenizer num_eos_tokens", tokenizer.num_eos_tokens, "end_of_sentence_token_ids", tokenizer.end_of_sentence_token_ids
+    )
 
     if model_class_name == "SentenceLlamaForCausalLM":
         model_class = SentenceLlamaForCausalLM

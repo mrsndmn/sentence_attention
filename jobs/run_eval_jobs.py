@@ -2,8 +2,10 @@ import copy
 import glob
 import json
 import os
+import time
 
 import client_lib  # импортируем библиотеку для работы с ML Space
+from mls.manager.job.utils import training_job_api_from_profile
 from rich.console import Console
 from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks, checkpoint_evaluation_file
@@ -20,12 +22,14 @@ N_WORKERS = 1
 BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 # BASE_IMAGE = "cr.ai.cloud.ru/f51af5b1-d43b-4db4-938d-569d7cfffb7a/cuda12.1-torch2-py310-adaptive_attention:0.0.3"
 
+JOB_DESCRIPTION_SUFFIX = "#rnd #multimodality @mrsndmn"
+
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments")
 
 
-def run_eval_experiments(experiment, job_description_prefix="Eval", dry=False):
+def run_eval_experiments(experiment, job_description="Eval", dry=False):
 
     experiment = copy.deepcopy(experiment)
 
@@ -41,8 +45,6 @@ def run_eval_experiments(experiment, job_description_prefix="Eval", dry=False):
 
     print(f"\n\n{script_str}\n")
 
-    description = f"{job_description_prefix} #rnd #multimodality @mrsndmn"
-
     job_w_args = client_lib.Job(
         base_image=BASE_IMAGE,
         script=script_str,
@@ -52,7 +54,7 @@ def run_eval_experiments(experiment, job_description_prefix="Eval", dry=False):
         n_workers=N_WORKERS,
         # conda_env="test_client_lib",
         processes_per_worker=1,
-        job_desc=description,
+        job_desc=job_description,
         # stop_timer=600, # в минутах, = 10 часов
         env_variables={
             "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
@@ -64,7 +66,7 @@ def run_eval_experiments(experiment, job_description_prefix="Eval", dry=False):
     if dry:
         print("JOB WAS NOT LAUNCHED")
     else:
-        print(description, "\n", job_w_args.submit())
+        print(job_description, "\n", job_w_args.submit())
 
     return
 
@@ -157,6 +159,32 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
         )
 
 
+def get_in_progress_jobs(client, statuses=None):
+
+    all_in_progress_jobs = []
+
+    if statuses is None:
+        statuses = ["Pending", "Running"]
+
+    for non_final_status in statuses:
+        non_final_jobs = client.get_list_jobs(
+            region=REGION, allocation_name="alloc-officecds-multimodal-2-sr004", status=non_final_status, limit=1000, offset=0
+        )
+        all_in_progress_jobs.extend(non_final_jobs["jobs"])
+
+    return all_in_progress_jobs
+
+
+def get_in_progress_jobs_descriptions(client):
+
+    in_progress_jobs_descriptions = set()
+
+    for job in get_in_progress_jobs(client):
+        in_progress_jobs_descriptions.add(job["job_desc"])
+
+    return in_progress_jobs_descriptions
+
+
 if __name__ == "__main__":
 
     import argparse
@@ -168,10 +196,15 @@ if __name__ == "__main__":
     parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4"])
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
+    parser.add_argument("--max_jobs_queue_size", type=int, default=1)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
     num_checkpoints = args.num_checkpoints
+
+    client, _ = training_job_api_from_profile("default")
+
+    in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
 
     if args.limit_jobs is not None:
         assert args.limit_jobs > 0
@@ -205,6 +238,24 @@ if __name__ == "__main__":
 
             for checkpoint in checkpoints:
                 for benchmark in benchmarks:
+
+                    if args.max_jobs_queue_size is not None:
+                        while True:
+                            client, _ = training_job_api_from_profile("default")
+
+                            in_queue_jobs = get_in_progress_jobs(client, statuses=["Pending"])
+                            queue_size = len(in_queue_jobs)
+
+                            if queue_size >= args.max_jobs_queue_size:
+                                print(
+                                    f"Max jobs queue size {queue_size} / {args.max_jobs_queue_size} reached, waiting for 60 seconds"
+                                )
+                                time.sleep(60)
+                            else:
+                                # update in_progress_jobs_descriptions
+                                in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
+                                break
+
                     full_experiment_dir = os.path.join(experiments_dir, eos_num, experiment_dir, checkpoint)
 
                     evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
@@ -224,10 +275,16 @@ if __name__ == "__main__":
                         "benchmark": benchmark,
                     }
 
+                    job_description = f"Eval {eos_num}/{experiment_dir}/{checkpoint} {benchmark} {JOB_DESCRIPTION_SUFFIX}"
+
+                    if job_description in in_progress_jobs_descriptions:
+                        print(f"Job {job_description} already in progress, skipping")
+                        continue
+
                     run_eval_experiments(
                         experiment,
                         dry=args.dry,
-                        job_description_prefix=f"Eval {eos_num}/{experiment_dir}/{checkpoint} {benchmark}",
+                        job_description=job_description,
                     )
 
                     processed_models += 1
