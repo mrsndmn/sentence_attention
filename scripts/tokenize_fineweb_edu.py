@@ -27,7 +27,7 @@ if __name__ == "__main__":
     else:
         suffix = ""
 
-    targer_dir = f"./artifacts/data/fineweb_edu_tokenized_{pretrained_model_name_short}{suffix}"
+    target_dir = f"./artifacts/data/fineweb_edu_tokenized_{pretrained_model_name_short}{suffix}"
 
     dataset_name = "HuggingFaceFW/fineweb-edu"
     dataset = load_dataset(dataset_name, "sample-10BT", num_proc=16, split="train")
@@ -78,4 +78,4 @@ if __name__ == "__main__":
 
     dataset = dataset.map(process_dataset_item, num_proc=16, remove_columns=columns_to_remove)
 
-    dataset.save_to_disk(targer_dir)
+    dataset.save_to_disk(target_dir)
