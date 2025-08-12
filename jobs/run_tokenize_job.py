@@ -31,7 +31,7 @@ if __name__ == "__main__":
                     "instance_type": "a100.1gpu",
                     "region": extra_options["region"],
                     "env_variables": {
-                        "PYTHONPATH": "./src",
+                        "PYTHONPATH": "./src:../transformers_adaptive_fan_in_fan_out/src",
                         "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
                     },
                     "type": "binary_exp",
