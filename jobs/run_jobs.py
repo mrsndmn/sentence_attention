@@ -315,7 +315,7 @@ def run_group_eos_only(*, dry: bool) -> None:
     save_steps = 250
     optimized_params = "only_eos_embedding"
 
-    for number_of_eos_tokens in [1, 4]:
+    for number_of_eos_tokens in [1, 4, 8, 16]:
 
         for model_checkpoint in _models_for_eos_only():
             # TODO check sucessful experiment has already been processed

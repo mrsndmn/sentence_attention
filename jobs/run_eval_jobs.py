@@ -6,16 +6,12 @@ import time
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
-from rich.console import Console
 from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks, checkpoint_evaluation_file
 
 REGION = "SR004"
 
 SEED = 1008
-
-console = Console()
-console.print(client_lib.get_instance_types(regions="SR004"))
 
 INSTANCE_TYPE = "a100.1gpu"
 N_WORKERS = 1
@@ -167,9 +163,23 @@ def get_in_progress_jobs(client, statuses=None):
         statuses = ["Pending", "Running"]
 
     for non_final_status in statuses:
-        non_final_jobs = client.get_list_jobs(
-            region=REGION, allocation_name="alloc-officecds-multimodal-2-sr004", status=non_final_status, limit=1000, offset=0
-        )
+        while True:
+            non_final_jobs = client.get_list_jobs(
+                region=REGION,
+                allocation_name="alloc-officecds-multimodal-2-sr004",
+                status=non_final_status,
+                limit=1000,
+                offset=0,
+            )
+            if "jobs" in non_final_jobs:
+                break
+            elif "error_code" in non_final_jobs and non_final_jobs["error_code"] == 32:  # no active session
+                print("No active session, waiting for 5 seconds")
+                time.sleep(5)
+                client, _ = training_job_api_from_profile("default")
+            else:
+                raise ValueError("Unknown error in get_in_progress_jobs:", non_final_jobs)
+
         all_in_progress_jobs.extend(non_final_jobs["jobs"])
 
     return all_in_progress_jobs
@@ -213,6 +223,7 @@ if __name__ == "__main__":
 
     print(f"Evaluating {num_checkpoints} checkpoints for {benchmarks} benchmarks")
 
+    check_queue_processed_models = -1
     processed_models = 0
 
     stop = False
@@ -239,22 +250,23 @@ if __name__ == "__main__":
             for checkpoint in checkpoints:
                 for benchmark in benchmarks:
 
-                    if args.max_jobs_queue_size is not None:
+                    if args.max_jobs_queue_size is not None and check_queue_processed_models < processed_models:
                         while True:
-                            client, _ = training_job_api_from_profile("default")
-
                             in_queue_jobs = get_in_progress_jobs(client, statuses=["Pending"])
                             queue_size = len(in_queue_jobs)
 
                             if queue_size >= args.max_jobs_queue_size:
+                                sleep_time = 10
                                 print(
-                                    f"Max jobs queue size {queue_size} / {args.max_jobs_queue_size} reached, waiting for 60 seconds"
+                                    f"Max jobs queue size {queue_size} / {args.max_jobs_queue_size} reached, waiting for {sleep_time} seconds"
                                 )
-                                time.sleep(60)
+                                time.sleep(sleep_time)
                             else:
                                 # update in_progress_jobs_descriptions
                                 in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
                                 break
+
+                            check_queue_processed_models = processed_models
 
                     full_experiment_dir = os.path.join(experiments_dir, eos_num, experiment_dir, checkpoint)
 
@@ -288,6 +300,7 @@ if __name__ == "__main__":
                     )
 
                     processed_models += 1
+                    time.sleep(5)  # to avoid race conditions and brusting max queue size
 
                     if args.limit_jobs is not None and processed_models >= args.limit_jobs:
                         print(f"Processed {processed_models} models, stopping")
