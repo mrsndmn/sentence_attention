@@ -263,7 +263,7 @@ def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
     """
     all_experiments: List[Dict[str, Any]] = []
 
-    for number_of_eos_tokens in [1, 4]:
+    for number_of_eos_tokens in [1, 4, 8, 16]:
         eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
         for experiment in os.listdir(eos_dir):
             experiment_path = f"{eos_dir}/{experiment}"
@@ -308,14 +308,14 @@ def check_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eo
         raise ValueError(f"Multiple experiments found for {experiment_prefix_base_name_full}: {matches}")
 
 
-def run_group_eos_only(*, dry: bool) -> None:
+def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int]) -> None:
     ngpus = 4
     num_train_epochs = 1
     per_device_train_batch_size = 4
     save_steps = 250
     optimized_params = "only_eos_embedding"
 
-    for number_of_eos_tokens in [1, 4, 8, 16]:
+    for number_of_eos_tokens in num_eos_tokens:
 
         for model_checkpoint in _models_for_eos_only():
             # TODO check sucessful experiment has already been processed
@@ -358,7 +358,7 @@ def run_group_eos_only(*, dry: bool) -> None:
             )
 
 
-def run_group_full(*, dry: bool) -> None:
+def run_group_full(*, dry: bool, num_eos_tokens: List[int]) -> None:
     ngpus = 4
     num_train_epochs = 1
     save_steps = 250
@@ -370,6 +370,9 @@ def run_group_full(*, dry: bool) -> None:
         model_slug = exp_config["model_slug"]
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        if int(number_of_eos_tokens) not in num_eos_tokens:
+            continue
 
         if check_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
@@ -407,7 +410,7 @@ def run_group_full(*, dry: bool) -> None:
         )
 
 
-def run_group_lora(*, dry: bool) -> None:
+def run_group_lora(*, dry: bool, num_eos_tokens: List[int]) -> None:
     ngpus = 4
     num_train_epochs = 1
     save_steps = 250
@@ -420,6 +423,9 @@ def run_group_lora(*, dry: bool) -> None:
         model_slug = exp_config["model_slug"]
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        if int(number_of_eos_tokens) not in num_eos_tokens:
+            continue
 
         if check_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
@@ -468,6 +474,9 @@ def _cli() -> argparse.ArgumentParser:
         required=True,
         help="Which experiment group to run",
     )
+    parser.add_argument(
+        "--num_eos_tokens", type=int, default=None, help="Number of EOS tokens to use, default is [1, 4, 8, 16]"
+    )
     parser.add_argument("--dry", action="store_true")
 
     parser.add_argument("--wait", type=str, help="Job ID to wait for")
@@ -478,6 +487,8 @@ def _cli() -> argparse.ArgumentParser:
 def main() -> None:
     parser = _cli()
     args = parser.parse_args()
+
+    num_eos_tokens = [1, 4, 8, 16] if args.num_eos_tokens is None else [args.num_eos_tokens]
 
     if args.wait is not None:
         from mls.manager.job.utils import training_job_api_from_profile
@@ -502,11 +513,11 @@ def main() -> None:
         print("Job finished", job_id)
 
     if args.group == "eos-only":
-        run_group_eos_only(dry=args.dry)
+        run_group_eos_only(dry=args.dry, num_eos_tokens=num_eos_tokens)
     elif args.group == "full":
-        run_group_full(dry=args.dry)
+        run_group_full(dry=args.dry, num_eos_tokens=num_eos_tokens)
     elif args.group == "lora":
-        run_group_lora(dry=args.dry)
+        run_group_lora(dry=args.dry, num_eos_tokens=num_eos_tokens)
 
     return
 

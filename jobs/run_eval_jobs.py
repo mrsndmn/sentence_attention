@@ -300,7 +300,8 @@ if __name__ == "__main__":
                     )
 
                     processed_models += 1
-                    time.sleep(5)  # to avoid race conditions and brusting max queue size
+                    if not args.dry:
+                        time.sleep(5)  # to avoid race conditions and brusting max queue size
 
                     if args.limit_jobs is not None and processed_models >= args.limit_jobs:
                         print(f"Processed {processed_models} models, stopping")
