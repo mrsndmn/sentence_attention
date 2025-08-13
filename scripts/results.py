@@ -4,7 +4,10 @@ import os
 from collections import defaultdict
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from sentence_attention.artifacts.experiments import get_all_last_checkpoints
+import matplotlib
+import matplotlib.pyplot as plt
+import pandas as pd
+from sentence_attention.artifacts.experiments import get_all_checkpoints, get_all_last_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks
 from tabulate import tabulate
 
@@ -156,6 +159,62 @@ def build_table(
     return table_rows
 
 
+def plot_per_checkpoint_short_results():
+    # TODO
+
+    matplotlib.style.use("seaborn-v0_8-darkgrid")
+
+    short_benchmarks = ["mmlu_cloze", "hellaswag", "arc", "winogrande"]
+
+    for eos_tokens_num in [1, 4, 8, 16]:
+        all_checkpoints = get_all_checkpoints(eos_tokens_num=eos_tokens_num)
+
+        experiment_rows = build_rows(all_checkpoints)
+        if len(experiment_rows) == 0:
+            continue
+
+        df = pd.DataFrame(experiment_rows)
+
+        for training_type in ["eos_only", "full finetune", "lora"]:
+            df_training_type = df[df["training"] == training_type]
+
+            for benchmark in short_benchmarks:
+
+                plt.figure()
+
+                for model in df_training_type["experiment"].unique().tolist():
+                    df_model_training_type = df_training_type[df_training_type["experiment"] == model].copy()
+
+                    df_model_training_type["step"] = df_model_training_type["step"].astype(int)
+                    df_model_training_type = df_model_training_type.sort_values(by="step")
+
+                    model_steps = []
+                    model_metrics = []
+
+                    for _, row in df_model_training_type.iterrows():
+                        row_dict = row.to_dict()
+                        metric = read_benchmark_metric(row_dict["full_path"], benchmark)
+                        if metric == "":
+                            continue
+
+                        model_steps.append(row_dict["step"])
+                        model_metrics.append(float(metric))
+
+                    model_label = model.replace("sentence_", "").split("_")[0]
+                    plt.plot(model_steps, model_metrics, label=model_label)
+
+                plt.legend()
+                plt.title(f"{training_type} {benchmark}")
+
+                plot_dir = f"artifacts/plots/eos_{eos_tokens_num}"
+                os.makedirs(plot_dir, exist_ok=True)
+                plot_file_name = f"{plot_dir}/per_checkpoint_short_results_{training_type.replace(' ', '-')}_{benchmark}.png"
+                plt.savefig(plot_file_name)
+                print(f"Saved plot to {plot_file_name}")
+                plt.tight_layout()
+                plt.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Print LaTeX tables for last checkpoints grouped by model family and training type."
@@ -268,6 +327,8 @@ def main() -> None:
             disable_numparse=True,
         )
     )
+
+    plot_per_checkpoint_short_results()
 
 
 if __name__ == "__main__":
