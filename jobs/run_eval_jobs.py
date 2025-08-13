@@ -7,7 +7,7 @@ import time
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
 from sentence_attention.artifacts.experiments import sort_checkpoints
-from sentence_attention.evaluation.benchmarks import all_benchmarks, checkpoint_evaluation_file
+from sentence_attention.evaluation.benchmarks import all_benchmarks, checkpoint_evaluation_file, short_benchmarks
 from sentence_attention.integration.job import REGION, get_in_progress_jobs
 
 SEED = 1008
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_checkpoints", type=int, default=1)
     parser.add_argument("--dry", action="store_true")
-    parser.add_argument("--benchmark", type=str, default="all", choices=["all", *all_benchmarks])
+    parser.add_argument("--benchmark", type=str, default="all", choices=["all", "short", *all_benchmarks])
     parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4"])
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
@@ -188,7 +188,12 @@ if __name__ == "__main__":
     if args.limit_jobs is not None:
         assert args.limit_jobs > 0
 
-    benchmarks = all_benchmarks if args.benchmark == "all" else [args.benchmark]
+    if args.benchmark == "all":
+        benchmarks = copy.deepcopy(all_benchmarks)
+    elif args.benchmark == "short":
+        benchmarks = copy.deepcopy(short_benchmarks)
+    else:
+        benchmarks = [args.benchmark]
 
     print(f"Evaluating {num_checkpoints} checkpoints for {benchmarks} benchmarks")
 

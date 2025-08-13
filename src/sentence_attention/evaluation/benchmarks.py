@@ -11,6 +11,13 @@ all_benchmarks = [
     "winogrande",
 ]
 
+short_benchmarks = [
+    "arc",
+    "hellaswag",
+    "mmlu_cloze",
+    "winogrande",
+]
+
 
 def checkpoint_evaluation_file(model_checkpoint, task_name):
     evaluation_dir = os.path.join(model_checkpoint, "evaluation")
