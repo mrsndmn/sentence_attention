@@ -8,7 +8,8 @@ workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 def test_eos_tokens_count():
 
     for eos_num in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments")):
-        if eos_num == "eos_0":
+        num_eos_tokens = int(eos_num.split("_")[1])
+        if num_eos_tokens == 0:
             continue
 
         for experiment_dir in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num)):
@@ -16,7 +17,7 @@ def test_eos_tokens_count():
                 tokenizer = AutoTokenizer.from_pretrained(
                     os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir, checkpoint)
                 )
-                if eos_num == "eos_4":
+                if num_eos_tokens > 1:
                     for i in range(4):
                         eos_token = f"<end_of_sentence_{i}>"
                         assert eos_token in tokenizer.get_vocab(), f"Tokenizer {checkpoint} does not have {eos_token} token"
@@ -25,7 +26,7 @@ def test_eos_tokens_count():
                         "<end_of_sentence>" not in tokenizer.get_vocab()
                     ), f"Tokenizer {checkpoint} has <end_of_sentence> token"
                 else:
-                    for i in range(4):
+                    for i in range(num_eos_tokens):
                         eos_token = f"<end_of_sentence_{i}>"
                         assert eos_token not in tokenizer.get_vocab(), f"Tokenizer {checkpoint} does not have {eos_token} token"
 
