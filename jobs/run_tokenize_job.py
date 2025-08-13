@@ -27,7 +27,7 @@ if __name__ == "__main__":
             result = client.run_job(
                 payload={
                     "script": script,
-                    "job_desc": f"Tokenize fineweb EOS model={pretrained_model_name} num_eos_tokens={num_eos_tokens} #{author_name} #rnd #multimodal @mrsndmn",
+                    "job_desc": f"Tokenize fineweb EOS model={pretrained_model_name} num_eos_tokens={num_eos_tokens} #{author_name} #rnd #multimodal #notify_completed @mrsndmn",
                     "instance_type": "a100.1gpu",
                     "region": extra_options["region"],
                     "env_variables": {

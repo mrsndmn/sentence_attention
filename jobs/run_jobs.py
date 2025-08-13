@@ -144,7 +144,7 @@ def run_experiments(experiments: List[Dict], job_description_prefix: str = "", d
             instance_type=instance_type,
             n_workers=N_WORKERS,
             processes_per_worker=1,
-            job_desc=f"{job_description_prefix}{output_dir} #rnd #multimodality #tarasov @mrsndmn",
+            job_desc=f"{job_description_prefix}{output_dir} #rnd #multimodality #tarasov #notify_completed @mrsndmn",
             # stop_timer=600, # в минутах, = 10 часов
             env_variables={
                 "PATH": "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin:/home/user/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin",

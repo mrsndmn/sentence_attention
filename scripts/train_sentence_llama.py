@@ -199,7 +199,7 @@ if __name__ == "__main__":
     trainer.train()
     out_dir_path = Path(training_args.output_dir)
 
-    with state.is_main_process:
+    if state.is_main_process:
         print("Main process. Moving experiment directory to finished_target_dir")
 
         finished_target_dir = out_dir_path.parent.parent / "experiments" / f"eos_{training_args.number_of_eos_tokens}"
