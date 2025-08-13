@@ -173,8 +173,11 @@ def get_in_progress_jobs(client, statuses=None):
             )
             if "jobs" in non_final_jobs:
                 break
-            elif "error_code" in non_final_jobs and non_final_jobs["error_code"] == 32:  # no active session
-                print("No active session, waiting for 5 seconds")
+            elif "error_code" in non_final_jobs and non_final_jobs["error_code"] == [
+                32,
+                20,
+            ]:  # no active session, access_token expired
+                print("Error:", non_final_jobs, "try adain")
                 time.sleep(5)
                 client, _ = training_job_api_from_profile("default")
             else:
@@ -301,7 +304,8 @@ if __name__ == "__main__":
 
                     processed_models += 1
                     if not args.dry:
-                        time.sleep(5)  # to avoid race conditions and brusting max queue size
+                        pass
+                        # time.sleep(5)  # to avoid race conditions and brusting max queue size
 
                     if args.limit_jobs is not None and processed_models >= args.limit_jobs:
                         print(f"Processed {processed_models} models, stopping")

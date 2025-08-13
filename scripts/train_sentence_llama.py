@@ -36,7 +36,7 @@ if __name__ == "__main__":
     with state.local_main_process_first():
 
         if training_args.add_end_of_sentence_token:
-            print("Loading fineweb edu tokenized with gpt2_eos")
+            print("Loading fineweb edu tokenized with eos tokenizer")
             datasets_path_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data"
 
             dataset_suffix = ""
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     trainer.train()
     out_dir_path = Path(training_args.output_dir)
 
-    with state.on_main_process():
+    with state.is_main_process:
         print("Main process. Moving experiment directory to finished_target_dir")
 
         finished_target_dir = out_dir_path.parent.parent / "experiments" / f"eos_{training_args.number_of_eos_tokens}"

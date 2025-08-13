@@ -25,7 +25,7 @@ BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 # Required interpreter path policy
-PYTHON_INTERPRETER = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python"
+ENV_BIN = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/"
 
 
 def run_experiments(experiments: List[Dict], job_description_prefix: str = "", dry: bool = False) -> None:
@@ -114,7 +114,7 @@ def run_experiments(experiments: List[Dict], job_description_prefix: str = "", d
 
         # Use required full Python interpreter path and launch accelerate as a module
         script_str = (
-            f"{PYTHON_INTERPRETER} -m accelerate launch "
+            f"{ENV_BIN}/python {ENV_BIN}/accelerate launch "
             f"--config_file {accelerate_config} "
             f"{workdir_prefix}/scripts/train_sentence_llama.py "
             f"--save_strategy steps --save_steps {save_steps} "
