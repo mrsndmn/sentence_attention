@@ -8,8 +8,7 @@ import client_lib  # импортируем библиотеку для рабо
 from mls.manager.job.utils import training_job_api_from_profile
 from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks, checkpoint_evaluation_file
-
-REGION = "SR004"
+from sentence_attention.integration.job import REGION, get_in_progress_jobs
 
 SEED = 1008
 
@@ -153,39 +152,6 @@ def run_extract_metrics(checkpoints: list[str], tasks=None):
             ),
             " \\\\",
         )
-
-
-def get_in_progress_jobs(client, statuses=None):
-
-    all_in_progress_jobs = []
-
-    if statuses is None:
-        statuses = ["Pending", "Running"]
-
-    for non_final_status in statuses:
-        while True:
-            non_final_jobs = client.get_list_jobs(
-                region=REGION,
-                allocation_name="alloc-officecds-multimodal-2-sr004",
-                status=non_final_status,
-                limit=1000,
-                offset=0,
-            )
-            if "jobs" in non_final_jobs:
-                break
-            elif "error_code" in non_final_jobs and non_final_jobs["error_code"] == [
-                32,
-                20,
-            ]:  # no active session, access_token expired
-                print("Error:", non_final_jobs, "try adain")
-                time.sleep(5)
-                client, _ = training_job_api_from_profile("default")
-            else:
-                raise ValueError("Unknown error in get_in_progress_jobs:", non_final_jobs)
-
-        all_in_progress_jobs.extend(non_final_jobs["jobs"])
-
-    return all_in_progress_jobs
 
 
 def get_in_progress_jobs_descriptions(client):
