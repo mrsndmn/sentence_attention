@@ -171,7 +171,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_checkpoints", type=int, default=1)
     parser.add_argument("--dry", action="store_true")
-    parser.add_argument("--benchmark", type=str, default="all", choices=["all", "short", *all_benchmarks])
+    parser.add_argument("--benchmark", type=str, default="all")
     parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4"])
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
@@ -193,7 +193,10 @@ if __name__ == "__main__":
     elif args.benchmark == "short":
         benchmarks = copy.deepcopy(short_benchmarks)
     else:
-        benchmarks = [args.benchmark]
+        benchmarks = args.benchmark.split(",")
+
+    for benchmark in benchmarks:
+        assert benchmark in all_benchmarks, f"Benchmark {benchmark} not in {all_benchmarks}"
 
     print(f"Evaluating {num_checkpoints} checkpoints for {benchmarks} benchmarks")
 
@@ -210,19 +213,21 @@ if __name__ == "__main__":
             if eos_num != args.eos_num:
                 continue
 
-        for experiment_dir in os.listdir(os.path.join(experiments_dir, eos_num)):
-            if stop:
-                break
+        experiments_dirs = os.listdir(os.path.join(experiments_dir, eos_num))
 
-            if args.model is not None and args.model not in experiment_dir.lower():
-                # print(f"Skipping {experiment_dir} because it does not contain {args.model}")
-                continue
+        for benchmark in benchmarks:
+            for experiment_dir in experiments_dirs:
+                if stop:
+                    break
 
-            experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
-            checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
+                if args.model is not None and args.model not in experiment_dir.lower():
+                    # print(f"Skipping {experiment_dir} because it does not contain {args.model}")
+                    continue
 
-            for checkpoint in checkpoints:
-                for benchmark in benchmarks:
+                experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
+                checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
+
+                for checkpoint in checkpoints:
 
                     if args.max_jobs_queue_size is not None and check_queue_processed_models < processed_models:
                         while True:
@@ -246,7 +251,7 @@ if __name__ == "__main__":
 
                     evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
 
-                    if os.path.exists(evaluation_file):
+                    if os.path.exists(evaluation_file) and os.stat(evaluation_file).st_size > 0:
                         if args.force:
                             if not args.dry:
                                 os.remove(evaluation_file)
