@@ -10,8 +10,9 @@ from copy import deepcopy
 from typing import Any, Dict, List
 
 import client_lib  # импортируем библиотеку для работы с ML Space
+from mls.manager.job.utils import training_job_api_from_profile
 from sentence_attention.artifacts.experiments import sort_checkpoints
-from sentence_attention.integration.job import accelerate_config_by_instance_type
+from sentence_attention.integration.job import accelerate_config_by_instance_type, get_in_progress_jobs
 from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
 
 # Defaults and constants
@@ -25,10 +26,10 @@ BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 # Required interpreter path policy
-PYTHON_INTERPRETER = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python"
+ENV_BIN = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin"
 
 
-def run_experiments(experiments: List[Dict], job_description_prefix: str = "", dry: bool = False) -> None:
+def run_experiments(experiments: List[Dict], job_description: str = "", dry: bool = False) -> None:
 
     for exp in experiments:
         exp = deepcopy(exp)
@@ -114,7 +115,7 @@ def run_experiments(experiments: List[Dict], job_description_prefix: str = "", d
 
         # Use required full Python interpreter path and launch accelerate as a module
         script_str = (
-            f"{PYTHON_INTERPRETER} -m accelerate launch "
+            f"{ENV_BIN}/python {ENV_BIN}/accelerate launch "
             f"--config_file {accelerate_config} "
             f"{workdir_prefix}/scripts/train_sentence_llama.py "
             f"--save_strategy steps --save_steps {save_steps} "
@@ -144,7 +145,7 @@ def run_experiments(experiments: List[Dict], job_description_prefix: str = "", d
             instance_type=instance_type,
             n_workers=N_WORKERS,
             processes_per_worker=1,
-            job_desc=f"{job_description_prefix}{output_dir} #rnd #multimodality #tarasov @mrsndmn",
+            job_desc=f"{job_description} #rnd #multimodality #tarasov #notify_completed @mrsndmn",
             # stop_timer=600, # в минутах, = 10 часов
             env_variables={
                 "PATH": "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin:/home/user/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin",
@@ -194,8 +195,11 @@ def run_training_experiments(
     warmup_steps: int = 2000,
     bf16: str = "0",
     add_end_of_sentence_token: str = "1",
+    job_description=None,
     **kwargs: Dict,
 ) -> None:
+
+    assert job_description is not None, "job_description is required"
 
     common_params = {
         # Model
@@ -236,11 +240,11 @@ def run_training_experiments(
         **common_params,
     }
 
-    exp_config["output_dir"] = f"{experiment_prefix_base_name}"
+    exp_config["output_dir"] = experiment_prefix_base_name
 
     experiments.append(exp_config)
 
-    run_experiments(experiments, job_description_prefix="ST: ", **kwargs)
+    run_experiments(experiments, job_description=job_description, **kwargs)
 
     return
 
@@ -263,7 +267,7 @@ def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
     """
     all_experiments: List[Dict[str, Any]] = []
 
-    for number_of_eos_tokens in [1, 4]:
+    for number_of_eos_tokens in [1, 4, 8, 16]:
         eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
         for experiment in os.listdir(eos_dir):
             experiment_path = f"{eos_dir}/{experiment}"
@@ -308,14 +312,25 @@ def check_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eo
         raise ValueError(f"Multiple experiments found for {experiment_prefix_base_name_full}: {matches}")
 
 
-def run_group_eos_only(*, dry: bool) -> None:
+def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_jobs: List[Dict]) -> bool:
+
+    experiment_in_progress = False
+    for job in in_progress_jobs:
+        if experiment_prefix_base_name in job["job_desc"]:
+            experiment_in_progress = True
+            break
+
+    return experiment_in_progress
+
+
+def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict]) -> None:
     ngpus = 4
     num_train_epochs = 1
     per_device_train_batch_size = 4
     save_steps = 250
     optimized_params = "only_eos_embedding"
 
-    for number_of_eos_tokens in [1, 4]:
+    for number_of_eos_tokens in num_eos_tokens:
 
         for model_checkpoint in _models_for_eos_only():
             # TODO check sucessful experiment has already been processed
@@ -327,6 +342,15 @@ def run_group_eos_only(*, dry: bool) -> None:
 
             if check_checkpoint_model_exists(experiment_path, number_of_eos_tokens):
                 print(f"Experiment eos_{number_of_eos_tokens} / {experiment_path} already exists")
+                continue
+
+            experiment_prefix_base_name = (
+                f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}"
+            )
+            job_description = f"ST: {experiment_prefix_base_name}"
+
+            if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+                print(f"Experiment {experiment_prefix_base_name} is already in progress")
                 continue
 
             run_training_experiments(
@@ -354,11 +378,12 @@ def run_group_eos_only(*, dry: bool) -> None:
                 lr_scheduler_type="cosine",
                 bf16="0",
                 add_end_of_sentence_token=1,
-                experiment_prefix_base_name=f"sentence_{model_checkpoint_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
+                experiment_prefix_base_name=experiment_prefix_base_name,
+                job_description=job_description,
             )
 
 
-def run_group_full(*, dry: bool) -> None:
+def run_group_full(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict]) -> None:
     ngpus = 4
     num_train_epochs = 1
     save_steps = 250
@@ -371,11 +396,21 @@ def run_group_full(*, dry: bool) -> None:
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
 
+        if int(number_of_eos_tokens) not in num_eos_tokens:
+            continue
+
         if check_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
             continue
 
         gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
+
+        experiment_prefix_base_name = f"sentence_{model_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}"
+        job_description = f"ST: {experiment_prefix_base_name}"
+
+        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+            print(f"Experiment {experiment_prefix_base_name} is already in progress")
+            continue
 
         run_training_experiments(
             learning_rate=0.00005,
@@ -403,11 +438,12 @@ def run_group_full(*, dry: bool) -> None:
             lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
+            experiment_prefix_base_name=experiment_prefix_base_name,
+            job_description=job_description,
         )
 
 
-def run_group_lora(*, dry: bool) -> None:
+def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict]) -> None:
     ngpus = 4
     num_train_epochs = 1
     save_steps = 250
@@ -421,6 +457,9 @@ def run_group_lora(*, dry: bool) -> None:
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
 
+        if int(number_of_eos_tokens) not in num_eos_tokens:
+            continue
+
         if check_checkpoint_model_exists(f"sentence_{model_slug}_ft_{optimized_params}", number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
             continue
@@ -428,6 +467,13 @@ def run_group_lora(*, dry: bool) -> None:
         per_device_train_batch_size = max(per_device_train_batch_size, 16)
 
         gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
+
+        experiment_prefix_base_name = f"sentence_{model_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}"
+        job_description = f"ST: {experiment_prefix_base_name}"
+
+        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+            print(f"Experiment {experiment_prefix_base_name} is already in progress")
+            continue
 
         run_training_experiments(
             learning_rate=0.0001,
@@ -455,7 +501,8 @@ def run_group_lora(*, dry: bool) -> None:
             lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
-            experiment_prefix_base_name=f"sentence_{model_slug}_ft_{optimized_params}_num_eos_tokens_{number_of_eos_tokens}",
+            experiment_prefix_base_name=experiment_prefix_base_name,
+            job_description=job_description,
         )
 
 
@@ -468,6 +515,9 @@ def _cli() -> argparse.ArgumentParser:
         required=True,
         help="Which experiment group to run",
     )
+    parser.add_argument(
+        "--num_eos_tokens", type=int, default=None, help="Number of EOS tokens to use, default is [1, 4, 8, 16]"
+    )
     parser.add_argument("--dry", action="store_true")
 
     parser.add_argument("--wait", type=str, help="Job ID to wait for")
@@ -479,9 +529,9 @@ def main() -> None:
     parser = _cli()
     args = parser.parse_args()
 
-    if args.wait is not None:
-        from mls.manager.job.utils import training_job_api_from_profile
+    num_eos_tokens = [1, 4, 8, 16] if args.num_eos_tokens is None else [args.num_eos_tokens]
 
+    if args.wait is not None:
         job_id = args.wait
         print("Waiting for jobs to finish", job_id)
         while True:
@@ -490,23 +540,26 @@ def main() -> None:
                 client, _ = training_job_api_from_profile("default")
                 job = client.get_job_status(job_id)
                 print("Job info", job)
+                print("Job status", job["status"])  # type: ignore[index]
             except Exception as e:
                 print("Error", e)
-                time.sleep(60)
+                time.sleep(10)
 
-            print("Job status", job["status"])  # type: ignore[index]
-            if job is not None and job["status"].lower() == "completed":  # type: ignore[index]
+            if job is not None and "status" in job and job["status"].lower() in ["completed", "failed", "stopped"]:  # type: ignore[index]
                 break
             print("Waiting for jobs to finish", job_id)
             time.sleep(10)
         print("Job finished", job_id)
 
+    client, _ = training_job_api_from_profile("default")
+    in_progress_jobs = get_in_progress_jobs(client)
+
     if args.group == "eos-only":
-        run_group_eos_only(dry=args.dry)
+        run_group_eos_only(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs)
     elif args.group == "full":
-        run_group_full(dry=args.dry)
+        run_group_full(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs)
     elif args.group == "lora":
-        run_group_lora(dry=args.dry)
+        run_group_lora(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs)
 
     return
 

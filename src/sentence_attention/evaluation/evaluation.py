@@ -13,7 +13,7 @@ task_to_default_batch_size = {
     "hellaswag": 64,
     "mmlu_cloze": 16,
     "mmlu_pro_cloze": 16,
-    "piqa": 128,
+    "piqa": 64,
     "siqa": 256,
     "openbookqa": 256,
     "winogrande": 512,
