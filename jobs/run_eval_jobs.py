@@ -172,7 +172,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_checkpoints", type=int, default=1)
     parser.add_argument("--dry", action="store_true")
     parser.add_argument("--benchmark", type=str, default="all")
-    parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4"])
+    parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4", "eos_8", "eos_16"])
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
     parser.add_argument("--max_jobs_queue_size", type=int, default=1)
@@ -266,7 +266,7 @@ if __name__ == "__main__":
                         "benchmark": benchmark,
                     }
 
-                    job_description = f"Eval {eos_num}/{experiment_dir}/{checkpoint} {benchmark} {JOB_DESCRIPTION_SUFFIX}"
+                    job_description = f"Eval {benchmark}: {eos_num}/{experiment_dir}/{checkpoint} {JOB_DESCRIPTION_SUFFIX}"
 
                     if job_description in in_progress_jobs_descriptions:
                         print(f"Job {job_description} already in progress, skipping")

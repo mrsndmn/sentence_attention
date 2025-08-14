@@ -202,7 +202,9 @@ if __name__ == "__main__":
     if state.is_main_process:
         print("Main process. Moving experiment directory to finished_target_dir")
 
-        finished_target_dir = out_dir_path.parent.parent / "experiments" / f"eos_{training_args.number_of_eos_tokens}"
+        finished_target_dir = (
+            out_dir_path.parent.parent / "experiments" / f"eos_{training_args.number_of_eos_tokens}" / out_dir_path.name
+        )
         print("finished_target_dir", finished_target_dir)
         while True:
             if finished_target_dir.exists():
@@ -210,7 +212,7 @@ if __name__ == "__main__":
                 continue
             break
 
-        os.makedirs(finished_target_dir, exist_ok=True)
+        os.makedirs(finished_target_dir.parent, exist_ok=True)
 
-        shutil.move(out_dir_path, finished_target_dir)
+        shutil.move(out_dir_path, finished_target_dir.parent)
         print("Moved from", out_dir_path, "to finished_target_dir", finished_target_dir)
