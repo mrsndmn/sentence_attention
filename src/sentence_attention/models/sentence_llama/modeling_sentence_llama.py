@@ -962,6 +962,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         if self.config.end_of_sentence_token_ids is not None:
             for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
                 special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+                print("number of end of sentence tokens", special_embeddings_mask.sum().item())
 
         outputs["special_embeddings_mask"] = special_embeddings_mask
         outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)

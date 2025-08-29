@@ -63,6 +63,7 @@ if __name__ == "__main__":
             else:
                 dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos"
 
+            print("Loading dataset from", dataset_path)
             fineweb_dataset = Dataset.load_from_disk(dataset_path)
 
             TOTAL_SHARDS = 14  # CONSTANT

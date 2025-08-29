@@ -24,7 +24,7 @@ workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments")
 
 
-def run_eval_experiments(experiment, job_description="Eval", dry=False):
+def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
 
     experiment = copy.deepcopy(experiment)
 
@@ -61,7 +61,17 @@ def run_eval_experiments(experiment, job_description="Eval", dry=False):
     if dry:
         print("JOB WAS NOT LAUNCHED")
     else:
-        print(job_description, "\n", job_w_args.submit())
+        if local:
+            print("Running local process")
+            import subprocess
+
+            # Example: Running a simple command
+            result = subprocess.run(script_str, shell=True)
+            if result.returncode != 0:
+                print("Failed to run job:", job_description)
+
+        else:
+            print(job_description, "\n", job_w_args.submit())
 
     return
 
@@ -175,8 +185,9 @@ if __name__ == "__main__":
     parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4", "eos_8", "eos_16"])
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
-    parser.add_argument("--max_jobs_queue_size", type=int, default=1)
+    parser.add_argument("--max_jobs_queue_size", type=int, default=None)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--local", action="store_true")
     args = parser.parse_args()
 
     num_checkpoints = args.num_checkpoints
@@ -276,6 +287,7 @@ if __name__ == "__main__":
                         experiment,
                         dry=args.dry,
                         job_description=job_description,
+                        local=args.local,
                     )
 
                     processed_models += 1

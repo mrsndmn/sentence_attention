@@ -14,9 +14,10 @@ if __name__ == "__main__":
     author_name = "d.tarasov"
 
     # for num_eos_tokens in [ 1, 4, 8, 16 ]:
-    for num_eos_tokens in [16]:
+    for num_eos_tokens in [4]:
 
-        for pretrained_model_name in ["unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
+        for pretrained_model_name in ["unsloth/llama-3-8b", "Qwen/Qwen2.5-1.5B"]:
+            # for pretrained_model_name in ["unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
 
             script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python scripts/tokenize_fineweb_edu.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens}'"
             print("\n\n", script)

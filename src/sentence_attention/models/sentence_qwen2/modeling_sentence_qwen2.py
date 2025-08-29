@@ -242,11 +242,9 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         if special_embeddings_mask is None:
             special_embeddings_mask = torch.zeros_like(attention_mask)
             if self.config.end_of_sentence_token_ids is not None:
-                total_eos_tokens = 0
                 for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
                     special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
-                    total_eos_tokens += (input_ids == end_of_sentence_token_id).sum().item()
-                print("number of end of sentence tokens", total_eos_tokens)
+                print("number of end of sentence tokens", special_embeddings_mask.sum().item())
 
         assert special_embeddings_mask is not None
 

@@ -255,6 +255,7 @@ def _models_for_eos_only() -> List[str]:
         "Qwen/Qwen2.5-1.5B",
         "unsloth/Llama-3.2-3B",
         "Qwen/Qwen2.5-3B",
+        "unsloth/llama-3-8b",
     ]
 
 
