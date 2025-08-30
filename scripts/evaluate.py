@@ -14,9 +14,16 @@ def load_model_from_checkpoint(checkpoint_path):
     model_class_name = config.architectures[0]
 
     tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
-    print(
-        "tokenizer num_eos_tokens", tokenizer.num_eos_tokens, "end_of_sentence_token_ids", tokenizer.end_of_sentence_token_ids
-    )
+
+    if hasattr(tokenizer, "num_eos_tokens"):
+        print(
+            "tokenizer num_eos_tokens",
+            tokenizer.num_eos_tokens,
+            "end_of_sentence_token_ids",
+            tokenizer.end_of_sentence_token_ids,
+        )
+    else:
+        print("tokenizer does not have num_eos_tokens", type(tokenizer))
 
     if model_class_name == "SentenceLlamaForCausalLM":
         model_class = SentenceLlamaForCausalLM
