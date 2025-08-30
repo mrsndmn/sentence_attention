@@ -152,6 +152,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
                 "CLEARML_CONFIG_FILE": f"{workdir_prefix}/configs/clearml.conf",
                 "CLEARML_PROJECT": "sentence_attention",
                 "CLEARML_LOG_MODEL": "FALSE",
+                "WANDB_MODE": "offline",
                 # Always make sure PYTHONPATH and HF_HOME are set
                 "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
                 "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
@@ -449,7 +450,7 @@ def run_group_full(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
 
 
 def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict]) -> None:
-    ngpus = 4
+    ngpus = 8
     num_train_epochs = 1
     save_steps = 250
     optimized_params = "lora"
@@ -471,7 +472,7 @@ def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
             print(f"Experiment eos_{number_of_eos_tokens} / {f'sentence_{model_slug}_ft_{optimized_params}'} already exists")
             continue
 
-        per_device_train_batch_size = max(per_device_train_batch_size, 16)
+        per_device_train_batch_size = max(per_device_train_batch_size, 8)
 
         gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
 

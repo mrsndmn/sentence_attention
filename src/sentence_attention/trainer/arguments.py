@@ -44,7 +44,7 @@ class SentenceTrainingArguments(TrainingArguments):
 
     push_to_hub: bool = field(default=False)
     optim: str = field(default="adamw_torch_fused")
-    report_to: str = field(default="clearml")
+    report_to: str = field(default="wandb")  # clearml | wandb | none
     logging_steps: int = field(default=100)
     dataloader_drop_last: bool = field(default=True)
     dataloader_num_workers: int = field(default=0)
