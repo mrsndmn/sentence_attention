@@ -456,6 +456,8 @@ def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
+        if "llama-3-8b" not in exp_config["model_checkpoint"]:
+            continue
 
         model_checkpoint = exp_config["model_checkpoint"]
         model_slug = exp_config["model_slug"]
