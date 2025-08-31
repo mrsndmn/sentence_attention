@@ -24,6 +24,7 @@ import torch.nn as nn
 import torch.utils.checkpoint
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.generation import GenerationMixin
+from transformers.integrations.flex_attention import compile_friendly_flex_attention
 from transformers.integrations.sdpa_attention import repeat_kv
 from transformers.modeling_attn_mask_utils import AttentionMaskConverter
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
@@ -128,7 +129,54 @@ def sentence_attention_forward(
     return attn_output, None
 
 
+def sentence_attention_forward_flex(
+    module: torch.nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: Union[torch.Tensor, "BlockMask"],
+    scaling: Optional[float] = None,
+    softcap: Optional[float] = None,
+    head_mask: Optional[torch.Tensor] = None,
+    **kwargs,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+
+    clothest_eos_token_idx = kwargs["clothest_end_of_sentence_token_idx"]
+    attention_mask_bool = attention_mask.bool()
+    special_embeddings_mask = kwargs["special_embeddings_mask"].to(torch.bool)
+
+    # [ bs, seq_len ]
+    assert len(attention_mask_bool.shape) == 2
+
+    def score_mod(score, b, h, q_idx, kv_idx):
+        eos_token_idx = clothest_eos_token_idx[b, q_idx]
+
+        causal_mask = (kv_idx <= q_idx) & attention_mask_bool[b, q_idx] & attention_mask_bool[b, kv_idx]
+        eos_sync_tokens = causal_mask & special_embeddings_mask[b, kv_idx]
+        causal_triu_mask = causal_mask & (kv_idx >= eos_token_idx)
+
+        return torch.where((causal_triu_mask | eos_sync_tokens), score, -float("inf"))
+
+    attn_output = compile_friendly_flex_attention(
+        query,
+        key,
+        value,
+        score_mod=score_mod,
+        block_mask=None,
+        enable_gqa=True,
+        scale=scaling,
+        # Last time checked on PyTorch == 2.5.1: Flex Attention always computes the lse regardless.
+        # For simplification, we thus always return it as no additional computations are introduced.
+        return_lse=False,
+    )
+    # attention_weights = attention_weights.to(value.dtype)
+    attn_output = attn_output.transpose(1, 2).contiguous()
+
+    return attn_output, None
+
+
 ALL_ATTENTION_FUNCTIONS["sentence_attention"] = sentence_attention_forward
+ALL_ATTENTION_FUNCTIONS["sentence_attention_flex"] = sentence_attention_forward_flex
 
 
 @dataclass
@@ -166,6 +214,8 @@ class SentenceLlamaAttention(nn.Module):
         attention_mask: Optional[torch.Tensor],
         past_key_value: Optional[Cache] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        special_embeddings_mask: Optional[torch.Tensor] = None,
+        clothest_end_of_sentence_token_idx: Optional[torch.Tensor] = None,
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         input_shape = hidden_states.shape[:-1]
@@ -198,16 +248,30 @@ class SentenceLlamaAttention(nn.Module):
             else:
                 attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        attn_output, attn_weights = attention_interface(
-            self,
-            query_states,
-            key_states,
-            value_states,
-            attention_mask,
-            dropout=0.0 if not self.training else self.attention_dropout,
-            scaling=self.scaling,
-            **kwargs,
-        )
+        if self.config._attn_implementation == "sentence_attention_flex":
+            attn_output, attn_weights = attention_interface(
+                self,
+                query_states,
+                key_states,
+                value_states,
+                attention_mask,
+                dropout=0.0 if not self.training else self.attention_dropout,
+                scaling=self.scaling,
+                special_embeddings_mask=special_embeddings_mask,
+                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+                **kwargs,
+            )
+        else:
+            attn_output, attn_weights = attention_interface(
+                self,
+                query_states,
+                key_states,
+                value_states,
+                attention_mask,
+                dropout=0.0 if not self.training else self.attention_dropout,
+                scaling=self.scaling,
+                **kwargs,
+            )
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
         attn_output = self.o_proj(attn_output)
@@ -572,9 +636,10 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         if not isinstance(past_key_values, (type(None), Cache)):
             raise ValueError("The `past_key_values` should be either a `Cache` object or `None`.")
 
-        assert (
-            self.config._attn_implementation == "sentence_attention"
-        ), f"config._attn_implementation is expected to be 'sentence_attention', but got {self.config._attn_implementation}"
+        assert self.config._attn_implementation in [
+            "sentence_attention",
+            "sentence_attention_flex",
+        ], f"config._attn_implementation is expected to be 'sentence_attention', but got {self.config._attn_implementation}"
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache()
@@ -691,6 +756,11 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 attention_mask = make_flex_block_causal_mask(attention_mask)
             if isinstance(attention_mask, BlockMask):
                 return attention_mask
+
+        if self.config._attn_implementation == "sentence_attention_flex":
+            # Force 2d attention mask, not 4d
+            return attention_mask
+
         # For SDPA, when possible, we will rely on its `is_causal` argument instead of its `attn_mask` argument, in
         # order to dispatch on Flash Attention 2. This feature is not compatible with static cache, as SDPA will fail
         # to infer the attention mask.
@@ -904,7 +974,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         else:
             eos_idx = clothest_end_of_sentence_token_idx.view(bs, q_len, 1)  # (bs, q_len, 1)
 
-        block_causal = causal_and_valid.clone()
+        # block_causal = causal_and_valid.clone()
         block_causal = causal_and_valid & (k_idx >= eos_idx)
         # block_causal[:, :, -q_len:] = causal_and_valid[:, :, -q_len:] & (k_idx[:, :, -q_len:] >= eos_idx)
 

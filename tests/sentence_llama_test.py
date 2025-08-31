@@ -1,7 +1,82 @@
+import pytest
 import torch
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
-from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
+    SentenceLlamaForCausalLM,
+    SentenceLlamaModel,
+    sentence_attention_forward,
+    sentence_attention_forward_flex,
+    special_token_mask_to_clothest_token_idx_slow,
+)
 from transformers import AutoTokenizer
+from transformers.utils import is_torch_flex_attn_available
+
+
+@pytest.mark.skipif(not is_torch_flex_attn_available(), reason="Flex attention not available")
+def test_sentence_attention_impl_equivalence():
+    torch.manual_seed(0)
+
+    batch_size = 3
+    num_heads = 4
+    seq_len = 1024
+    head_dim = 8
+
+    # Q, K, V
+    query = torch.randn(batch_size, num_heads, seq_len, head_dim, dtype=torch.bfloat16)
+    key = torch.randn(batch_size, num_heads, seq_len, head_dim, dtype=torch.bfloat16)
+    value = torch.randn(batch_size, num_heads, seq_len, head_dim, dtype=torch.bfloat16)
+
+    # 2D attention mask (no padding)
+    attention_mask_2d = torch.ones(batch_size, seq_len, dtype=torch.long)
+
+    # Mark a few EOS tokens in the sequence
+    special_embeddings_mask = torch.zeros_like(attention_mask_2d)
+    special_positions = [3, 7]
+    for pos in special_positions:
+        special_embeddings_mask[:, pos] = 1
+
+    clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
+
+    # Build the 4D mask used by the SDPA path
+    cache_position = torch.arange(seq_len)
+    causal_mask_4d = SentenceLlamaModel._prepare_4d_causal_attention_mask_with_cache_position_sentence_attention(
+        attention_mask=attention_mask_2d,
+        sequence_length=seq_len,
+        target_length=seq_len,
+        dtype=query.dtype,
+        device=query.device,
+        cache_position=cache_position,
+        batch_size=batch_size,
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        special_embeddings_mask=special_embeddings_mask,
+    )
+
+    class Dummy:
+        # Ensure no KV repetition
+        num_key_value_groups = 1
+
+    scaling = 1.0 / (head_dim**0.5)
+
+    out_sdpa, _ = sentence_attention_forward(
+        Dummy(), query, key, value, causal_mask_4d, dropout=0.0, scaling=scaling, is_causal=None
+    )
+
+    out_flex, _ = sentence_attention_forward_flex(
+        Dummy(),
+        query,
+        key,
+        value,
+        attention_mask=attention_mask_2d,
+        scaling=scaling,
+        special_embeddings_mask=special_embeddings_mask,
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+    )
+
+    diff = (out_sdpa - out_flex).norm(2, dim=-1)
+    print("diff", diff)
+    print("out_sdpa", out_sdpa.shape)
+
+    assert torch.allclose(out_sdpa, out_flex, atol=1e-5, rtol=1e-5)
 
 
 def test_sentence_llama_model_generate_base():
@@ -24,24 +99,38 @@ def test_sentence_llama_model_generate_base():
 
 def test_sentence_llama_model_generate_with_eos_token():
 
-    checkpoint = "HuggingFaceTB/SmolLM2-1.7B"
-    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+    device = "cuda"
+
+    checkpoint = "./artifacts/experiments/eos_4/sentence_Llama-3.2-1B_ft_full_R7NAB8H0/checkpoint-1349/"
+    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
     tokenizer = GPT2TokenizerFastEOS.from_pretrained(checkpoint)
 
     model.resize_token_embeddings(len(tokenizer))
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-    model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence>")
+    end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence_0>")
 
-    model.config._attn_implementation = "sentence_attention"
+    outputs = []
 
-    input_ids = tokenizer.encode("Russia - Moscow. France - Paris. Germany - Berlin. Italy - ", return_tensors="pt")
-    assert (input_ids == model.config.end_of_sentence_token_id).sum().item() == 3
+    for attn_impl in ["sentence_attention", "sentence_attention_flex"]:
+        model.config._attn_implementation = attn_impl
 
-    print("input_ids", input_ids)
-    model.generate(
-        input_ids,
-        max_new_tokens=5,
-    )
+        input_ids = tokenizer.encode("Russia - Moscow. France - Paris. Germany - Berlin. Italy - ", return_tensors="pt")
+        input_ids = input_ids.to(device)
+        assert (input_ids == end_of_sentence_token_id).sum().item() == 3
+
+        # print("input_ids", input_ids)
+        output = model.forward(input_ids, output_hidden_states=True)
+
+        outputs.append(output.hidden_states)
+
+        # print("attn_impl", attn_impl, "output", tokenizer.decode(output[0], skip_special_tokens=False))
+
+    diffs = []
+    for h_i in range(len(outputs[0])):
+        diffs.append((outputs[0][h_i] - outputs[1][h_i]).norm(2, dim=-1))
+
+    for h_i in range(len(outputs[0])):
+        assert torch.allclose(outputs[0][h_i], outputs[1][h_i], atol=1e-5), f"hidden_states[{h_i}] are not equal"
 
 
 def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():
@@ -56,7 +145,8 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
     model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence>")
 
-    model.config._attn_implementation = "sentence_attention"
+    # model.config._attn_implementation = "sentence_attention"
+    model.config._attn_implementation = "sentence_attention_flex"
 
     input_ids = tokenizer.encode("Russia - Moscow. France - Paris. Germany - Berlin. Italy - ", return_tensors="pt")
     input_ids = input_ids.to(device)
@@ -110,7 +200,7 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
     model.config.end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence>")
 
-    model.config._attn_implementation = "sentence_attention"
+    model.config._attn_implementation = "sentence_attention_flex"
 
     input_ids = tokenizer.encode("Russia - Moscow. France - Paris. Germany - Berlin. Italy - ", return_tensors="pt")
     input_ids = input_ids.to(device)
