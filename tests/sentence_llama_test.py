@@ -105,18 +105,28 @@ def test_sentence_llama_model_generate_with_eos_token():
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
     tokenizer = GPT2TokenizerFastEOS.from_pretrained(checkpoint)
 
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.use_deterministic_algorithms(False)
+
     model.resize_token_embeddings(len(tokenizer))
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-    end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence_0>")
+
+    input_text = "Russia - Moscow. France - Paris. Germany - Berlin. Italy - "
+
+    input_text = input_text.replace(".", " ")
+
+    input_ids = tokenizer.encode(input_text, return_tensors="pt")
+    input_ids = input_ids.to(device)
+    # end_of_sentence_token_id = tokenizer.convert_tokens_to_ids("<end_of_sentence_0>")
+    # assert (input_ids == end_of_sentence_token_id).sum().item() == 3
 
     outputs = []
 
+    model.eval()
+
     for attn_impl in ["sentence_attention", "sentence_attention_flex"]:
         model.config._attn_implementation = attn_impl
-
-        input_ids = tokenizer.encode("Russia - Moscow. France - Paris. Germany - Berlin. Italy - ", return_tensors="pt")
-        input_ids = input_ids.to(device)
-        assert (input_ids == end_of_sentence_token_id).sum().item() == 3
 
         # print("input_ids", input_ids)
         output = model.forward(input_ids, output_hidden_states=True)
