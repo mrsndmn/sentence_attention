@@ -18,6 +18,16 @@ short_benchmarks = [
     "winogrande",
 ]
 
+long_benchmarks = [
+    "recall",
+    "rag",
+    "rerank",
+    "cite",
+    "longqa",
+    "summ",
+    "icl",
+]
+
 
 def checkpoint_evaluation_file(model_checkpoint, task_name):
     evaluation_dir = os.path.join(model_checkpoint, "evaluation")

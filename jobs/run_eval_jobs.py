@@ -7,7 +7,12 @@ import time
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
 from sentence_attention.artifacts.experiments import sort_checkpoints
-from sentence_attention.evaluation.benchmarks import all_benchmarks, checkpoint_evaluation_file, short_benchmarks
+from sentence_attention.evaluation.benchmarks import (
+    all_benchmarks,
+    checkpoint_evaluation_file,
+    long_benchmarks,
+    short_benchmarks,
+)
 from sentence_attention.integration.job import REGION, get_in_progress_jobs
 
 SEED = 1008
@@ -24,7 +29,66 @@ workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments")
 
 
-def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
+def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
+
+    experiment = copy.deepcopy(experiment)
+
+    env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin"
+
+    pretrained_model = experiment.pop("pretrained_model")
+    benchmark = experiment.pop("benchmark")
+
+    if len(experiment.keys()) > 0:
+        raise ValueError("Invalid exp values!")
+
+    helmet_workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/HELMET"
+
+    output_dir = os.path.join(pretrained_model, "helmet_eval", benchmark)
+    os.makedirs(output_dir, exist_ok=True)
+
+    assert benchmark in long_benchmarks, f"Invalid benchmark: {benchmark}"
+
+    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config configs/{benchmark}.yaml --model_name_or_path {pretrained_model} --use_chat_template False --output_dir {output_dir} '"
+
+    print(f"\n\n{script_str}\n")
+
+    job_w_args = client_lib.Job(
+        base_image=BASE_IMAGE,
+        script=script_str,
+        type="binary",  # =='binary' allows to run bash scripts
+        region=REGION,
+        instance_type=INSTANCE_TYPE,
+        n_workers=N_WORKERS,
+        # conda_env="test_client_lib",
+        processes_per_worker=1,
+        job_desc=job_description,
+        # stop_timer=600, # в минутах, = 10 часов
+        env_variables={
+            "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
+            "PYTHONPATH": f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
+            "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
+        },
+    )
+
+    if dry:
+        print("JOB WAS NOT LAUNCHED")
+    else:
+        if local:
+            print("Running local process")
+            import subprocess
+
+            # Example: Running a simple command
+            result = subprocess.run(script_str, shell=True)
+            if result.returncode != 0:
+                print("Failed to run job:", job_description)
+
+        else:
+            print(job_description, "\n", job_w_args.submit())
+
+    return
+
+
+def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
 
     experiment = copy.deepcopy(experiment)
 
@@ -74,6 +138,14 @@ def run_eval_experiments(experiment, job_description="Eval", dry=False, local=Fa
             print(job_description, "\n", job_w_args.submit())
 
     return
+
+
+def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
+
+    if experiment["benchmark"] in ["recall", "rag", "rerank", "cite", "longqa", "summ", "icl"]:
+        return run_helmet_eval_experiments(experiment, job_description, dry, local)
+
+    return run_lighteval_eval_experiments(experiment, job_description, dry, local)
 
 
 def run_extract_metrics(checkpoints: list[str], tasks=None):
@@ -201,13 +273,17 @@ if __name__ == "__main__":
 
     if args.benchmark == "all":
         benchmarks = copy.deepcopy(all_benchmarks)
+    elif args.benchmark == "long":
+        benchmarks = copy.deepcopy(long_benchmarks)
     elif args.benchmark == "short":
         benchmarks = copy.deepcopy(short_benchmarks)
     else:
         benchmarks = args.benchmark.split(",")
 
     for benchmark in benchmarks:
-        assert benchmark in all_benchmarks, f"Benchmark {benchmark} not in {all_benchmarks}"
+        assert (
+            benchmark in all_benchmarks + long_benchmarks
+        ), f"Benchmark {benchmark} not in {all_benchmarks + long_benchmarks + short_benchmarks}"
 
     print(f"Evaluating {num_checkpoints} checkpoints for {benchmarks} benchmarks")
 
@@ -231,8 +307,8 @@ if __name__ == "__main__":
                 if stop:
                     break
 
-                if args.model is not None and args.model not in experiment_dir.lower():
-                    # print(f"Skipping {experiment_dir} because it does not contain {args.model}")
+                if args.model is not None and args.model.lower() not in experiment_dir.lower():
+                    print(f"Skipping {experiment_dir} because it does not contain {args.model}")
                     continue
 
                 experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
