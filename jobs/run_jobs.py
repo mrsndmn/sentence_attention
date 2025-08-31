@@ -338,8 +338,6 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             # TODO check sucessful experiment has already been processed
 
             local_per_device_train_batch_size = per_device_train_batch_size
-            if "llama-3-8b" in model_checkpoint:
-                local_per_device_train_batch_size = 1
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
             gradient_accumulation_steps = math.ceil(4096 / ngpus / local_per_device_train_batch_size)
