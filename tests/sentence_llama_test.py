@@ -10,6 +10,8 @@ from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
 )
 from transformers.utils import is_torch_flex_attn_available
 
+ARTIFACTS_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/"
+
 
 def test_sentence_attention_4d_mask():
     torch.manual_seed(0)
@@ -141,7 +143,7 @@ def test_sentence_llama_model_generate_with_eos_token():
 
     device = "cuda"
 
-    checkpoint = "./artifacts/experiments/eos_4/sentence_Llama-3.2-1B_ft_full_R7NAB8H0/checkpoint-1349/"
+    checkpoint = ARTIFACTS_PREFIX + "experiments/eos_4/sentence_Llama-3.2-1B_ft_full_R7NAB8H0/checkpoint-1349/"
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
     tokenizer = GPT2TokenizerFastEOS.from_pretrained(checkpoint)
 
