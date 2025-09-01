@@ -325,8 +325,8 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
     return experiment_in_progress
 
 
-def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict]) -> None:
-    ngpus = 4
+def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
+    ngpus = 8
     num_train_epochs = 1
     per_device_train_batch_size = 4
     save_steps = 250
@@ -335,6 +335,9 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
     for number_of_eos_tokens in num_eos_tokens:
 
         for model_checkpoint in _models_for_eos_only():
+            if model is not None and model.lower() not in model_checkpoint.lower():
+                continue
+
             # TODO check sucessful experiment has already been processed
 
             local_per_device_train_batch_size = per_device_train_batch_size
@@ -387,8 +390,8 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             )
 
 
-def run_group_full(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict]) -> None:
-    ngpus = 4
+def run_group_full(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
+    ngpus = 8
     num_train_epochs = 1
     save_steps = 250
     optimized_params = "full"
@@ -399,6 +402,9 @@ def run_group_full(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
         model_slug = exp_config["model_slug"]
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        if model is not None and model.lower() not in model_checkpoint.lower():
+            continue
 
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
@@ -447,7 +453,7 @@ def run_group_full(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
         )
 
 
-def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict]) -> None:
+def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
     ngpus = 8
     num_train_epochs = 1
     save_steps = 250
@@ -462,6 +468,9 @@ def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
         model_slug = exp_config["model_slug"]
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        if model is not None and model.lower() not in model_checkpoint.lower():
+            continue
 
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
@@ -527,6 +536,7 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--dry", action="store_true")
 
     parser.add_argument("--wait", type=str, help="Job ID to wait for")
+    parser.add_argument("--model", type=str, help="Model checkpoint filter")
 
     return parser
 
@@ -561,11 +571,11 @@ def main() -> None:
     in_progress_jobs = get_in_progress_jobs(client)
 
     if args.group == "eos-only":
-        run_group_eos_only(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs)
+        run_group_eos_only(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs, model=args.model)
     elif args.group == "full":
-        run_group_full(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs)
+        run_group_full(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs, model=args.model)
     elif args.group == "lora":
-        run_group_lora(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs)
+        run_group_lora(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs, model=args.model)
 
     return
 
