@@ -1074,20 +1074,51 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             input_ids, past_key_values, attention_mask, inputs_embeds, cache_position, **kwargs
         )
 
-        special_embeddings_mask = torch.zeros_like(attention_mask)
-        if self.config.end_of_sentence_token_ids is not None:
-            special_tokens_count = 0
-            for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
-                special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
-                special_tokens_count += special_embeddings_mask.sum().item()
-            print("prepare_inputs_for_generation: number of end of sentence tokens", special_tokens_count)
-            print("prepare_inputs_for_generation: total_tokens", input_ids.shape[1])
+        input_ids = outputs["input_ids"]
 
-        outputs["special_embeddings_mask"] = special_embeddings_mask
-        outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
-            special_embeddings_mask,
-            num_special_tokens=len(self.config.end_of_sentence_token_ids),
-        )
+        need_recalc_special_embeddings_mask = False
+        # print("prepare_inputs_for_generation: input_ids", input_ids.shape)
+
+        if "special_embeddings_mask" not in outputs:
+            special_embeddings_mask = torch.zeros_like(attention_mask)
+            if self.config.end_of_sentence_token_ids is not None:
+                special_tokens_count = 0
+                for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                    special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+                    special_tokens_count += special_embeddings_mask.sum().item()
+                # print("prepare_inputs_for_generation: number of end of sentence tokens", special_tokens_count)
+                # print("prepare_inputs_for_generation: total_tokens", input_ids.shape[1])
+
+            outputs["special_embeddings_mask"] = special_embeddings_mask
+        else:
+            special_embeddings_mask = outputs["special_embeddings_mask"]
+            past_seq_len = 0
+            if past_key_values is not None:
+                past_seq_len = past_key_values.get_seq_length()
+
+            if special_embeddings_mask.shape[1] != input_ids.shape[1] + past_seq_len:
+                need_recalc_special_embeddings_mask = True
+                special_embeddings_mask_new = torch.zeros(
+                    [input_ids.shape[0], input_ids.shape[1] + past_seq_len],
+                    device=input_ids.device,
+                    dtype=special_embeddings_mask.dtype,
+                )
+                # print("special_embeddings_mask_new", special_embeddings_mask_new.shape)
+                special_embeddings_mask_new[:, : special_embeddings_mask.shape[1]] = special_embeddings_mask
+                for batch_idx in range(input_ids.shape[0]):
+                    token_idx = input_ids[batch_idx, -1].item()
+                    if token_idx in self.config.end_of_sentence_token_ids:
+                        special_embeddings_mask_new[batch_idx, -1] = 1
+
+                outputs["special_embeddings_mask"] = special_embeddings_mask_new
+
+        if "clothest_end_of_sentence_token_idx" not in outputs or need_recalc_special_embeddings_mask:
+            outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
+                outputs["special_embeddings_mask"],
+                num_special_tokens=len(self.config.end_of_sentence_token_ids),
+            )
+
+        # breakpoint()
 
         return outputs
 

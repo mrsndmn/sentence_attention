@@ -8,6 +8,9 @@ workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 def test_eos_tokens_count():
 
     for eos_num in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments")):
+        if eos_num == "bad_multi_eos_experiments":
+            continue
+
         num_eos_tokens = int(eos_num.split("_")[1])
         if num_eos_tokens == 0:
             continue
@@ -41,6 +44,8 @@ def test_same_name_checkpoints_in_different_eos_tokens():
     eos_nums_sets = []
 
     for eos_num in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments")):
+        if eos_num == "bad_multi_eos_experiments":
+            continue
 
         experiments = set(os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num)))
 

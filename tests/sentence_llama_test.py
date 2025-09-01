@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import torch
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
@@ -143,7 +145,7 @@ def test_sentence_llama_model_generate_with_eos_token():
 
     device = "cuda"
 
-    checkpoint = ARTIFACTS_PREFIX + "experiments/eos_4/sentence_Llama-3.2-1B_ft_full_R7NAB8H0/checkpoint-1349/"
+    checkpoint = os.path.join(ARTIFACTS_PREFIX, "experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
     tokenizer = GPT2TokenizerFastEOS.from_pretrained(checkpoint)
 
