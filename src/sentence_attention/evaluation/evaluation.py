@@ -9,7 +9,7 @@ from sentence_attention.evaluation.benchmarks import checkpoint_evaluation_file
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 task_to_default_batch_size = {
-    "arc": 128,
+    "arc": 64,
     "hellaswag": 64,
     "mmlu_cloze": 16,
     "mmlu_pro_cloze": 16,

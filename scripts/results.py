@@ -58,7 +58,7 @@ def build_rows(records: Iterable[dict]) -> List[dict]:
         train_type = infer_training_type(experiment)
         rows.append(
             {
-                "eos_tokens": str(eos_tokens),
+                "eos_tokens": eos_tokens,
                 "family": model_family,
                 "training": train_type,
                 "experiment": experiment,
@@ -105,6 +105,8 @@ def prettify_experiment_name(experiment_name: str) -> str:
         experiment_name.replace("ft_full_", "")
         .replace("_base_model", "")
         .replace("_num_eos_tokens_4", "")
+        .replace("_num_eos_tokens_8", "")
+        .replace("_num_eos_tokens_16", "")
         .replace("ft_lora_", "")
         .replace("ft_only_eos_embedding_", "")
         .replace("sentence_", "")
@@ -248,8 +250,21 @@ def main() -> None:
         default=None,
         help="Filter results by number of EOS tokens",
     )
+    parser.add_argument(
+        "--plots",
+        action="store_true",
+        help="Plot per checkpoint short results",
+        default=False,
+    )
+    parser.add_argument(
+        "--poor-mask",
+        action="store_true",
+        help="Plot per checkpoint short results",
+        default=False,
+    )
     args = parser.parse_args()
 
+    # last_checkpoints = get_all_last_checkpoints(poor_mask=args.poor_mask)
     last_checkpoints = get_all_last_checkpoints()
     rows = build_rows(last_checkpoints)
 
@@ -311,24 +326,27 @@ def main() -> None:
         )
     )
 
-    print("\n\nLoRA results:")
-    # 2) Do we need LoRA? Fully finetuned and LoRA models
-    lora_rows = build_table(
-        rows=rows,
-        benchmarks=short_benchmarks,
-        training_mapping=training_mapping,
-        row_predicate=lambda r: r["training"] in ("full finetune", "lora"),
-    )
-    print(
-        tabulate(
-            lora_rows,
-            headers=short_headers,
-            tablefmt=args.tablefmt,
-            disable_numparse=True,
+    print_lora = False
+    if print_lora:
+        print("\n\nLoRA results:")
+        # 2) Do we need LoRA? Fully finetuned and LoRA models
+        lora_rows = build_table(
+            rows=rows,
+            benchmarks=short_benchmarks,
+            training_mapping=training_mapping,
+            row_predicate=lambda r: r["training"] in ("full finetune", "lora"),
         )
-    )
+        print(
+            tabulate(
+                lora_rows,
+                headers=short_headers,
+                tablefmt=args.tablefmt,
+                disable_numparse=True,
+            )
+        )
 
-    plot_per_checkpoint_short_results()
+    if args.plots:
+        plot_per_checkpoint_short_results()
 
 
 if __name__ == "__main__":

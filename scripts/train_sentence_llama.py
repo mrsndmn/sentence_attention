@@ -23,17 +23,17 @@ if __name__ == "__main__":
     hf_parser = transformers.HfArgumentParser(SentenceTrainingArguments)
     (training_args,) = hf_parser.parse_args_into_dataclasses()
 
-    model, tokenizer = build_model_tokenizer(training_args)
-
-    compute_metrics = None
-    data_collator = None
-
-    base_output_dir = os.path.basename(training_args.output_dir)
-
-    os.environ["CLEARML_TASK"] = f"{base_output_dir}"
-
     state = PartialState()
     with state.local_main_process_first():
+
+        model, tokenizer = build_model_tokenizer(training_args)
+
+        compute_metrics = None
+        data_collator = None
+
+        base_output_dir = os.path.basename(training_args.output_dir)
+
+        os.environ["CLEARML_TASK"] = f"{base_output_dir}"
 
         if training_args.add_end_of_sentence_token:
             print("Loading fineweb edu tokenized with eos tokenizer")
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
             if training_args.model_type == "sentence_pretrained_checkpoint":
                 # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
-                if "llama-3.2" in training_args.model_checkpoint.lower():
+                if "llama" in training_args.model_checkpoint.lower():
                     dataset_path = (
                         f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_with_eos_token{dataset_suffix}_merged"
                     )
@@ -63,6 +63,7 @@ if __name__ == "__main__":
             else:
                 dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos"
 
+            print("Loading dataset from", dataset_path)
             fineweb_dataset = Dataset.load_from_disk(dataset_path)
 
             TOTAL_SHARDS = 14  # CONSTANT

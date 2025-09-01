@@ -212,3 +212,5 @@ artifacts/
 clearml.conf
 
 .github/actions-runner/
+
+wandb
