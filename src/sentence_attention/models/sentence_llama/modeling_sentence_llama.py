@@ -60,8 +60,10 @@ if is_torch_flex_attn_available():
     from transformers.integrations.flex_attention import make_flex_block_causal_mask
 
 
-def special_token_mask_to_clothest_token_idx_slow(special_token_mask):
+def special_token_mask_to_clothest_token_idx_slow(special_token_mask, num_special_tokens=None):
     # [ bs, seq_len ]
+
+    assert num_special_tokens is not None, "num_special_tokens must be provided"
 
     special_token_mask_bool = special_token_mask.bool().cpu()
 
@@ -69,10 +71,18 @@ def special_token_mask_to_clothest_token_idx_slow(special_token_mask):
 
     for batch_i in range(special_token_mask_bool.shape[0]):
         current_clothest_token_idx = 0
+        current_sequrntial_num_special_tokens = 0
         for seq_len_i in range(special_token_mask_bool.shape[1]):
             if special_token_mask_bool[batch_i, seq_len_i].item():
+                current_sequrntial_num_special_tokens += 1
+
+            if (
+                special_token_mask_bool[batch_i, seq_len_i].item()
+                and current_sequrntial_num_special_tokens == num_special_tokens
+            ):
                 clothest_token_idx[batch_i, seq_len_i] = current_clothest_token_idx
                 current_clothest_token_idx = seq_len_i
+                current_sequrntial_num_special_tokens = 0
             else:
                 clothest_token_idx[batch_i, seq_len_i] = current_clothest_token_idx
 
@@ -156,6 +166,33 @@ def sentence_attention_forward_flex(
         causal_triu_mask = causal_mask & (kv_idx >= eos_token_idx)
 
         return torch.where((causal_triu_mask | eos_sync_tokens), score, -float("inf"))
+
+    debug = False
+    # debug = True
+    if debug:
+        sa_4d_causal_attention_mask = (
+            SentenceLlamaModel._prepare_4d_causal_attention_mask_with_cache_position_sentence_attention(
+                attention_mask=attention_mask,
+                sequence_length=query.shape[2],
+                target_length=key.shape[2],
+                dtype=query.dtype,
+                device=query.device,
+                cache_position=torch.arange(query.shape[2], device=query.device),
+                batch_size=query.shape[0],
+                clothest_end_of_sentence_token_idx=clothest_eos_token_idx,
+                special_embeddings_mask=special_embeddings_mask,
+            )
+        )
+
+        result_mask = torch.nn.attention.flex_attention.create_mask(
+            score_mod, query.shape[0], query.shape[1], query.shape[2], key.shape[2], device=query.device
+        )
+        torch.set_printoptions(profile="full", linewidth=100000)
+        print(result_mask)
+
+        assert torch.all(result_mask[0, 0] == (sa_4d_causal_attention_mask[0, 0] == 0))
+
+        breakpoint()
 
     attn_output = compile_friendly_flex_attention(
         query,
@@ -676,7 +713,10 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         assert special_embeddings_mask is not None
 
         if clothest_end_of_sentence_token_idx is None:
-            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
+            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+                special_embeddings_mask,
+                num_special_tokens=self.config.num_eos_tokens,
+            )
 
         assert len(attention_mask.shape) == 2
 
@@ -1035,7 +1075,9 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                 print("number of end of sentence tokens", special_embeddings_mask.sum().item())
 
         outputs["special_embeddings_mask"] = special_embeddings_mask
-        outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
+        outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
+            special_embeddings_mask, num_special_tokens=self.config.num_eos_tokens
+        )
 
         return outputs
 

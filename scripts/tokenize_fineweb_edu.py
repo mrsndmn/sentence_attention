@@ -17,13 +17,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     pretrained_model_name = args.pretrained_model_name  # HuggingFaceTB/SmolLM2-1.7B / unsloth/Llama-3.2-1B
+    num_eos_tokens = args.num_eos_tokens
 
     pretrained_model_name_short = pretrained_model_name.split("/")[-1]
 
     print(f"pretrained_model_name_short: {pretrained_model_name_short}")
 
     if args.with_eos_token:
-        suffix = f"_with_eos_token_num_{args.num_eos_tokens}_merged"
+        suffix = f"_with_eos_token_num_{num_eos_tokens}_merged"
     else:
         suffix = ""
 
@@ -44,8 +45,8 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
 
-    tokenizer = tokenizer_class.from_pretrained(pretrained_model_name, num_eos_tokens=args.num_eos_tokens)
-    assert tokenizer.num_eos_tokens == args.num_eos_tokens, "tokenizer num eos tokens set correctly"
+    tokenizer = tokenizer_class.from_pretrained(pretrained_model_name, num_eos_tokens=num_eos_tokens)
+    assert tokenizer.num_eos_tokens == num_eos_tokens, "tokenizer num eos tokens set correctly"
 
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
@@ -64,7 +65,9 @@ if __name__ == "__main__":
         for special_token_id in special_token_ids:
             special_embeddings_mask = special_embeddings_mask | (input_ids == special_token_id)
 
-        clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
+        clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+            special_embeddings_mask, num_special_tokens=num_eos_tokens
+        )
 
         return {
             "input_ids": input_ids[0].numpy().tolist(),

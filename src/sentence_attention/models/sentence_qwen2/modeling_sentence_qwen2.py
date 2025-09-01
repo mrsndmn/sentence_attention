@@ -249,7 +249,10 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         assert special_embeddings_mask is not None
 
         if clothest_end_of_sentence_token_idx is None:
-            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
+            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+                special_embeddings_mask,
+                num_special_tokens=self.config.num_eos_tokens,
+            )
 
         causal_mask = self._update_causal_mask(
             attention_mask,
