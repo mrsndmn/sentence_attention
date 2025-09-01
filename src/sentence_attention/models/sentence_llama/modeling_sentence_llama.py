@@ -151,6 +151,10 @@ def sentence_attention_forward_flex(
     **kwargs,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 
+    if hasattr(module, "num_key_value_groups"):
+        key = repeat_kv(key, module.num_key_value_groups)
+        value = repeat_kv(value, module.num_key_value_groups)
+
     clothest_eos_token_idx = kwargs["clothest_end_of_sentence_token_idx"]
     attention_mask_bool = attention_mask.bool()
     special_embeddings_mask = kwargs["special_embeddings_mask"].to(torch.bool)
@@ -200,7 +204,7 @@ def sentence_attention_forward_flex(
         value,
         score_mod=score_mod,
         block_mask=None,
-        enable_gqa=True,
+        enable_gqa=False,  # explicit repeat kv is already done above
         scale=scaling,
         # Last time checked on PyTorch == 2.5.1: Flex Attention always computes the lse regardless.
         # For simplification, we thus always return it as no additional computations are introduced.
@@ -518,6 +522,8 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         super().__init__(config)
 
         self.config._attn_implementation = "sentence_attention"
+        # self.config._attn_implementation = "sentence_attention_flex"
+        print("SentenceLlamaModel self.config._attn_implementation", self.config._attn_implementation)
 
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
@@ -715,7 +721,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         if clothest_end_of_sentence_token_idx is None:
             clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
                 special_embeddings_mask,
-                num_special_tokens=self.config.num_eos_tokens,
+                num_special_tokens=len(self.config.end_of_sentence_token_ids),
             )
 
         assert len(attention_mask.shape) == 2
@@ -1070,13 +1076,17 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         special_embeddings_mask = torch.zeros_like(attention_mask)
         if self.config.end_of_sentence_token_ids is not None:
+            special_tokens_count = 0
             for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
                 special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
-                print("number of end of sentence tokens", special_embeddings_mask.sum().item())
+                special_tokens_count += special_embeddings_mask.sum().item()
+            print("prepare_inputs_for_generation: number of end of sentence tokens", special_tokens_count)
+            print("prepare_inputs_for_generation: total_tokens", input_ids.shape[1])
 
         outputs["special_embeddings_mask"] = special_embeddings_mask
         outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
-            special_embeddings_mask, num_special_tokens=self.config.num_eos_tokens
+            special_embeddings_mask,
+            num_special_tokens=len(self.config.end_of_sentence_token_ids),
         )
 
         return outputs

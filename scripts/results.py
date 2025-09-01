@@ -256,8 +256,15 @@ def main() -> None:
         help="Plot per checkpoint short results",
         default=False,
     )
+    parser.add_argument(
+        "--poor-mask",
+        action="store_true",
+        help="Plot per checkpoint short results",
+        default=False,
+    )
     args = parser.parse_args()
 
+    # last_checkpoints = get_all_last_checkpoints(poor_mask=args.poor_mask)
     last_checkpoints = get_all_last_checkpoints()
     rows = build_rows(last_checkpoints)
 
