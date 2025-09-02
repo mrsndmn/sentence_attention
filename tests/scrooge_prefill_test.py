@@ -139,11 +139,10 @@ def test_scrooge_prefill():
     assert generated_output_text == "Russia is a country in Europe."
 
     no_kv_cache_generated_outputs = model.generate(
-        outputs["input_ids"],
-        attention_mask=outputs["attention_mask"],
-        special_embeddings_mask=outputs["special_embeddings_mask"],
-        clothest_end_of_sentence_token_idx=outputs["clothest_end_of_sentence_token_idx"],
-        cache_position=outputs["cache_position"],
+        input_ids,
+        attention_mask=attention_mask,
+        special_embeddings_mask=special_embeddings_mask,
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
         use_cache=False,
         max_new_tokens=5,
     )
