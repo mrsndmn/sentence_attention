@@ -62,3 +62,6 @@ class SentenceTrainingArguments(TrainingArguments):
 
     select_train_dataset_items: int = 20000
     add_end_of_sentence_token: bool = field(default=False)
+
+    # When enabled (with multiple EOS tokens), disable loss on EOS tokens
+    flexible_eos_tokens: bool = field(default=False)
