@@ -214,3 +214,4 @@ clearml.conf
 .github/actions-runner/
 
 wandb
+exps_evaluation/

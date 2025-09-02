@@ -25,6 +25,8 @@ if __name__ == "__main__":
 
     state = PartialState()
     with state.local_main_process_first():
+        if training_args.flexible_eos_tokens:
+            assert training_args.number_of_eos_tokens > 1, "--flexible_eos_tokens requires --number_of_eos_tokens > 1"
 
         model, tokenizer = build_model_tokenizer(training_args)
 

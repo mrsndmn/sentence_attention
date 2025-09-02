@@ -22,6 +22,7 @@ from typing import Callable, List, Optional, Tuple, Union, Unpack
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint
+from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.generation import GenerationMixin
 from transformers.integrations.flex_attention import compile_friendly_flex_attention
@@ -1061,6 +1062,18 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         # Initialize weights and apply final processing
         self.post_init()
 
+    def generate(self, *args, **kwargs):
+
+        if self.config.flexible_eos_tokens:
+            if "logits_processor" in kwargs:
+                raise ValueError("custom logits_processor is not supported for flexible_eos_tokens models")
+
+            print("Force Flexible EOS Logits Processor")
+
+            kwargs["logits_processor"] = build_flexible_eos_logits_processors(self)
+
+        return super().generate(*args, **kwargs)
+
     def prepare_inputs_for_generation(
         self,
         input_ids: torch.LongTensor,
@@ -1203,6 +1216,10 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         # print("use_cache", use_cache)
+
+        # print("input_ids", input_ids)
+        # print("cache_position", cache_position)
+
         outputs: SentenceBaseModelOutputWithPast = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,

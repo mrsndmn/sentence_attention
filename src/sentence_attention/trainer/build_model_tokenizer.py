@@ -77,6 +77,8 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
         model.config.end_of_sentence_token_ids = tokenizer.end_of_sentence_token_ids
         print("model.config.end_of_sentence_token_ids", model.config.end_of_sentence_token_ids)
 
+    model.config.flexible_eos_tokens = training_args.flexible_eos_tokens
+
     if training_args.model_type == "sentence_pretrained_checkpoint":
         optimized_params = training_args.optimized_params
         print("optimized_params", optimized_params)
