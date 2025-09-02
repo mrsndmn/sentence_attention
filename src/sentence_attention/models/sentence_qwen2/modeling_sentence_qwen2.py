@@ -1,6 +1,7 @@
 from typing import Optional, Tuple, Union
 
 import torch
+from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from torch import nn
 from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
@@ -593,6 +594,17 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
 
         # Initialize weights and apply final processing
         self.post_init()
+
+    def generate(self, *args, **kwargs):
+        if self.config.flexible_eos_tokens:
+            if "logits_processor" in kwargs:
+                raise ValueError("custom logits_processor is not supported for flexible_eos_tokens models")
+
+            print("Force Flexible EOS Logits Processor")
+
+            kwargs["logits_processor"] = build_flexible_eos_logits_processors(self)
+
+        return super().generate(*args, **kwargs)
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
