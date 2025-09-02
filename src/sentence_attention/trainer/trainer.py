@@ -38,7 +38,7 @@ class SentenceTrainer(Trainer):
             assert len(model.config.end_of_sentence_token_ids) > 1
             eos_token_ids = model.config.end_of_sentence_token_ids
             labels = labels.clone()
-            for eos_id in eos_token_ids[1:]:
+            for eos_id in eos_token_ids[:-1]:
                 labels[labels == eos_id] = -100
 
         special_embeddings_mask = inputs.get("special_embeddings_mask")
