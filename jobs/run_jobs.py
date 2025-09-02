@@ -271,6 +271,10 @@ def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
 
     for number_of_eos_tokens in [1, 4, 8, 16]:
         eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
+
+        if not os.path.exists(eos_dir):
+            continue
+
         for experiment in os.listdir(eos_dir):
             experiment_path = f"{eos_dir}/{experiment}"
 

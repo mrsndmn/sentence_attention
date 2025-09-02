@@ -1203,6 +1203,10 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         # print("use_cache", use_cache)
+
+        print("input_ids", input_ids)
+        print("cache_position", cache_position)
+
         outputs: SentenceBaseModelOutputWithPast = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
