@@ -1,6 +1,7 @@
 from typing import Optional, Tuple, Union
 
 import torch
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from torch import nn
 from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
 from transformers.generation import GenerationMixin
@@ -11,7 +12,6 @@ from transformers.modeling_outputs import (
     CausalLMOutputWithPast,
 )
 from transformers.modeling_utils import PreTrainedModel
-from transformers.models.llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from transformers.models.qwen2.modeling_qwen2 import (
     KwargsForCausalLM,
     Qwen2Config,

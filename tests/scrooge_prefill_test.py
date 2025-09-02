@@ -44,6 +44,7 @@ def test_generate_country():
 def test_generate_number():
 
     checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
+    # checkpoint_4eos_tokens = os.path.join(ARTIFACTS_PREFIX, "./experiments_in_progress/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-250")
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
