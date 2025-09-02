@@ -36,7 +36,7 @@ The brown fox.<end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_s
 ```
 input_ids = [154967, 198, 12, 318, 154970, 154971, 154972, 154973, 23, 257, 16592, 154970, 154971, 154972, 154973]
 special_embeddings_mask = [0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1]
-clothest_end_of_sentence_token_idx = [4, 4, 4, 4, 4, 5, 6, 7, 12, 12, 12, 12, 13, 14, 15]
+clothest_end_of_sentence_token_idx = [7, 7, 7, 7, 7, 7, 7, 7, 15, 15, 15, 15, 15, 15, 15]
 ```
 
 4. Special Attention mask
