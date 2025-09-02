@@ -396,7 +396,9 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             )
 
 
-def run_group_full(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
+def run_group_full(
+    *, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str, flexible_eos_tokens: bool = False
+) -> None:
     ngpus = 8
     num_train_epochs = 1
     save_steps = 250
@@ -457,6 +459,7 @@ def run_group_full(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
             add_end_of_sentence_token=1,
             experiment_prefix_base_name=experiment_prefix_base_name,
             job_description=job_description,
+            flexible_eos_tokens="1" if flexible_eos_tokens else "0",
         )
 
 
@@ -529,73 +532,6 @@ def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
         )
 
 
-def run_group_full_flexible_eos_tokens(
-    *, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str
-) -> None:
-    ngpus = 8
-    num_train_epochs = 1
-    save_steps = 250
-    optimized_params = "full"
-
-    for exp_config in _eos_tuned_checkpoints():
-        model_checkpoint = exp_config["model_checkpoint"]
-        model_slug = exp_config["model_slug"]
-        per_device_train_batch_size = exp_config["per_device_train_batch_size"]
-        number_of_eos_tokens = exp_config["number_of_eos_tokens"]
-
-        if model is not None and model.lower() not in model_checkpoint.lower():
-            continue
-
-        if int(number_of_eos_tokens) not in num_eos_tokens:
-            continue
-
-        model_dir_prefix = f"sentence_{model_slug}_ft_flexible_eos_tokens_{optimized_params}"
-
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
-            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
-            continue
-
-        gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
-
-        experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
-        job_description = f"ST: {experiment_prefix_base_name}"
-
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-            print(f"Experiment {experiment_prefix_base_name} is already in progress")
-            continue
-
-        run_training_experiments(
-            learning_rate=0.00005,
-            model_type="sentence_pretrained_checkpoint",
-            limit_dataset_shards=8,
-            offset_dataset_shards=4,
-            number_of_eos_tokens=number_of_eos_tokens,
-            optimized_params=optimized_params,
-            weight_decay="0.01",
-            per_device_train_batch_size=per_device_train_batch_size,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            adam_beta1="0.9",
-            adam_beta2="0.95",
-            optim="adamw_torch_fused",
-            num_train_epochs=num_train_epochs,
-            max_grad_norm="1.0",
-            save_total_limit=100,
-            save_steps=save_steps,
-            instance_type=f"a100.{ngpus}gpu",
-            model_checkpoint=model_checkpoint,
-            select_train_dataset_items=0,
-            adam_epsilon="1e-8",
-            warmup_steps=100,
-            dry=dry,
-            lr_scheduler_type="cosine",
-            bf16="0",
-            add_end_of_sentence_token=1,
-            flexible_eos_tokens=1,
-            experiment_prefix_base_name=experiment_prefix_base_name,
-            job_description=job_description,
-        )
-
-
 def _cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Submit sentence-attention training jobs")
 
@@ -646,14 +582,33 @@ def main() -> None:
     in_progress_jobs = get_in_progress_jobs(client)
 
     if args.group == "eos-only":
-        run_group_eos_only(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs, model=args.model)
+        run_group_eos_only(
+            dry=args.dry,
+            num_eos_tokens=num_eos_tokens,
+            in_progress_jobs=in_progress_jobs,
+            model=args.model,
+        )
     elif args.group == "full":
-        run_group_full(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs, model=args.model)
+        run_group_full(
+            dry=args.dry,
+            num_eos_tokens=num_eos_tokens,
+            in_progress_jobs=in_progress_jobs,
+            model=args.model,
+        )
     elif args.group == "lora":
-        run_group_lora(dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs, model=args.model)
+        run_group_lora(
+            dry=args.dry,
+            num_eos_tokens=num_eos_tokens,
+            in_progress_jobs=in_progress_jobs,
+            model=args.model,
+        )
     elif args.group == "full-flexible-eos-tokens":
-        run_group_full_flexible_eos_tokens(
-            dry=args.dry, num_eos_tokens=num_eos_tokens, in_progress_jobs=in_progress_jobs, model=args.model
+        run_group_full(
+            dry=args.dry,
+            num_eos_tokens=num_eos_tokens,
+            in_progress_jobs=in_progress_jobs,
+            model=args.model,
+            flexible_eos_tokens=True,
         )
 
     return
