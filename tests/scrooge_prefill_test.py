@@ -48,12 +48,18 @@ def test_generate_number():
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-    device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model.to(device)
 
     input_ids = tokenizer.encode(
+        # No instruction - Fails
+        # "The special magic numbers for uninterested-cashier is: 2368710. The special magic number for uninterested-cashier mentioned in the provided text is",
+        # Start from instruction - ok
         "Remember special magic number for uninterested-cashier. The special magic numbers for uninterested-cashier is: 2368710. The special magic number for uninterested-cashier mentioned in the provided text is",
+        # Start from instruction, add noise - Fails
+        # "Remember special magic number for uninterested-cashier. The special magic numbers for uninterested-cashier is: 2368710. The spechal number for lazy-cat is: 55822300. The special magic number for uninterested-cashier mentioned in the provided text is",
         return_tensors="pt",
     )
 
