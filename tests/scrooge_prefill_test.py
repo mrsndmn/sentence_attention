@@ -44,7 +44,9 @@ def test_generate_country():
 def test_generate_number():
 
     checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
-    # checkpoint_4eos_tokens = os.path.join(ARTIFACTS_PREFIX, "./experiments_in_progress/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-250")
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-1349"
+    )
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
@@ -54,31 +56,44 @@ def test_generate_number():
 
     model.to(device)
 
-    input_ids = tokenizer.encode(
-        # No instruction - Fails
-        # "The special magic numbers for uninterested-cashier is: 2368710. The special magic number for uninterested-cashier mentioned in the provided text is",
-        # Start from instruction - ok
-        "Remember special magic number for uninterested-cashier. The special magic numbers for uninterested-cashier is: 2368710. The special magic number for uninterested-cashier mentioned in the provided text is",
-        # Start from instruction, add noise - Fails
-        # "Remember special magic number for uninterested-cashier. The special magic numbers for uninterested-cashier is: 2368710. The spechal number for lazy-cat is: 55822300. The special magic number for uninterested-cashier mentioned in the provided text is",
-        return_tensors="pt",
-    )
+    texts = [
+        ("no_instruction", "The special magic numbers for uninterested-cashier is: 2368710."),
+        # ("instruction", "Remember special magic number for uninterested-cashier. The special magic numbers for uninterested-cashier is: 2368710."),
+        (
+            "instruction-noise",
+            "The special number for fat-squirrel is: 8244459. The special number for lazy-cat is: 55822300. The special magic numbers for uninterested-cashier is: 2368710. The special number for mega-boomber is: 2341887. The special number for jagger-ragger is: 555333110.",
+        ),
+    ]
 
-    attention_mask = torch.ones_like(input_ids).to(device)
+    failed = []
 
-    generated_outputs = model.generate(
-        input_ids.to(device),
-        attention_mask=attention_mask,
-        max_new_tokens=5,
-        use_cache=False,
-    )
+    for task_type, task_prefix in texts:
+        input_ids = tokenizer.encode(
+            task_prefix + "The special magic number for uninterested-cashier mentioned in the provided text is",
+            return_tensors="pt",
+        )
 
-    generated_output_text = tokenizer.decode(generated_outputs[0], skip_special_tokens=False)
-    print("Generated outputs", generated_output_text)
+        attention_mask = torch.ones_like(input_ids).to(device)
 
-    generated_output_text = generated_output_text.strip().removesuffix(".")
+        generated_outputs = model.generate(
+            input_ids.to(device),
+            attention_mask=attention_mask,
+            max_new_tokens=5,
+            use_cache=False,
+        )
 
-    assert generated_output_text.endswith("2368710")
+        generated_output_text = tokenizer.decode(generated_outputs[0], skip_special_tokens=False)
+        print("Generated outputs", generated_output_text)
+
+        generated_output_text = generated_output_text.strip().removesuffix(".")
+
+        if generated_output_text.endswith("2368710"):
+            print(f"Test passed for {task_type}")
+        else:
+            print(f"Test failed for {task_type}")
+            failed.append(task_type)
+
+    assert len(failed) == 0, f"Failed tests: {failed}"
 
 
 def test_scrooge_prefill():

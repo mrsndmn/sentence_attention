@@ -417,7 +417,11 @@ def run_group_full(
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
 
-        model_dir_prefix = f"sentence_{model_slug}_ft_{optimized_params}"
+        if flexible_eos_tokens:
+            model_dir_prefix = f"sentence_{model_slug}_ft_flexible_eos_tokens_{optimized_params}"
+        else:
+            model_dir_prefix = f"sentence_{model_slug}_ft_{optimized_params}"
+
         if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue

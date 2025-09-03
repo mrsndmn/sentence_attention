@@ -66,9 +66,10 @@ def special_token_mask_to_clothest_token_idx_slow(special_token_mask, num_specia
 
     assert num_special_tokens is not None, "num_special_tokens must be provided"
 
-    special_token_mask_bool = special_token_mask.bool().cpu()
+    special_token_mask_bool = special_token_mask.bool()
+    special_token_mask_bool = special_token_mask_bool.cpu()
 
-    clothest_token_idx = torch.zeros_like(special_token_mask, dtype=torch.long)
+    clothest_token_idx = torch.zeros_like(special_token_mask, dtype=torch.long, device="cpu")
 
     for batch_i in range(special_token_mask_bool.shape[0]):
         current_clothest_token_idx = 0
@@ -86,6 +87,8 @@ def special_token_mask_to_clothest_token_idx_slow(special_token_mask, num_specia
                 current_sequrntial_num_special_tokens = 0
             else:
                 clothest_token_idx[batch_i, seq_len_i] = current_clothest_token_idx
+
+    clothest_token_idx = clothest_token_idx.to(special_token_mask.device)
 
     return clothest_token_idx
 
@@ -1130,8 +1133,6 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                 outputs["special_embeddings_mask"],
                 num_special_tokens=len(self.config.end_of_sentence_token_ids),
             )
-
-        # breakpoint()
 
         return outputs
 

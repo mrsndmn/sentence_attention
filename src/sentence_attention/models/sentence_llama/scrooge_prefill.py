@@ -1,4 +1,5 @@
 import torch
+from tqdm.auto import tqdm
 from transformers import DynamicCache
 
 
@@ -90,7 +91,7 @@ def scrooge_prefill(
     if prev_sentence_i > 0:
         assert attention_mask[0, 0].item() == 0, "attention mask is left padded"
 
-    for i, sentence_i in enumerate(eos_tokens_idxs):
+    for i, sentence_i in tqdm(enumerate(eos_tokens_idxs), desc="Scrooge prefill", total=len(eos_tokens_idxs)):
 
         kv_length = past_key_values.get_seq_length()
 
