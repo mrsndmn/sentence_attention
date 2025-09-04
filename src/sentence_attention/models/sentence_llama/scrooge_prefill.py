@@ -129,7 +129,7 @@ def scrooge_prefill(
             hidden_states.append(outputs.hidden_states)
 
         if outputs_hook is not None:
-            outputs_hook(outputs, prev_sentence_i, sentence_i)
+            outputs_hook(input_ids, outputs, prev_sentence_i, sentence_i)
 
         # Leave only sentence attention cache
         for idx in range(len(past_key_values.key_cache)):

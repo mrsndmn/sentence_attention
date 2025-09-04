@@ -140,7 +140,11 @@ def sentence_attention_forward(
     )
     attn_output = attn_output.transpose(1, 2).contiguous()
 
-    return attn_output, None
+    attn_weights = None
+    if kwargs.get("output_attentions", False):
+        attn_weights = torch.nn.functional.softmax((query @ key.permute(0, 1, 3, 2)) + causal_mask, dim=-1)
+
+    return attn_output, attn_weights
 
 
 def sentence_attention_forward_flex(
@@ -189,6 +193,7 @@ def sentence_attention_forward_flex(
                 batch_size=query.shape[0],
                 clothest_end_of_sentence_token_idx=clothest_eos_token_idx,
                 special_embeddings_mask=special_embeddings_mask,
+                ft_with_bos_token=kwargs["ft_with_bos_token"],
             )
         )
 
@@ -304,6 +309,7 @@ class SentenceLlamaAttention(nn.Module):
                 scaling=self.scaling,
                 special_embeddings_mask=special_embeddings_mask,
                 clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+                ft_with_bos_token=self.config.ft_with_bos_token,
                 **kwargs,
             )
         else:
@@ -852,6 +858,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 batch_size=input_tensor.shape[0],
                 clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
                 special_embeddings_mask=special_embeddings_mask,
+                ft_with_bos_token=self.config.ft_with_bos_token,
             )
         else:
             # In case the provided `attention` mask is 2D, we generate a causal mask here (4D).
@@ -940,6 +947,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         device: torch.device,
         cache_position: torch.Tensor,
         batch_size: int,
+        ft_with_bos_token: bool = False,
         **kwargs,
     ):
         """
@@ -1048,6 +1056,8 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         # breakpoint()
         # torch.save(final_mask, "final_mask_partial.pt")
+        if ft_with_bos_token:
+            final_mask[:, :, 0, :] = 1
 
         return final_mask
 

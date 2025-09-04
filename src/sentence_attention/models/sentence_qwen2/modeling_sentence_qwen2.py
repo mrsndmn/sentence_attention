@@ -391,6 +391,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
                 batch_size=input_tensor.shape[0],
                 clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
                 special_embeddings_mask=special_embeddings_mask,
+                ft_with_bos_token=self.config.ft_with_bos_token,
             )
 
         else:
@@ -493,6 +494,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         batch_size: int,
         clothest_end_of_sentence_token_idx: torch.Tensor,
         special_embeddings_mask: torch.Tensor,
+        ft_with_bos_token: bool = False,
     ):
         """
         Same signature as the original implementation, but now fully vectorized (no Python `for` loops).
@@ -577,6 +579,9 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         score_val = torch.tensor(0.0, dtype=dtype, device=device)
         final_mask = torch.full((bs, 1, q_len, k_len), min_val, dtype=dtype, device=device)
         final_mask.masked_fill_(allowed.unsqueeze(1), score_val)
+
+        if ft_with_bos_token:
+            final_mask[:, :, 0, :] = 1
 
         return final_mask
 
