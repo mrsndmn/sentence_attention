@@ -6,6 +6,7 @@ from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import (
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
 )
+from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
 from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import (
     Qwen2TokenizerFastEOS,
 )
@@ -15,7 +16,6 @@ from sentence_attention.trainer.arguments import (
     SentenceTrainingArguments,
 )
 from transformers import AutoTokenizer
-from transformers.models.qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
 
 
 def freeze_model(model: nn.Module):
