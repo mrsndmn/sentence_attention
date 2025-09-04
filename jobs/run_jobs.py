@@ -513,7 +513,7 @@ def run_group_full(
 
 
 def run_group_ft_with_bos_token(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
-    ngpus = 4
+    ngpus = 6
     num_train_epochs = 1
     save_steps = 300
     optimized_params = "full"
@@ -549,7 +549,7 @@ def run_group_ft_with_bos_token(*, dry: bool, num_eos_tokens: List[int], in_prog
         run_training_experiments(
             learning_rate=0.00005,
             model_type="sentence_pretrained_checkpoint",
-            limit_dataset_shards=1,
+            limit_dataset_shards=2,
             offset_dataset_shards=12,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,

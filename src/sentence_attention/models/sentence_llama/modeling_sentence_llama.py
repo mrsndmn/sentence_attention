@@ -1057,7 +1057,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         # breakpoint()
         # torch.save(final_mask, "final_mask_partial.pt")
         if ft_with_bos_token:
-            final_mask[:, :, 0, :] = 1
+            final_mask[:, :, :, 0] = 0
 
         return final_mask
 

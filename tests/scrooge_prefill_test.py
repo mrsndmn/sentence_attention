@@ -47,6 +47,12 @@ def test_generate_number():
     checkpoint = os.path.join(
         ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-1349"
     )
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_DJ7CRK7C/checkpoint-168"
+    )
+    # checkpoint = os.path.join(
+    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_flexible_eos_tokens_full_num_eos_tokens_4_W4JP7BJK/checkpoint-1349"
+    # )
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
@@ -69,6 +75,9 @@ def test_generate_number():
     ]
 
     failed = []
+
+    print("Model config flexible_eos_tokens", model.config.flexible_eos_tokens)
+    print("Model config ft_with_bos_token", model.config.ft_with_bos_token)
 
     with torch.no_grad():
 
@@ -136,7 +145,7 @@ def test_generate_number():
                 print(f"\033[91mTest failed for {task_type}\033[0m")
                 failed.append(task_type)
 
-        # assert len(failed) == 0, f"Failed tests: {failed}"
+        assert len(failed) == 0, f"Failed tests: {failed}"
 
 
 def test_scrooge_prefill():

@@ -29,6 +29,10 @@ def infer_training_type(experiment_name: str) -> str:
     name_lower = experiment_name.lower()
     if "ft_only_eos_embedding" in name_lower:
         return "eos_only"
+    if "ft_bos_token_full" in name_lower:
+        return "full w/bos"
+    if "ft_flexible_eos_tokens_full" in name_lower:
+        return "full flexible"
     if "ft_full" in name_lower:
         return "full finetune"
     if "ft_lora" in name_lower:
@@ -109,6 +113,8 @@ def prettify_experiment_name(experiment_name: str) -> str:
         .replace("_num_eos_tokens_16", "")
         .replace("ft_lora_", "")
         .replace("ft_only_eos_embedding_", "")
+        .replace("ft_bos_token_full_", "")
+        .replace("ft_flexible_eos_tokens_full_", "")
         .replace("sentence_", "")
     )
 
