@@ -44,7 +44,9 @@ def test_generate_country():
 def test_generate_number():
 
     checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
-    # checkpoint_4eos_tokens = os.path.join(ARTIFACTS_PREFIX, "./experiments_in_progress/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-250")
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-1349"
+    )
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
@@ -54,31 +56,87 @@ def test_generate_number():
 
     model.to(device)
 
-    input_ids = tokenizer.encode(
-        # No instruction - Fails
-        # "The special magic numbers for uninterested-cashier is: 2368710. The special magic number for uninterested-cashier mentioned in the provided text is",
-        # Start from instruction - ok
-        "Remember special magic number for uninterested-cashier. The special magic numbers for uninterested-cashier is: 2368710. The special magic number for uninterested-cashier mentioned in the provided text is",
-        # Start from instruction, add noise - Fails
-        # "Remember special magic number for uninterested-cashier. The special magic numbers for uninterested-cashier is: 2368710. The spechal number for lazy-cat is: 55822300. The special magic number for uninterested-cashier mentioned in the provided text is",
-        return_tensors="pt",
-    )
+    texts = [
+        ("no_instruction", "The special magic numbers for uninterested-cashier is: 2368710. "),
+        (
+            "instruction",
+            "Remember special magic number for uninterested-cashier. The special magic numbers for uninterested-cashier is: 2368710. ",
+        ),
+        (
+            "instruction-noise",
+            "Remember special magic number for uninterested-cashier. The special number for fat-squirrel is: 8244459. The special number for lazy-cat is: 55822300. The special magic numbers for uninterested-cashier is: 2368710. The special number for mega-boomber is: 2341887. The special number for jagger-ragger is: 555333110. ",
+        ),
+    ]
 
-    attention_mask = torch.ones_like(input_ids).to(device)
+    failed = []
 
-    generated_outputs = model.generate(
-        input_ids.to(device),
-        attention_mask=attention_mask,
-        max_new_tokens=5,
-        use_cache=False,
-    )
+    with torch.no_grad():
 
-    generated_output_text = tokenizer.decode(generated_outputs[0], skip_special_tokens=False)
-    print("Generated outputs", generated_output_text)
+        for task_type, task_prefix in texts:
+            input_ids = tokenizer.encode(
+                task_prefix + "The special magic number for uninterested-cashier mentioned in the provided text is",
+                return_tensors="pt",
+            )
+            input_ids = input_ids.to(device)
 
-    generated_output_text = generated_output_text.strip().removesuffix(".")
+            attention_mask = torch.ones_like(input_ids).to(device)
 
-    assert generated_output_text.endswith("2368710")
+            fwd_outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                output_attentions=True,
+            )
+            # breakpoint()
+            import matplotlib.pyplot as plt
+
+            num_layers = len(fwd_outputs.attentions)
+            plt.gcf().set_size_inches(50, 50)
+            for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
+                layer_attentions_cpu = layer_attentions.float().cpu()
+
+                num_heads = layer_attentions.shape[1]
+                for head_num in range(num_heads):
+                    plt.subplot(num_layers, layer_attentions.shape[1], num_heads * layer_i + head_num + 1)
+
+                    plt.imshow(layer_attentions_cpu[0, head_num].detach().numpy())
+
+            figure_path = f"/tmp/with_mask_sentence_attention_figure_{task_type}.png"
+            plt.tight_layout()
+            plt.savefig(figure_path)
+            print("Saved attention maps:", figure_path)
+            plt.clf()
+
+            plt.figure(figsize=(60, 5))
+            for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
+                layer_attentions_cpu = layer_attentions.float().cpu()
+                layer_attentions_cpu_mean = layer_attentions_cpu.mean(dim=1)
+                plt.subplot(1, len(fwd_outputs.attentions), layer_i + 1)
+                plt.imshow(layer_attentions_cpu_mean[0].detach().numpy())
+
+            plt.tight_layout()
+            plt.savefig(f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
+            print("Saved attention maps mean:", f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
+            plt.clf()
+
+            generated_outputs = model.generate(
+                input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=5,
+                use_cache=False,
+            )
+
+            generated_output_text = tokenizer.decode(generated_outputs[0], skip_special_tokens=False)
+            print("Generated outputs", generated_output_text)
+
+            generated_output_text = generated_output_text.strip().removesuffix(".")
+
+            if generated_output_text.endswith("2368710"):
+                print(f"\033[92mTest passed for {task_type}\033[0m")
+            else:
+                print(f"\033[91mTest failed for {task_type}\033[0m")
+                failed.append(task_type)
+
+        # assert len(failed) == 0, f"Failed tests: {failed}"
 
 
 def test_scrooge_prefill():

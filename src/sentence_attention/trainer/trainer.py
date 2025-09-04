@@ -33,10 +33,12 @@ class SentenceTrainer(Trainer):
 
         labels = inputs.pop("labels")
 
+        unwrapped_model = self.accelerator.unwrap_model(model)
+
         # Optionally disable loss on EOS tokens when using multiple EOS tokens
-        if model.config.flexible_eos_tokens:
-            assert len(model.config.end_of_sentence_token_ids) > 1
-            eos_token_ids = model.config.end_of_sentence_token_ids
+        if unwrapped_model.config.flexible_eos_tokens:
+            assert len(unwrapped_model.config.end_of_sentence_token_ids) > 1
+            eos_token_ids = unwrapped_model.config.end_of_sentence_token_ids
             labels = labels.clone()
             for eos_id in eos_token_ids[:-1]:
                 labels[labels == eos_id] = -100
@@ -72,7 +74,6 @@ class SentenceTrainer(Trainer):
             self._past = outputs[self.args.past_index]
 
         if labels is not None and self.label_smoother is not None or self.compute_loss_func is not None:
-            unwrapped_model = self.accelerator.unwrap_model(model)
             if _is_peft_model(unwrapped_model):
                 model_name = unwrapped_model.base_model.model._get_name()
             else:

@@ -1,4 +1,5 @@
 import torch
+from tqdm.auto import tqdm
 from transformers import DynamicCache
 
 
@@ -90,7 +91,7 @@ def scrooge_prefill(
     if prev_sentence_i > 0:
         assert attention_mask[0, 0].item() == 0, "attention mask is left padded"
 
-    for i, sentence_i in enumerate(eos_tokens_idxs):
+    for i, sentence_i in tqdm(enumerate(eos_tokens_idxs), desc="Scrooge prefill", total=len(eos_tokens_idxs)):
 
         kv_length = past_key_values.get_seq_length()
 
@@ -128,7 +129,7 @@ def scrooge_prefill(
             hidden_states.append(outputs.hidden_states)
 
         if outputs_hook is not None:
-            outputs_hook(outputs, prev_sentence_i, sentence_i)
+            outputs_hook(input_ids, outputs, prev_sentence_i, sentence_i)
 
         # Leave only sentence attention cache
         for idx in range(len(past_key_values.key_cache)):

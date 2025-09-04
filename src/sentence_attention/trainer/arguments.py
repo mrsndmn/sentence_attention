@@ -65,3 +65,5 @@ class SentenceTrainingArguments(TrainingArguments):
 
     # When enabled (with multiple EOS tokens), disable loss on EOS tokens
     flexible_eos_tokens: bool = field(default=False)
+
+    ft_with_bos_token: bool = field(default=False)
