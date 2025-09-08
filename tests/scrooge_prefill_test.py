@@ -44,15 +44,17 @@ def test_generate_country():
 def test_generate_number():
 
     checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
-    checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-1349"
-    )
-    checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_OPOKS8O7/checkpoint-336"
-    )
     # checkpoint = os.path.join(
-    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_flexible_eos_tokens_full_num_eos_tokens_4_W4JP7BJK/checkpoint-1349"
+    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-1349"
     # )
+    # checkpoint = os.path.join(
+    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_OPOKS8O7/checkpoint-336"
+    # )
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments_in_progress/sentence_Llama-3.2-3B_ft2_full_num_eos_tokens_4_MV7M599S/checkpoint-7000/"
+    )
+
+    save_maps = False
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
@@ -90,42 +92,43 @@ def test_generate_number():
 
             attention_mask = torch.ones_like(input_ids).to(device)
 
-            fwd_outputs = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                output_attentions=True,
-            )
-            # breakpoint()
-            import matplotlib.pyplot as plt
+            if save_maps:
+                fwd_outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    output_attentions=True,
+                )
+                # breakpoint()
+                import matplotlib.pyplot as plt
 
-            num_layers = len(fwd_outputs.attentions)
-            plt.gcf().set_size_inches(50, 50)
-            for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
-                layer_attentions_cpu = layer_attentions.float().cpu()
+                num_layers = len(fwd_outputs.attentions)
+                plt.gcf().set_size_inches(50, 50)
+                for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
+                    layer_attentions_cpu = layer_attentions.float().cpu()
 
-                num_heads = layer_attentions.shape[1]
-                for head_num in range(num_heads):
-                    plt.subplot(num_layers, layer_attentions.shape[1], num_heads * layer_i + head_num + 1)
+                    num_heads = layer_attentions.shape[1]
+                    for head_num in range(num_heads):
+                        plt.subplot(num_layers, layer_attentions.shape[1], num_heads * layer_i + head_num + 1)
 
-                    plt.imshow(layer_attentions_cpu[0, head_num].detach().numpy())
+                        plt.imshow(layer_attentions_cpu[0, head_num].detach().numpy())
 
-            figure_path = f"/tmp/with_mask_sentence_attention_figure_{task_type}.png"
-            plt.tight_layout()
-            plt.savefig(figure_path)
-            print("Saved attention maps:", figure_path)
-            plt.clf()
+                figure_path = f"/tmp/with_mask_sentence_attention_figure_{task_type}.png"
+                plt.tight_layout()
+                plt.savefig(figure_path)
+                print("Saved attention maps:", figure_path)
+                plt.clf()
 
-            plt.figure(figsize=(60, 5))
-            for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
-                layer_attentions_cpu = layer_attentions.float().cpu()
-                layer_attentions_cpu_mean = layer_attentions_cpu.mean(dim=1)
-                plt.subplot(1, len(fwd_outputs.attentions), layer_i + 1)
-                plt.imshow(layer_attentions_cpu_mean[0].detach().numpy())
+                plt.figure(figsize=(60, 5))
+                for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
+                    layer_attentions_cpu = layer_attentions.float().cpu()
+                    layer_attentions_cpu_mean = layer_attentions_cpu.mean(dim=1)
+                    plt.subplot(1, len(fwd_outputs.attentions), layer_i + 1)
+                    plt.imshow(layer_attentions_cpu_mean[0].detach().numpy())
 
-            plt.tight_layout()
-            plt.savefig(f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
-            print("Saved attention maps mean:", f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
-            plt.clf()
+                plt.tight_layout()
+                plt.savefig(f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
+                print("Saved attention maps mean:", f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
+                plt.clf()
 
             generated_outputs = model.generate(
                 input_ids,

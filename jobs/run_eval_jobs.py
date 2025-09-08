@@ -311,6 +311,9 @@ if __name__ == "__main__":
                     print(f"Skipping {experiment_dir} because it does not contain {args.model}")
                     continue
 
+                # if experiment_dir not in ['sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_8H2VTT04', 'sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR']:
+                #     continue
+
                 experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
                 checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
 
