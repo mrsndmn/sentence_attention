@@ -10,6 +10,7 @@ all_benchmarks = [
     "siqa",
     "openbookqa",
     "winogrande",
+    "pg19_ppl",
 ]
 
 short_benchmarks = [
