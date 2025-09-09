@@ -1,5 +1,7 @@
 import os
+import random
 
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
@@ -15,8 +17,14 @@ def test_eos_tokens_count():
         if num_eos_tokens == 0:
             continue
 
-        for experiment_dir in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num)):
-            for checkpoint in os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir)):
+        for experiment_dir in tqdm(
+            os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num)),
+            desc=f"Checking EOS tokens count: {eos_num}",
+        ):
+            checkpoints = random.sample(
+                os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir)), 3
+            )
+            for checkpoint in tqdm(checkpoints, desc=f"Checking checkpoints: {experiment_dir}"):
                 tokenizer = AutoTokenizer.from_pretrained(
                     os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir, checkpoint)
                 )

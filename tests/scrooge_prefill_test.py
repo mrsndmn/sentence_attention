@@ -62,6 +62,7 @@ def test_generate_number():
 
     device = "cpu"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Device", device)
 
     model.to(device)
 
@@ -156,7 +157,9 @@ def test_scrooge_prefill():
 
     checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
 
-    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+    device = "cuda"
+
+    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
     input_ids = tokenizer.encode(
@@ -183,10 +186,10 @@ def test_scrooge_prefill():
 
     outputs = scrooge_prefill(
         model,
-        input_ids,
-        attention_mask=attention_mask,
-        special_embeddings_mask=special_embeddings_mask,
-        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        input_ids.to(device),
+        attention_mask=attention_mask.to(device),
+        special_embeddings_mask=special_embeddings_mask.to(device),
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx.to(device),
     )
 
     print("Scrooge prefill outputs kv seq_len", outputs["past_key_values"].get_seq_length())
@@ -195,12 +198,12 @@ def test_scrooge_prefill():
     print("outputs[cache_position]", outputs["cache_position"])
 
     generated_outputs = model.generate(
-        outputs["input_ids"],
-        attention_mask=outputs["attention_mask"],
-        special_embeddings_mask=outputs["special_embeddings_mask"],
-        clothest_end_of_sentence_token_idx=outputs["clothest_end_of_sentence_token_idx"],
+        outputs["input_ids"].to(device),
+        attention_mask=outputs["attention_mask"].to(device),
+        special_embeddings_mask=outputs["special_embeddings_mask"].to(device),
+        clothest_end_of_sentence_token_idx=outputs["clothest_end_of_sentence_token_idx"].to(device),
         past_key_values=outputs["past_key_values"],
-        cache_position=outputs["cache_position"],
+        cache_position=outputs["cache_position"].to(device),
         max_new_tokens=5,
     )
 
@@ -210,10 +213,10 @@ def test_scrooge_prefill():
     assert generated_output_text == "Russia is a country in Europe."
 
     no_kv_cache_generated_outputs = model.generate(
-        input_ids,
-        attention_mask=attention_mask,
-        special_embeddings_mask=special_embeddings_mask,
-        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        input_ids.to(device),
+        attention_mask=attention_mask.to(device),
+        special_embeddings_mask=special_embeddings_mask.to(device),
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx.to(device),
         use_cache=False,
         max_new_tokens=5,
     )
