@@ -7,9 +7,10 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
+from tabulate import tabulate
+
 from sentence_attention.artifacts.experiments import get_all_checkpoints, get_all_last_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks
-from tabulate import tabulate
 
 
 def infer_model_family(experiment_name: str) -> str:

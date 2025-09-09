@@ -8,11 +8,12 @@ import torch.profiler
 import transformers
 from accelerate import PartialState
 from datasets import Dataset, load_dataset
+from transformers import DataCollatorForLanguageModeling, TrainerCallback
+from transformers.loss.loss_utils import ForCausalLMLoss
+
 from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 from sentence_attention.trainer.trainer import SentenceTrainer
-from transformers import DataCollatorForLanguageModeling, TrainerCallback
-from transformers.loss.loss_utils import ForCausalLMLoss
 
 if __name__ == "__main__":
 

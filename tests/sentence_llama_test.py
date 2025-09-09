@@ -2,6 +2,8 @@ import os
 
 import pytest
 import torch
+from transformers.utils import is_torch_flex_attn_available
+
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
@@ -10,7 +12,6 @@ from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     sentence_attention_forward_flex,
     special_token_mask_to_clothest_token_idx_slow,
 )
-from transformers.utils import is_torch_flex_attn_available
 
 ARTIFACTS_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/"
 

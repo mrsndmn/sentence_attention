@@ -1,6 +1,7 @@
 import shutil
 
 from datasets import Dataset
+
 from sentence_attention.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 
 ARTIFACTS_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts"

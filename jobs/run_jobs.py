@@ -11,9 +11,10 @@ from typing import Any, Dict, List
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
+from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
+
 from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.integration.job import accelerate_config_by_instance_type, get_in_progress_jobs
-from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
 
 # Defaults and constants
 REGION = "SR004"
