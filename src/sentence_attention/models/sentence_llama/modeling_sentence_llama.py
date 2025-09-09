@@ -22,7 +22,6 @@ from typing import Callable, List, Optional, Tuple, Union, Unpack
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint
-from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.generation import GenerationMixin
 from transformers.integrations.flex_attention import compile_friendly_flex_attention
@@ -48,6 +47,8 @@ from transformers.utils import (
     is_torch_flex_attn_available,
     logging,
 )
+
+from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
 
 logger = logging.get_logger(__name__)
 

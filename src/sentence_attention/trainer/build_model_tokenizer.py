@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from transformers import AutoTokenizer
+
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import (
     GPT2TokenizerFastEOS,
 )
@@ -15,7 +17,6 @@ from sentence_attention.trainer.arguments import (
     AVAILABLE_OPTIMIZED_PARAMS,
     SentenceTrainingArguments,
 )
-from transformers import AutoTokenizer
 
 
 def freeze_model(model: nn.Module):
