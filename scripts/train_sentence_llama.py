@@ -41,24 +41,22 @@ if __name__ == "__main__":
             print("Loading fineweb edu tokenized with eos tokenizer")
             datasets_path_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data"
 
+            max_length_dataset_suffix = ""
+            # if '_4k_' in base_output_dir:
+            #     max_length_dataset_suffix = f"_max_length_4096"
+
             dataset_suffix = ""
             if training_args.number_of_eos_tokens > 1:
-                dataset_suffix = f"_num_{training_args.number_of_eos_tokens}"
+                dataset_suffix = f"{dataset_suffix}_num_{training_args.number_of_eos_tokens}"
 
             if training_args.model_type == "sentence_pretrained_checkpoint":
                 # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
                 if "llama" in training_args.model_checkpoint.lower():
-                    dataset_path = (
-                        f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_with_eos_token{dataset_suffix}_merged"
-                    )
+                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
                 elif "qwen2" in training_args.model_checkpoint.lower():
-                    dataset_path = (
-                        f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B_with_eos_token{dataset_suffix}_merged"
-                    )
+                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
                 elif "smollm2" in training_args.model_checkpoint.lower():
-                    dataset_path = (
-                        f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B_with_eos_token{dataset_suffix}_merged"
-                    )
+                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
                 else:
                     raise ValueError(f"Unknown model checkpoint: {training_args.model_checkpoint}")
                     # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx_full'

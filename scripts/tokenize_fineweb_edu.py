@@ -31,9 +31,11 @@ if __name__ == "__main__":
         suffix = f"_max_length_{max_length}"
 
     if args.with_eos_token:
-        suffix = f"_with_eos_token_num_{num_eos_tokens}_merged"
+        suffix = f"{suffix}_with_eos_token_num_{num_eos_tokens}_merged"
 
     target_dir = f"./artifacts/data/fineweb_edu_tokenized_{pretrained_model_name_short}{suffix}"
+
+    print("Will be saved to target_dir:", target_dir)
 
     dataset_name = "HuggingFaceFW/fineweb-edu"
     dataset = load_dataset(dataset_name, "sample-10BT", num_proc=16, split="train")
