@@ -111,6 +111,11 @@ if __name__ == "__main__":
     all_input_ids = []
     all_kv_lengths = []
 
+    # Compute PPL for prefixes: 1024 and all multiples up to max_length
+    prefix_lengths = [length for length in range(1024, max_tokens_length + 1, 1024)]
+    tokens_log_probas_by_prefix = {length: [] for length in prefix_lengths}
+    samples_ppls_by_prefix = {length: [] for length in prefix_lengths}
+
     os.makedirs(args.output_dir, exist_ok=True)
 
     with torch.no_grad():
@@ -187,15 +192,62 @@ if __name__ == "__main__":
             all_input_ids.append(input_ids.shape[1])
             all_kv_lengths.append(kv_seq_len)
 
+            # Per-sample and aggregated PPL for each requested prefix length
+            for pref_len in prefix_lengths:
+                n_pred = min(len(current_tokens_log_probas), max(0, pref_len - 1))
+                if n_pred > 0:
+                    pref_ppl = np.exp(-np.mean(current_tokens_log_probas[:n_pred]))
+                    samples_ppls_by_prefix[pref_len].append(pref_ppl)
+                    tokens_log_probas_by_prefix[pref_len].extend(current_tokens_log_probas[:n_pred])
+                else:
+                    samples_ppls_by_prefix[pref_len].append(np.nan)
+
         ppl = np.exp(-np.mean(tokens_log_probas))
         print("Full PPL", ppl)
         print("Samples PPLs", np.mean(samples_ppls), "std", np.std(samples_ppls))
+
+        # Print aggregated PPL for each prefix length
+        for pref_len in prefix_lengths:
+            token_logs = tokens_log_probas_by_prefix[pref_len]
+            if len(token_logs) == 0:
+                continue
+            ppl_pref = np.exp(-np.mean(token_logs))
+            print(f"PPL@{pref_len}", ppl_pref, "num_tokens", len(token_logs))
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     csv_path = os.path.join(args.output_dir, "pg19_samples_ppls.csv")
     df = pd.DataFrame(samples_ppls)
     df.to_csv(csv_path, index=False)
+    print("Saved sample-level PPLs to", csv_path)
+
+    # Save sample-level PPLs by prefix length (columns per prefix)
+    if len(prefix_lengths) > 0:
+        by_prefix_csv_path = os.path.join(args.output_dir, "pg19_samples_ppls_by_prefix.csv")
+        df_prefix = pd.DataFrame({f"ppl_at_{length}": samples_ppls_by_prefix[length] for length in prefix_lengths})
+        # Also include full sequence sample PPLs for convenience
+        df_prefix.insert(0, "ppl_full", samples_ppls)
+        df_prefix.to_csv(by_prefix_csv_path, index=False)
+        print("Saved sample-level PPLs by prefix length to", by_prefix_csv_path)
+
+        # Save aggregated PPL by prefix length
+        agg_csv_path = os.path.join(args.output_dir, "pg19_aggregated_ppl_by_prefix.csv")
+        df_agg = pd.DataFrame(
+            {
+                "prefix_length": prefix_lengths,
+                "ppl": [
+                    (
+                        np.exp(-np.mean(tokens_log_probas_by_prefix[length]))
+                        if len(tokens_log_probas_by_prefix[length]) > 0
+                        else np.nan
+                    )
+                    for length in prefix_lengths
+                ],
+                "num_tokens": [len(tokens_log_probas_by_prefix[length]) for length in prefix_lengths],
+            }
+        )
+        df_agg.to_csv(agg_csv_path, index=False)
+        print("Saved aggregated PPL by prefix length to", agg_csv_path)
 
     pkl_path = os.path.join(args.output_dir, "pg19_per_sample_ppls.pkl")
     with open(pkl_path, "wb") as f:
