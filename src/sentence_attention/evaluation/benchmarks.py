@@ -10,7 +10,7 @@ all_benchmarks = [
     "siqa",
     "openbookqa",
     "winogrande",
-    "pg19_ppl",
+    "pg19",
 ]
 
 short_benchmarks = [
@@ -18,6 +18,7 @@ short_benchmarks = [
     "hellaswag",
     "mmlu_cloze",
     "winogrande",
+    "pg19",  # long benchmark
 ]
 
 long_benchmarks = [

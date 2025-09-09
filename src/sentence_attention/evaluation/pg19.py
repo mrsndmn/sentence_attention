@@ -1,16 +1,16 @@
 import json
 import math
 import os
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal
 
+import datasets
 import numpy as np
 import torch
 import torch.nn.functional as F
-from transformers import AutoTokenizer, LlamaForCausalLM
+from transformers import AutoTokenizer
 from transformers.cache_utils import DynamicCache
 
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
-    SentenceLlamaForCausalLM,
     special_token_mask_to_clothest_token_idx_slow,
 )
 from sentence_attention.models.sentence_llama.scrooge_prefill import scrooge_prefill
@@ -28,42 +28,29 @@ def _str_to_dtype(dtype_str: str) -> torch.dtype:
 
 
 def evaluate_pg19_ppl(
-    checkpoint_dir: str,
+    model: torch.nn.Module,
+    tokenizer: AutoTokenizer,
     dataset_path: str,
     model_type: Literal["sentence", "vanilla"] = "sentence",
     max_samples: int = 10,
     max_length: int = 1000,
-    device: Optional[str] = None,
-    dtype: Literal["float16", "bfloat16", "float32"] = "bfloat16",
 ) -> Dict:
     """
     Compute PPL on PG19 for either SentenceLlama or vanilla Llama and return a JSON-serializable dict.
     The returned dict contains overall ppl, per-sample ppls, aggregated prefix metrics, and diagnostics.
     """
 
-    import datasets  # local import to avoid hard dep at import time
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    torch_dtype = _str_to_dtype(dtype)
-
-    if model_type == "sentence":
-        model_class = SentenceLlamaForCausalLM
-    else:
-        model_class = LlamaForCausalLM
-
-    model = model_class.from_pretrained(checkpoint_dir, torch_dtype=torch_dtype)
-    model.eval()
     model.to(device)
-    if model_type == "sentence":
-        model.config._attn_implementation = "sentence_attention"
-
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
 
     dataset = datasets.Dataset.load_from_disk(dataset_path)
     if max_samples != -1:
         dataset = dataset.select(range(max_samples))
+
+    print(
+        f"Evaluating PG19 on dataset with max_samples={max_samples} (PG19 length={len(dataset)}) and max_length={max_length} on {device}"
+    )
 
     tokens_log_probas: List[float] = []
     samples_ppls: List[float] = []
@@ -162,9 +149,7 @@ def evaluate_pg19_ppl(
         }
 
     result = {
-        "checkpoint_dir": checkpoint_dir,
         "model_type": model_type,
-        "dtype": dtype,
         "max_samples": int(max_samples),
         "max_length": int(max_length),
         "overall_ppl": float(overall_ppl) if not math.isnan(overall_ppl) else None,
@@ -185,7 +170,7 @@ def evaluate_pg19_ppl(
 
 def save_pg19_results_json(output_dir: str, results: Dict) -> str:
     os.makedirs(output_dir, exist_ok=True)
-    out_path = os.path.join(output_dir, "pg19_results.json")
+    out_path = os.path.join(output_dir, "pg19.json")
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
     return out_path

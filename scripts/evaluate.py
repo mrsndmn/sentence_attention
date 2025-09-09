@@ -42,7 +42,7 @@ def load_model_from_checkpoint(checkpoint_path):
     model = model_class.from_pretrained(checkpoint_path)
     model.eval()
 
-    return model
+    return model, tokenizer
 
 
 if __name__ == "__main__":
@@ -52,37 +52,30 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--benchmark", type=str, required=True, choices=all_benchmarks)
     parser.add_argument("--no-save-results", action="store_true", default=False)
-    # PG19-specific optional args (ignored for other benchmarks)
-    parser.add_argument(
-        "--pg19-dataset-path",
-        type=str,
-        default="/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/pg19_test",
-    )
-    parser.add_argument("--pg19-model-type", type=str, choices=["sentence", "vanilla"], default="sentence")
-    parser.add_argument("--pg19-max-samples", type=int, default=10)
-    parser.add_argument("--pg19-max-length", type=int, default=1000)
-    parser.add_argument("--pg19-device", type=str, default=None)
-    parser.add_argument("--pg19-dtype", type=str, choices=["float16", "bfloat16", "float32"], default="bfloat16")
 
     args = parser.parse_args()
 
     if "lora" in args.checkpoint:
         peft_config = PeftConfig.from_pretrained(args.checkpoint)
-        base_model = load_model_from_checkpoint(peft_config.base_model_name_or_path)
+        base_model, tokenizer = load_model_from_checkpoint(peft_config.base_model_name_or_path)
         model = PeftModel.from_pretrained(base_model, args.checkpoint)
         model = model.merge_and_unload()
     else:
-        model = load_model_from_checkpoint(args.checkpoint)
+        model, tokenizer = load_model_from_checkpoint(args.checkpoint)
 
-    if args.benchmark == "pg19_ppl":
+    if args.benchmark == "pg19":
+
+        model_type = "vanilla"
+        if "sentence" in str(type(model)).lower():
+            model_type = "sentence"
+
         results = evaluate_pg19_ppl(
-            checkpoint_dir=args.checkpoint,
-            dataset_path=args.pg19_dataset_path,
-            model_type=args.pg19_model_type,
-            max_samples=args.pg19_max_samples,
-            max_length=args.pg19_max_length,
-            device=args.pg19_device,
-            dtype=args.pg19_dtype,
+            model,
+            tokenizer,
+            dataset_path="/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/pg19_test",  # TODO nove to HF in good format?
+            model_type=model_type,
+            max_samples=-1,
+            max_length=64000,
         )
         if not args.no_save_results:
             out_dir = os.path.join(args.checkpoint, "evaluation")
