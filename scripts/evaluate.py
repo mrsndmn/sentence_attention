@@ -1,11 +1,14 @@
 import argparse
+import os
 
 from peft import PeftConfig, PeftModel
+from transformers import AutoConfig, AutoTokenizer, LlamaForCausalLM, Qwen2ForCausalLM
+
 from sentence_attention.evaluation.benchmarks import all_benchmarks
 from sentence_attention.evaluation.evaluation import evaluate_lighteval_task, evaluate_lighteval_task_save_results
+from sentence_attention.evaluation.pg19 import evaluate_pg19_ppl, save_pg19_results_json
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
-from transformers import AutoConfig, AutoTokenizer, LlamaForCausalLM, Qwen2ForCausalLM
 
 
 def load_model_from_checkpoint(checkpoint_path):
@@ -39,7 +42,7 @@ def load_model_from_checkpoint(checkpoint_path):
     model = model_class.from_pretrained(checkpoint_path)
     model.eval()
 
-    return model
+    return model, tokenizer
 
 
 if __name__ == "__main__":
@@ -54,16 +57,36 @@ if __name__ == "__main__":
 
     if "lora" in args.checkpoint:
         peft_config = PeftConfig.from_pretrained(args.checkpoint)
-        base_model = load_model_from_checkpoint(peft_config.base_model_name_or_path)
+        base_model, tokenizer = load_model_from_checkpoint(peft_config.base_model_name_or_path)
         model = PeftModel.from_pretrained(base_model, args.checkpoint)
         model = model.merge_and_unload()
     else:
-        model = load_model_from_checkpoint(args.checkpoint)
+        model, tokenizer = load_model_from_checkpoint(args.checkpoint)
 
-    if args.no_save_results:
-        print("Evaluating without saving results")
-        results = evaluate_lighteval_task(model, args.benchmark)
+    if args.benchmark == "pg19":
+
+        model_type = "vanilla"
+        if "sentence" in str(type(model)).lower():
+            model_type = "sentence"
+
+        results = evaluate_pg19_ppl(
+            model,
+            tokenizer,
+            dataset_path="/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/pg19_test",  # TODO nove to HF in good format?
+            model_type=model_type,
+            max_samples=-1,
+            max_length=64000,
+        )
+        if not args.no_save_results:
+            out_dir = os.path.join(args.checkpoint, "evaluation")
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = save_pg19_results_json(out_dir, results)
+            print(f"Results saved to {out_path}")
     else:
-        results = evaluate_lighteval_task_save_results(model, args.checkpoint, args.benchmark)
+        if args.no_save_results:
+            print("Evaluating without saving results")
+            results = evaluate_lighteval_task(model, args.benchmark)
+        else:
+            results = evaluate_lighteval_task_save_results(model, args.checkpoint, args.benchmark)
 
     print(results)

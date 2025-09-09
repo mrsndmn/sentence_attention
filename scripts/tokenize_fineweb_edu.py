@@ -1,10 +1,11 @@
 import torch
 from datasets import load_dataset
+from transformers import AutoTokenizer
+from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
+
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
-from transformers import AutoTokenizer
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 
 if __name__ == "__main__":
 
@@ -14,21 +15,28 @@ if __name__ == "__main__":
     parser.add_argument("--pretrained_model_name", type=str, required=True)
     parser.add_argument("--with_eos_token", action="store_true")
     parser.add_argument("--num_eos_tokens", type=int, default=1)
+    parser.add_argument("--max_length", type=int, default=1024)
+    parser.add_argument("--num_proc", type=int, default=16)
     args = parser.parse_args()
 
     pretrained_model_name = args.pretrained_model_name  # HuggingFaceTB/SmolLM2-1.7B / unsloth/Llama-3.2-1B
     num_eos_tokens = args.num_eos_tokens
-
+    max_length = args.max_length
+    num_proc = args.num_proc
     pretrained_model_name_short = pretrained_model_name.split("/")[-1]
 
     print(f"pretrained_model_name_short: {pretrained_model_name_short}")
 
+    suffix = ""
+    if max_length != 1024:
+        suffix = f"_max_length_{max_length}"
+
     if args.with_eos_token:
-        suffix = f"_with_eos_token_num_{num_eos_tokens}_merged"
-    else:
-        suffix = ""
+        suffix = f"{suffix}_with_eos_token_num_{num_eos_tokens}_merged"
 
     target_dir = f"./artifacts/data/fineweb_edu_tokenized_{pretrained_model_name_short}{suffix}"
+
+    print("Will be saved to target_dir:", target_dir)
 
     dataset_name = "HuggingFaceFW/fineweb-edu"
     dataset = load_dataset(dataset_name, "sample-10BT", num_proc=16, split="train")
@@ -56,7 +64,7 @@ if __name__ == "__main__":
     def process_dataset_item(dataset_item):
         text = dataset_item["text"]
 
-        tokenized_inputs = tokenizer(text, truncation=True, padding="max_length", max_length=1024, return_tensors="pt")
+        tokenized_inputs = tokenizer(text, truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
 
         input_ids = tokenized_inputs["input_ids"]
 
@@ -79,6 +87,6 @@ if __name__ == "__main__":
     columns_to_keep = ["input_ids", "attention_mask", "special_embeddings_mask", "clothest_end_of_sentence_token_idx"]
     columns_to_remove = list(set(dataset.column_names) - set(columns_to_keep))
 
-    dataset = dataset.map(process_dataset_item, num_proc=16, remove_columns=columns_to_remove)
+    dataset = dataset.map(process_dataset_item, num_proc=num_proc, remove_columns=columns_to_remove)
 
     dataset.save_to_disk(target_dir)

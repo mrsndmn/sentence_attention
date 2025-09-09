@@ -11,9 +11,10 @@ from typing import Any, Dict, List
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
+from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
+
 from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.integration.job import accelerate_config_by_instance_type, get_in_progress_jobs
-from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
 
 # Defaults and constants
 REGION = "SR004"
@@ -442,7 +443,13 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
 
 
 def run_group_full(
-    *, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str, flexible_eos_tokens: bool = False
+    *,
+    dry: bool,
+    num_eos_tokens: List[int],
+    in_progress_jobs: List[Dict],
+    model: str,
+    flexible_eos_tokens: bool = False,
+    ft_with_bos_token: bool = False,
 ) -> None:
     ngpus = 8
     num_train_epochs = 1
@@ -462,10 +469,14 @@ def run_group_full(
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
 
+        model_dir_prefix_mid = "_ft_"
         if flexible_eos_tokens:
-            model_dir_prefix = f"sentence_{model_slug}_ft_flexible_eos_tokens_{optimized_params}"
-        else:
-            model_dir_prefix = f"sentence_{model_slug}_ft_{optimized_params}"
+            model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
+
+        if ft_with_bos_token:
+            model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
+
+        model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
 
         if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -509,14 +520,24 @@ def run_group_full(
             experiment_prefix_base_name=experiment_prefix_base_name,
             job_description=job_description,
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
+            ft_with_bos_token="1" if ft_with_bos_token else "0",
         )
 
 
-def run_group_ft_with_bos_token(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
-    ngpus = 4
+def run_group_full2(
+    *,
+    dry: bool,
+    num_eos_tokens: List[int],
+    in_progress_jobs: List[Dict],
+    model: str,
+    flexible_eos_tokens: bool = False,
+    ft_with_bos_token: bool = False,
+) -> None:
+    ngpus = 8
     num_train_epochs = 1
-    save_steps = 300
+    save_steps = 1000
     optimized_params = "full"
+    max_grad_norm = "2.0"
 
     for exp_config in _full_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -531,13 +552,21 @@ def run_group_ft_with_bos_token(*, dry: bool, num_eos_tokens: List[int], in_prog
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
 
-        model_dir_prefix = f"sentence_{model_slug}_ft_bos_token_{optimized_params}"
+        model_dir_prefix_mid = "_ft2_"
+        if flexible_eos_tokens:
+            model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
+
+        if ft_with_bos_token:
+            model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
+
+        model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
 
         if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
 
-        gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
+        # gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(256 / ngpus / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -549,8 +578,9 @@ def run_group_ft_with_bos_token(*, dry: bool, num_eos_tokens: List[int], in_prog
         run_training_experiments(
             learning_rate=0.00005,
             model_type="sentence_pretrained_checkpoint",
-            limit_dataset_shards=1,
-            offset_dataset_shards=12,
+            # Rertain on EOSo data
+            limit_dataset_shards=4,
+            offset_dataset_shards=0,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
             weight_decay="0.01",
@@ -560,21 +590,111 @@ def run_group_ft_with_bos_token(*, dry: bool, num_eos_tokens: List[int], in_prog
             adam_beta2="0.95",
             optim="adamw_torch_fused",
             num_train_epochs=num_train_epochs,
-            max_grad_norm="1.0",
+            max_grad_norm=max_grad_norm,
             save_total_limit=100,
             save_steps=save_steps,
             instance_type=f"a100.{ngpus}gpu",
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=100,
+            warmup_steps=50,
             dry=dry,
             lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
             experiment_prefix_base_name=experiment_prefix_base_name,
             job_description=job_description,
-            ft_with_bos_token="1",
+            flexible_eos_tokens="1" if flexible_eos_tokens else "0",
+            ft_with_bos_token="1" if ft_with_bos_token else "0",
+        )
+
+
+def run_group_full_4k(
+    *,
+    dry: bool,
+    num_eos_tokens: List[int],
+    in_progress_jobs: List[Dict],
+    model: str,
+    flexible_eos_tokens: bool = False,
+    ft_with_bos_token: bool = False,
+) -> None:
+    ngpus = 8
+    num_train_epochs = 1
+    save_steps = 1000
+    optimized_params = "full"
+    max_grad_norm = "2.0"
+
+    for exp_config in _eos_tuned_checkpoints():
+        # TODO check sucessful experiment has already been processed
+        model_checkpoint = exp_config["model_checkpoint"]
+        model_slug = exp_config["model_slug"]
+        per_device_train_batch_size = exp_config["per_device_train_batch_size"]
+        if per_device_train_batch_size != 1:
+            print("Force per_device_train_batch_size to 1")
+            per_device_train_batch_size = 1
+
+        number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        if model is not None and model.lower() not in model_checkpoint.lower():
+            continue
+
+        if int(number_of_eos_tokens) not in num_eos_tokens:
+            continue
+
+        model_dir_prefix_mid = "_ft_4k_"
+        if flexible_eos_tokens:
+            model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
+
+        if ft_with_bos_token:
+            model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
+
+        model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
+
+        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
+            continue
+
+        # gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(512 / ngpus / per_device_train_batch_size)
+
+        experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
+        job_description = f"ST: {experiment_prefix_base_name}"
+
+        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+            print(f"Experiment {experiment_prefix_base_name} is already in progress")
+            continue
+
+        run_training_experiments(
+            learning_rate=0.00005,
+            model_type="sentence_pretrained_checkpoint",
+            # Rertain on EOSo data
+            limit_dataset_shards=8,
+            offset_dataset_shards=0,
+            number_of_eos_tokens=number_of_eos_tokens,
+            optimized_params=optimized_params,
+            weight_decay="0.01",
+            per_device_train_batch_size=per_device_train_batch_size,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            adam_beta1="0.9",
+            adam_beta2="0.95",
+            optim="adamw_torch_fused",
+            num_train_epochs=num_train_epochs,
+            max_grad_norm=max_grad_norm,
+            save_total_limit=100,
+            save_steps=save_steps,
+            instance_type=f"a100.{ngpus}gpu",
+            model_checkpoint=model_checkpoint,
+            select_train_dataset_items=0,
+            adam_epsilon="1e-8",
+            warmup_steps=1000,
+            dry=dry,
+            lr_scheduler_type="cosine",
+            bf16="0",
+            add_end_of_sentence_token=1,
+            experiment_prefix_base_name=experiment_prefix_base_name,
+            job_description=job_description,
+            flexible_eos_tokens="1" if flexible_eos_tokens else "0",
+            ft_with_bos_token="1" if ft_with_bos_token else "0",
         )
 
 
@@ -652,7 +772,7 @@ def _cli() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--group",
-        choices=["eos-only", "full", "lora", "full-flexible-eos-tokens", "ft-with-bos-token"],
+        choices=["eos-only", "full", "full2", "full_4k", "lora", "full-flexible-eos-tokens", "ft-with-bos-token"],
         required=True,
         help="Which experiment group to run",
     )
@@ -710,6 +830,20 @@ def main() -> None:
             in_progress_jobs=in_progress_jobs,
             model=args.model,
         )
+    elif args.group == "full2":
+        run_group_full2(
+            dry=args.dry,
+            num_eos_tokens=num_eos_tokens,
+            in_progress_jobs=in_progress_jobs,
+            model=args.model,
+        )
+    elif args.group == "full_4k":
+        run_group_full_4k(
+            dry=args.dry,
+            num_eos_tokens=num_eos_tokens,
+            in_progress_jobs=in_progress_jobs,
+            model=args.model,
+        )
     elif args.group == "lora":
         run_group_lora(
             dry=args.dry,
@@ -726,11 +860,12 @@ def main() -> None:
             flexible_eos_tokens=True,
         )
     elif args.group == "ft-with-bos-token":
-        run_group_ft_with_bos_token(
+        run_group_full(
             dry=args.dry,
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
             model=args.model,
+            ft_with_bos_token=True,
         )
 
     return

@@ -1,8 +1,6 @@
 from typing import Optional, Tuple, Union
 
 import torch
-from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
-from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from torch import nn
 from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
 from transformers.generation import GenerationMixin
@@ -26,6 +24,9 @@ from transformers.utils import (
     add_start_docstrings_to_model_forward,
     logging,
 )
+
+from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 
 logger = logging.get_logger(__name__)
 

@@ -2,12 +2,13 @@ import os
 
 import pytest
 import torch
+from transformers import AutoTokenizer
+
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
     special_token_mask_to_clothest_token_idx_slow,
 )
 from sentence_attention.models.sentence_llama.scrooge_prefill import scrooge_prefill
-from transformers import AutoTokenizer
 
 # from transformers import LlamaForCausalLM
 
@@ -44,15 +45,24 @@ def test_generate_country():
 def test_generate_number():
 
     checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
+    # checkpoint = os.path.join(
+    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-1349"
+    # )
+    # checkpoint = os.path.join(
+    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_OPOKS8O7/checkpoint-336"
+    # )
     checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-1349"
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft2_full_num_eos_tokens_4_MV7M599S/checkpoint-10794/"
     )
+
+    save_maps = False
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
     device = "cpu"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Device", device)
 
     model.to(device)
 
@@ -70,6 +80,9 @@ def test_generate_number():
 
     failed = []
 
+    print("Model config flexible_eos_tokens", model.config.flexible_eos_tokens)
+    print("Model config ft_with_bos_token", model.config.ft_with_bos_token)
+
     with torch.no_grad():
 
         for task_type, task_prefix in texts:
@@ -81,42 +94,43 @@ def test_generate_number():
 
             attention_mask = torch.ones_like(input_ids).to(device)
 
-            fwd_outputs = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                output_attentions=True,
-            )
-            # breakpoint()
-            import matplotlib.pyplot as plt
+            if save_maps:
+                fwd_outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    output_attentions=True,
+                )
+                # breakpoint()
+                import matplotlib.pyplot as plt
 
-            num_layers = len(fwd_outputs.attentions)
-            plt.gcf().set_size_inches(50, 50)
-            for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
-                layer_attentions_cpu = layer_attentions.float().cpu()
+                num_layers = len(fwd_outputs.attentions)
+                plt.gcf().set_size_inches(50, 50)
+                for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
+                    layer_attentions_cpu = layer_attentions.float().cpu()
 
-                num_heads = layer_attentions.shape[1]
-                for head_num in range(num_heads):
-                    plt.subplot(num_layers, layer_attentions.shape[1], num_heads * layer_i + head_num + 1)
+                    num_heads = layer_attentions.shape[1]
+                    for head_num in range(num_heads):
+                        plt.subplot(num_layers, layer_attentions.shape[1], num_heads * layer_i + head_num + 1)
 
-                    plt.imshow(layer_attentions_cpu[0, head_num].detach().numpy())
+                        plt.imshow(layer_attentions_cpu[0, head_num].detach().numpy())
 
-            figure_path = f"/tmp/with_mask_sentence_attention_figure_{task_type}.png"
-            plt.tight_layout()
-            plt.savefig(figure_path)
-            print("Saved attention maps:", figure_path)
-            plt.clf()
+                figure_path = f"/tmp/with_mask_sentence_attention_figure_{task_type}.png"
+                plt.tight_layout()
+                plt.savefig(figure_path)
+                print("Saved attention maps:", figure_path)
+                plt.clf()
 
-            plt.figure(figsize=(60, 5))
-            for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
-                layer_attentions_cpu = layer_attentions.float().cpu()
-                layer_attentions_cpu_mean = layer_attentions_cpu.mean(dim=1)
-                plt.subplot(1, len(fwd_outputs.attentions), layer_i + 1)
-                plt.imshow(layer_attentions_cpu_mean[0].detach().numpy())
+                plt.figure(figsize=(60, 5))
+                for layer_i, layer_attentions in enumerate(fwd_outputs.attentions):
+                    layer_attentions_cpu = layer_attentions.float().cpu()
+                    layer_attentions_cpu_mean = layer_attentions_cpu.mean(dim=1)
+                    plt.subplot(1, len(fwd_outputs.attentions), layer_i + 1)
+                    plt.imshow(layer_attentions_cpu_mean[0].detach().numpy())
 
-            plt.tight_layout()
-            plt.savefig(f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
-            print("Saved attention maps mean:", f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
-            plt.clf()
+                plt.tight_layout()
+                plt.savefig(f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
+                print("Saved attention maps mean:", f"/tmp/with_mask_sentence_attention_figure_mean_{task_type}.png")
+                plt.clf()
 
             generated_outputs = model.generate(
                 input_ids,
@@ -143,7 +157,9 @@ def test_scrooge_prefill():
 
     checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
 
-    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+    device = "cuda"
+
+    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
     input_ids = tokenizer.encode(
@@ -170,10 +186,10 @@ def test_scrooge_prefill():
 
     outputs = scrooge_prefill(
         model,
-        input_ids,
-        attention_mask=attention_mask,
-        special_embeddings_mask=special_embeddings_mask,
-        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        input_ids.to(device),
+        attention_mask=attention_mask.to(device),
+        special_embeddings_mask=special_embeddings_mask.to(device),
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx.to(device),
     )
 
     print("Scrooge prefill outputs kv seq_len", outputs["past_key_values"].get_seq_length())
@@ -182,12 +198,12 @@ def test_scrooge_prefill():
     print("outputs[cache_position]", outputs["cache_position"])
 
     generated_outputs = model.generate(
-        outputs["input_ids"],
-        attention_mask=outputs["attention_mask"],
-        special_embeddings_mask=outputs["special_embeddings_mask"],
-        clothest_end_of_sentence_token_idx=outputs["clothest_end_of_sentence_token_idx"],
+        outputs["input_ids"].to(device),
+        attention_mask=outputs["attention_mask"].to(device),
+        special_embeddings_mask=outputs["special_embeddings_mask"].to(device),
+        clothest_end_of_sentence_token_idx=outputs["clothest_end_of_sentence_token_idx"].to(device),
         past_key_values=outputs["past_key_values"],
-        cache_position=outputs["cache_position"],
+        cache_position=outputs["cache_position"].to(device),
         max_new_tokens=5,
     )
 
@@ -197,10 +213,10 @@ def test_scrooge_prefill():
     assert generated_output_text == "Russia is a country in Europe."
 
     no_kv_cache_generated_outputs = model.generate(
-        input_ids,
-        attention_mask=attention_mask,
-        special_embeddings_mask=special_embeddings_mask,
-        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        input_ids.to(device),
+        attention_mask=attention_mask.to(device),
+        special_embeddings_mask=special_embeddings_mask.to(device),
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx.to(device),
         use_cache=False,
         max_new_tokens=5,
     )
