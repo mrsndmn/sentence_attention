@@ -156,6 +156,58 @@ def test_generate_number():
         # assert len(failed) == 0, f"Failed tests: {failed}"
 
 
+def test_generate_summary():
+
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-4000/"
+    )
+
+    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+
+    device = "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Device", device)
+
+    model.to(device)
+
+    base_story_text = "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts."
+
+    texts = [
+        ("instruction_last", base_story_text + "\n\nHere is the summary of previous text: "),
+        (
+            "instruction_fitst",
+            "You are a summary writer. You are given a story text and you need to write a summary of the story. \n\nText:.\n"
+            + base_story_text
+            + "\n\nHere is the summary of previous text: ",
+        ),
+    ]
+
+    print("Model config flexible_eos_tokens", model.config.flexible_eos_tokens)
+    print("Model config ft_with_bos_token", model.config.ft_with_bos_token)
+
+    with torch.no_grad():
+
+        for task_type, task_prefix in texts:
+            input_ids = tokenizer.encode(
+                task_prefix,
+                return_tensors="pt",
+            )
+            input_ids = input_ids.to(device)
+
+            attention_mask = torch.ones_like(input_ids).to(device)
+
+            generated_outputs = model.generate(
+                input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=150,
+                use_cache=False,
+            )
+
+            generated_output_text = tokenizer.decode(generated_outputs[0, input_ids.shape[1] :], skip_special_tokens=False)
+            print(task_type, "generated outputs", generated_output_text)
+
+
 def test_scrooge_prefill():
 
     checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")

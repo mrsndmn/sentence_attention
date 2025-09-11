@@ -62,6 +62,7 @@ def plot_pg19(files: List[str], output_path: str, log_scale: bool = False) -> No
 
     plt.xlabel("Prefix length (tokens)")
     plt.ylabel("Aggregated PPL")
+    plt.xlim(1024, 32000)
     plt.title("PG19 aggregated PPL by prefix across checkpoints")
     plt.legend(fontsize=7, ncol=1, frameon=True)
     plt.tight_layout()
