@@ -7,8 +7,8 @@ import datasets
 import numpy as np
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 from transformers import AutoTokenizer
-from transformers.cache_utils import DynamicCache
 
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     special_token_mask_to_clothest_token_idx_slow,
@@ -63,7 +63,7 @@ def evaluate_pg19_ppl(
     samples_ppls_by_prefix: Dict[int, List[float]] = {length: [] for length in prefix_lengths}
 
     with torch.no_grad():
-        for item in dataset:
+        for item in tqdm(dataset, desc="Evaluating PG19"):
             current_tokens_log_probas: List[float] = []
 
             input_ids = tokenizer.encode(item["text"], return_tensors="pt", max_length=max_length, truncation=True)
@@ -104,10 +104,8 @@ def evaluate_pg19_ppl(
                 kv_seq_len = outputs["past_key_values"].get_seq_length()
                 del outputs
             else:
-                dynamic_cache = DynamicCache()
-                outputs = model(
-                    input_ids=input_ids, attention_mask=attention_mask, use_cache=True, past_key_values=dynamic_cache
-                )
+                # dynamic_cache = DynamicCache()
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
                 logits = outputs.logits.float()
                 log_probs = F.log_softmax(logits, dim=-1)
                 labels = input_ids[:, 1:]

@@ -42,7 +42,7 @@ def short_label_from_path(path: str) -> str:
         return os.path.basename(os.path.dirname(os.path.dirname(path)))
 
 
-def plot_pg19(files: List[str], output_path: str) -> None:
+def plot_pg19(files: List[str], output_path: str, log_scale: bool = False) -> None:
     if not files:
         print("No pg19.json files found. Nothing to plot.")
         return
@@ -56,6 +56,9 @@ def plot_pg19(files: List[str], output_path: str) -> None:
             continue
         label = short_label_from_path(fp)
         plt.plot(xs, ys, label=label)
+
+    if log_scale:
+        plt.yscale("log")
 
     plt.xlabel("Prefix length (tokens)")
     plt.ylabel("Aggregated PPL")
@@ -80,13 +83,18 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=str,
-        default="artifacts/evaluation/pg19_ppl.png",
+        default="artifacts/evaluation/",
         help="Output PNG path",
     )
     args = parser.parse_args()
 
     files = find_pg19_files(args.root)
-    plot_pg19(files, args.output)
+
+    output_file = os.path.join(args.output, "pg19_ppl.png")
+    plot_pg19(files, output_file, log_scale=False)
+
+    output_file = os.path.join(args.output, "pg19_ppl_log.png")
+    plot_pg19(files, output_file, log_scale=True)
 
 
 if __name__ == "__main__":

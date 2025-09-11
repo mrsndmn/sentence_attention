@@ -51,8 +51,11 @@ def test_generate_number():
     # checkpoint = os.path.join(
     #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_OPOKS8O7/checkpoint-336"
     # )
+    # checkpoint = os.path.join(
+    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft2_full_num_eos_tokens_4_MV7M599S/checkpoint-10794/"
+    # )
     checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft2_full_num_eos_tokens_4_MV7M599S/checkpoint-10794/"
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-2000/"
     )
 
     save_maps = False

@@ -75,7 +75,8 @@ if __name__ == "__main__":
             dataset_path="/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/pg19_test",  # TODO nove to HF in good format?
             model_type=model_type,
             max_samples=-1,
-            max_length=64000,
+            max_length=32000,
+            # max_length=64000,
         )
         if not args.no_save_results:
             out_dir = os.path.join(args.checkpoint, "evaluation")
