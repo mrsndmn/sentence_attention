@@ -1103,47 +1103,35 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         input_ids = outputs["input_ids"]
 
-        need_recalc_special_embeddings_mask = False
-        # print("prepare_inputs_for_generation: input_ids", input_ids.shape)
+        if True:
+            if "special_embeddings_mask" not in outputs:
+                special_embeddings_mask = torch.zeros_like(attention_mask)
+            else:
+                special_embeddings_mask = outputs["special_embeddings_mask"]
+                if special_embeddings_mask.shape != attention_mask.shape:
+                    special_embeddings_mask = torch.cat([outputs["special_embeddings_mask"], torch.zeros_like(input_ids)], dim=-1)
 
-        if "special_embeddings_mask" not in outputs:
-            special_embeddings_mask = torch.zeros_like(attention_mask)
+            assert special_embeddings_mask.shape == attention_mask.shape, f"special_embeddings_mask.shape {special_embeddings_mask.shape} != attention_mask.shape {attention_mask.shape}"
+
             if self.config.end_of_sentence_token_ids is not None:
                 special_tokens_count = 0
                 for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
-                    special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+                    special_embeddings_mask[:, -input_ids.shape[1]:][input_ids == end_of_sentence_token_id] = 1
                     special_tokens_count += special_embeddings_mask.sum().item()
+                    # if (input_ids == end_of_sentence_token_id).any():
+                    #     print("input_ids", input_ids)
+                    #     print("special_embeddings_mask", special_embeddings_mask)
+                    #     breakpoint()
                 # print("prepare_inputs_for_generation: number of end of sentence tokens", special_tokens_count)
                 # print("prepare_inputs_for_generation: total_tokens", input_ids.shape[1])
 
             outputs["special_embeddings_mask"] = special_embeddings_mask
-        else:
-            special_embeddings_mask = outputs["special_embeddings_mask"]
-            past_seq_len = 0
-            if past_key_values is not None:
-                past_seq_len = past_key_values.get_seq_length()
 
-            if special_embeddings_mask.shape[1] != input_ids.shape[1] + past_seq_len:
-                need_recalc_special_embeddings_mask = True
-                special_embeddings_mask_new = torch.zeros(
-                    [input_ids.shape[0], input_ids.shape[1] + past_seq_len],
-                    device=input_ids.device,
-                    dtype=special_embeddings_mask.dtype,
-                )
-                # print("special_embeddings_mask_new", special_embeddings_mask_new.shape)
-                special_embeddings_mask_new[:, : special_embeddings_mask.shape[1]] = special_embeddings_mask
-                for batch_idx in range(input_ids.shape[0]):
-                    token_idx = input_ids[batch_idx, -1].item()
-                    if token_idx in self.config.end_of_sentence_token_ids:
-                        special_embeddings_mask_new[batch_idx, -1] = 1
-
-                outputs["special_embeddings_mask"] = special_embeddings_mask_new
-
-        if "clothest_end_of_sentence_token_idx" not in outputs or need_recalc_special_embeddings_mask:
-            outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
-                outputs["special_embeddings_mask"],
-                num_special_tokens=len(self.config.end_of_sentence_token_ids),
-            )
+        # if "clothest_end_of_sentence_token_idx" not in outputs or need_recalc_special_embeddings_mask:
+        outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
+            outputs["special_embeddings_mask"],
+            num_special_tokens=len(self.config.end_of_sentence_token_ids),
+        )
 
         return outputs
 
@@ -1231,6 +1219,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         # print("input_ids", input_ids)
         # print("cache_position", cache_position)
+        # breakpoint()
 
         outputs: SentenceBaseModelOutputWithPast = self.model(
             input_ids=input_ids,

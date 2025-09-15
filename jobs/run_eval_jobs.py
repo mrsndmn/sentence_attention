@@ -49,7 +49,7 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     assert benchmark in long_benchmarks, f"Invalid benchmark: {benchmark}"
 
-    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config configs/{benchmark}.yaml --model_name_or_path {pretrained_model} --use_chat_template False --output_dir {output_dir} '"
+    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config configs/{benchmark}_tiny.yaml --model_name_or_path {pretrained_model} --use_chat_template False --output_dir {output_dir} '"
 
     print(f"\n\n{script_str}\n")
 

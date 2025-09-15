@@ -188,6 +188,8 @@ def test_generate_summary():
 
     with torch.no_grad():
 
+        max_new_tokens = 100
+
         for task_type, task_prefix in texts:
             input_ids = tokenizer.encode(
                 task_prefix,
@@ -197,15 +199,162 @@ def test_generate_summary():
 
             attention_mask = torch.ones_like(input_ids).to(device)
 
-            generated_outputs = model.generate(
-                input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=150,
-                use_cache=False,
+            # generated_outputs = model.generate(
+            #     input_ids,
+            #     attention_mask=attention_mask,
+            #     max_new_tokens=max_new_tokens,
+            #     use_cache=False,
+            # )
+            generated_output_text = '<end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>Jennifer is a young woman who marries a man named Mina Loris, a wealthy and distinguished scholar. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She is initially excited about the marriage, but soon discovers that Loris is a controlling and jealous man who expects her to serve as his secretary. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She begins to doubt his talent and his alleged magnum opus. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>The Loris also becomes jealous of Will Rihanna, a cousin who is a close'
+            # generated_output_text = tokenizer.decode(generated_outputs[0, input_ids.shape[1] :], skip_special_tokens=False)
+
+            print(task_type, "generated outputs", generated_output_text)
+
+            # scrooge prefill
+            special_embeddings_mask = torch.zeros_like(attention_mask)
+            if model.config.end_of_sentence_token_ids is not None:
+                total_eos_tokens = 0
+                for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
+                    special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+                    total_eos_tokens += (input_ids == end_of_sentence_token_id).sum().item()
+                print("number of end of sentence tokens", total_eos_tokens)
+
+            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+                special_embeddings_mask,
+                num_special_tokens=len(model.config.end_of_sentence_token_ids),
             )
 
-            generated_output_text = tokenizer.decode(generated_outputs[0, input_ids.shape[1] :], skip_special_tokens=False)
-            print(task_type, "generated outputs", generated_output_text)
+            outputs = scrooge_prefill(
+                model,
+                input_ids,
+                attention_mask=attention_mask,
+                special_embeddings_mask=special_embeddings_mask,
+                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+            )
+
+
+            inputs = {
+                "input_ids": outputs["input_ids"],
+                "attention_mask": outputs["attention_mask"],
+                "special_embeddings_mask": outputs["special_embeddings_mask"],
+                "clothest_end_of_sentence_token_idx": outputs["clothest_end_of_sentence_token_idx"],
+                "past_key_values": outputs["past_key_values"],
+                "cache_position": outputs["cache_position"],
+            }
+
+            # special_embeddings_mask = torch.zeros_like(inputs['attention_mask'])
+            # if model.config.end_of_sentence_token_ids is not None:
+            #     for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
+            #         special_embeddings_mask[inputs['input_ids'] == end_of_sentence_token_id] = 1
+
+            # clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+            #     special_embeddings_mask,
+            #     num_special_tokens=len(model.config.end_of_sentence_token_ids),
+            # )
+
+            # inputs["special_embeddings_mask"] = special_embeddings_mask
+            # inputs["clothest_end_of_sentence_token_idx"] = clothest_end_of_sentence_token_idx
+
+            scrooge_generated_outputs = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                output_scores=False,
+            )
+
+            scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_generated_outputs[0, outputs["input_ids"].shape[1] :], skip_special_tokens=False)
+
+            print(task_type, "scrooge prefill generated output text", scrooge_prefill_generated_output_text)
+
+            assert scrooge_prefill_generated_output_text == generated_output_text, "scrooge prefill generated output text should be the same as the generated output text"
+
+def test_scrooge_prefill_kv_cache():
+
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-4000/"
+    )
+
+    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+
+    device = "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Device", device)
+
+    model.to(device)
+
+    base_story_text = "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts."
+
+    with torch.no_grad():
+
+        input_ids = tokenizer.encode(
+            base_story_text,
+            return_tensors="pt",
+        )
+        input_ids = input_ids.to(device)
+
+        attention_mask = torch.ones_like(input_ids).to(device)
+
+        past_key_values = DynamicCache()
+
+        forward_outputs = model(
+            input_ids,
+            attention_mask=attention_mask,
+            use_cache=True,
+            past_key_values=past_key_values,
+        )
+
+        # scrooge prefill
+        special_embeddings_mask = torch.zeros_like(attention_mask)
+        if model.config.end_of_sentence_token_ids is not None:
+            total_eos_tokens = 0
+            for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
+                special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+                total_eos_tokens += (input_ids == end_of_sentence_token_id).sum().item()
+            print("number of end of sentence tokens", total_eos_tokens)
+
+        clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+            special_embeddings_mask,
+            num_special_tokens=len(model.config.end_of_sentence_token_ids),
+        )
+
+        outputs = scrooge_prefill(
+            model,
+            input_ids,
+            attention_mask=attention_mask,
+            special_embeddings_mask=special_embeddings_mask,
+            clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        )
+
+
+        inputs = {
+            "input_ids": outputs["input_ids"],
+            "attention_mask": outputs["attention_mask"],
+            "special_embeddings_mask": outputs["special_embeddings_mask"],
+            "clothest_end_of_sentence_token_idx": outputs["clothest_end_of_sentence_token_idx"],
+            "past_key_values": outputs["past_key_values"],
+            "cache_position": outputs["cache_position"],
+            "use_cache": True,
+        }
+
+        # special_embeddings_mask = torch.zeros_like(inputs['attention_mask'])
+        # if model.config.end_of_sentence_token_ids is not None:
+        #     for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
+        #         special_embeddings_mask[inputs['input_ids'] == end_of_sentence_token_id] = 1
+
+        # clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+        #     special_embeddings_mask,
+        #     num_special_tokens=len(model.config.end_of_sentence_token_ids),
+        # )
+
+        # inputs["special_embeddings_mask"] = special_embeddings_mask
+        # inputs["clothest_end_of_sentence_token_idx"] = clothest_end_of_sentence_token_idx
+
+        scrooge_forward_outputs = model(
+            **inputs,
+        )
+
+        # TODO check hidden states are close!
+        breakpoint()
 
 
 def test_scrooge_prefill():
