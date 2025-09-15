@@ -13,11 +13,13 @@ def find_pg19_files(root: str) -> List[str]:
     return sorted(glob(pattern, recursive=True))
 
 
-def load_aggregated_ppl_by_prefix(path: str) -> Tuple[List[int], List[float]]:
+def load_aggregated_ppl_by_prefix(path: str, no_eos: bool = False) -> Tuple[List[int], List[float]]:
     try:
         with open(path) as f:
             data = json.load(f)
-        agg: Dict[str, Dict[str, float]] = data.get("aggregated_ppl_by_prefix", {})
+
+        data_key = "aggregated_ppl_by_prefix_no_eos" if no_eos else "aggregated_ppl_by_prefix"
+        agg: Dict[str, Dict[str, float]] = data.get(data_key, {})
         # Keys are prefixes as strings, sort numerically
         xs = sorted(int(k) for k in agg)
         ys = [float(agg[str(x)]["ppl"]) for x in xs]
@@ -57,12 +59,17 @@ def plot_pg19(files: List[str], output_path: str, log_scale: bool = False) -> No
         label = short_label_from_path(fp)
         plt.plot(xs, ys, label=label)
 
+        xs_no_eos, ys_no_eos = load_aggregated_ppl_by_prefix(fp, no_eos=True)
+        if not xs_no_eos:
+            continue
+        plt.plot(xs_no_eos, ys_no_eos, label=label + " no EOS")
+
     if log_scale:
         plt.yscale("log")
 
     plt.xlabel("Prefix length (tokens)")
     plt.ylabel("Aggregated PPL")
-    plt.xlim(1024, 32000)
+    plt.xlim(0, 32000)
     plt.title("PG19 aggregated PPL by prefix across checkpoints")
     plt.legend(fontsize=7, ncol=1, frameon=True)
     plt.tight_layout()
