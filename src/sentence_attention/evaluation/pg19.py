@@ -1,4 +1,3 @@
-import copy
 import json
 import math
 import os
@@ -92,7 +91,7 @@ def evaluate_pg19_ppl(
                     #     labels = labels.unsqueeze(-1)
                     #     log_probas = torch.gather(outputs_logits_normed[:, :-1, :], dim=-1, index=labels)
                     # else:
-                    input_ids =inner_input_ids[:, prev_sentence_i: sentence_i]
+                    input_ids = inner_input_ids[:, prev_sentence_i:sentence_i]
                     labels = inner_input_ids[:, prev_sentence_i + 1 : sentence_i + 1]
                     labels = labels.unsqueeze(-1)
                     log_probas = torch.gather(outputs_logits_normed, dim=-1, index=labels)
@@ -103,7 +102,7 @@ def evaluate_pg19_ppl(
                     log_probas_list_no_eos = []
                     for token_id, log_proba in zip(input_ids[0, :].cpu().numpy().tolist(), log_probas_list):
                         # Ignore all except the last EOS token
-                        if token_id in special_token_ids[:-1]:
+                        if token_id in special_token_ids[:-1]:  # noqa: B023
                             continue
                         log_probas_list_no_eos.append(log_proba)
 
@@ -137,7 +136,9 @@ def evaluate_pg19_ppl(
             )
 
             ppl_sample_no_eos = (
-                math.exp(-float(np.mean(current_tokens_log_probas_no_eos))) if len(current_tokens_log_probas_no_eos) > 0 else float("nan")
+                math.exp(-float(np.mean(current_tokens_log_probas_no_eos)))
+                if len(current_tokens_log_probas_no_eos) > 0
+                else float("nan")
             )
 
             samples_ppls.append(ppl_sample)

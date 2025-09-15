@@ -1,5 +1,5 @@
-import glob
 import argparse
+import glob
 import json
 import os
 from collections import defaultdict
@@ -99,7 +99,6 @@ def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
     eval_file = os.path.join(checkpoint_path, "helmet_eval", task_name, "*.score")
 
-
     score_files = glob.glob(eval_file)
 
     # if 'Llama-3.2-3B' in checkpoint_path:
@@ -109,7 +108,6 @@ def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 
     if len(score_files) == 0:
         return ""
-
 
     assert len(score_files) == 1, f"Multiple score files found for {checkpoint_path} {task_name}"
     score_file = score_files[0]
@@ -126,6 +124,7 @@ def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
     with open(score_file) as f:
         data = json.load(f)
     return f"{data[task_metric]:.2f}"
+
 
 def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
     eval_file = os.path.join(checkpoint_path, "evaluation", f"{task_name}.json")
@@ -402,7 +401,6 @@ def main() -> None:
             disable_numparse=True,
         )
     )
-
 
     print_lora = False
     if print_lora:

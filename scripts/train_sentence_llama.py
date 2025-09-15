@@ -43,8 +43,8 @@ if __name__ == "__main__":
             datasets_path_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data"
 
             max_length_dataset_suffix = ""
-            if '_4k_' in base_output_dir:
-                max_length_dataset_suffix = f"_max_length_4096"
+            if "_4k_" in base_output_dir:
+                max_length_dataset_suffix = "_max_length_4096"
 
             dataset_suffix = f"_num_{training_args.number_of_eos_tokens}"
 
