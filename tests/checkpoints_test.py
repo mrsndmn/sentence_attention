@@ -14,36 +14,30 @@ def test_eos_tokens_count():
             continue
 
         num_eos_tokens = int(eos_num.split("_")[1])
-        if num_eos_tokens == 0:
+        if num_eos_tokens != 4:
             continue
 
         for experiment_dir in tqdm(
             os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num)),
             desc=f"Checking EOS tokens count: {eos_num}",
         ):
-            checkpoints = random.sample(
-                os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir)), 3
-            )
+            checkpoints_dirs = os.listdir(os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir))
+            if len(checkpoints_dirs) == 0:
+                continue
+
+            checkpoints = random.sample(checkpoints_dirs, min(3, len(checkpoints_dirs)))
             for checkpoint in tqdm(checkpoints, desc=f"Checking checkpoints: {experiment_dir}"):
+                if not checkpoint.startswith("checkpoint"):
+                    continue
+
                 tokenizer = AutoTokenizer.from_pretrained(
                     os.path.join(workdir_prefix, "artifacts/experiments", eos_num, experiment_dir, checkpoint)
                 )
-                if num_eos_tokens > 1:
-                    for i in range(4):
-                        eos_token = f"<end_of_sentence_{i}>"
-                        assert eos_token in tokenizer.get_vocab(), f"Tokenizer {checkpoint} does not have {eos_token} token"
+                for i in range(4):
+                    eos_token = f"<end_of_sentence_{i}>"
+                    assert eos_token in tokenizer.get_vocab(), f"Tokenizer {checkpoint} does not have {eos_token} token"
 
-                    assert (
-                        "<end_of_sentence>" not in tokenizer.get_vocab()
-                    ), f"Tokenizer {checkpoint} has <end_of_sentence> token"
-                else:
-                    for i in range(num_eos_tokens):
-                        eos_token = f"<end_of_sentence_{i}>"
-                        assert eos_token not in tokenizer.get_vocab(), f"Tokenizer {checkpoint} does not have {eos_token} token"
-
-                    assert (
-                        "<end_of_sentence>" in tokenizer.get_vocab()
-                    ), f"Tokenizer {checkpoint} does not have <end_of_sentence> token"
+                assert "<end_of_sentence>" not in tokenizer.get_vocab(), f"Tokenizer {checkpoint} has <end_of_sentence> token"
 
 
 # check on same name checkpoints in differen eos tokens

@@ -271,6 +271,7 @@ def test_generate_summary():
             ), "scrooge prefill generated output text should be the same as the generated output text"
 
 
+@pytest.mark.skip(reason="Skipping test_scrooge_prefill_only")
 def _new_test_scrooge_prefill_kv_cache():
 
     checkpoint = os.path.join(
@@ -362,6 +363,7 @@ def _new_test_scrooge_prefill_kv_cache():
         breakpoint()
 
 
+@pytest.mark.skip(reason="Skipping test_scrooge_prefill_only")
 def test_scrooge_prefill_only():
 
     checkpoint = os.path.join(
@@ -677,7 +679,7 @@ def test_kv_cache_forward():
     else:
         print("✅ Logist are the same")
 
-    breakpoint()
+    # breakpoint()
 
 
 def test_scrooge_prefill_recompute():

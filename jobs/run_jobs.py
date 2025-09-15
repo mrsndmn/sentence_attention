@@ -714,20 +714,22 @@ def run_group_full_4k_distill_from_4eos_tokens(
     max_grad_norm = "2.0"
 
     all_experiments = []
-    all_experiments.extend([
-        {
-            "model_checkpoint": '/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/',
-            "model_slug": "Llama-3.2-3B",
-            "number_of_eos_tokens": 2,
-            "per_device_train_batch_size": 4,
-        },
-        {
-            "model_checkpoint": '/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/',
-            "model_slug": "Llama-3.2-3B",
-            "number_of_eos_tokens": 1,
-            "per_device_train_batch_size": 4,
-        }
-    ])
+    all_experiments.extend(
+        [
+            {
+                "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/",
+                "model_slug": "Llama-3.2-3B",
+                "number_of_eos_tokens": 2,
+                "per_device_train_batch_size": 4,
+            },
+            {
+                "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/",
+                "model_slug": "Llama-3.2-3B",
+                "number_of_eos_tokens": 1,
+                "per_device_train_batch_size": 4,
+            },
+        ]
+    )
 
     for exp_config in all_experiments:
         # TODO check sucessful experiment has already been processed
@@ -801,7 +803,6 @@ def run_group_full_4k_distill_from_4eos_tokens(
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
             ft_with_bos_token="1" if ft_with_bos_token else "0",
         )
-
 
 
 def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
@@ -878,7 +879,16 @@ def _cli() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--group",
-        choices=["eos-only", "full", "full2", "full_4k", "full_4k_distill_from_4eos_tokens", "lora", "full-flexible-eos-tokens", "ft-with-bos-token"],
+        choices=[
+            "eos-only",
+            "full",
+            "full2",
+            "full_4k",
+            "full_4k_distill_from_4eos_tokens",
+            "lora",
+            "full-flexible-eos-tokens",
+            "ft-with-bos-token",
+        ],
         required=True,
         help="Which experiment group to run",
     )
