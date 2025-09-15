@@ -23,7 +23,7 @@ short_benchmarks = [
 
 long_benchmarks = [
     "recall",
-    "rag",
+    # "rag",
     "rerank",
     "cite",
     "longqa",
