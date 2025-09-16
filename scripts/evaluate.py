@@ -72,7 +72,7 @@ if __name__ == "__main__":
         results = evaluate_pg19_ppl(
             model,
             tokenizer,
-            dataset_path="/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/pg19_test",  # TODO nove to HF in good format?
+            dataset_path="/workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/pg19_test",  # TODO move to HF?
             model_type=model_type,
             max_samples=-1,
             max_length=32000,
