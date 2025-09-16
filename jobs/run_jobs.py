@@ -397,7 +397,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             local_per_device_train_batch_size = per_device_train_batch_size
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
-            gradient_accumulation_steps = math.ceil(4096 / ngpus / local_per_device_train_batch_size)
+            gradient_accumulation_steps = math.ceil(512 / ngpus / local_per_device_train_batch_size)
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
@@ -415,7 +415,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             run_training_experiments(
                 learning_rate=0.0001,
                 model_type="sentence_pretrained_checkpoint",
-                limit_dataset_shards=4,
+                limit_dataset_shards=1,
                 number_of_eos_tokens=number_of_eos_tokens,
                 optimized_params=optimized_params,
                 weight_decay="0.01",
@@ -668,7 +668,7 @@ def run_group_full_4k(
             learning_rate=0.00005,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
-            limit_dataset_shards=8,
+            limit_dataset_shards=2,
             offset_dataset_shards=0,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
