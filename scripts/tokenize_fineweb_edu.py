@@ -17,6 +17,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_eos_tokens", type=int, default=1)
     parser.add_argument("--max_length", type=int, default=1024)
     parser.add_argument("--num_proc", type=int, default=16)
+    parser.add_argument("--num_shards", type=int, default=1)
+    parser.add_argument("--shard_index", type=int, default=0)
     args = parser.parse_args()
 
     pretrained_model_name = args.pretrained_model_name  # HuggingFaceTB/SmolLM2-1.7B / unsloth/Llama-3.2-1B
@@ -35,6 +37,8 @@ if __name__ == "__main__":
         suffix = f"{suffix}_with_eos_token_num_{num_eos_tokens}_merged"
 
     target_dir = f"./artifacts/data/fineweb_edu_tokenized_{pretrained_model_name_short}{suffix}"
+    if args.num_shards > 1:
+        target_dir = f"{target_dir}_shard_{args.shard_index}_of_{args.num_shards}"
 
     print("Will be saved to target_dir:", target_dir)
 
@@ -86,6 +90,9 @@ if __name__ == "__main__":
 
     columns_to_keep = ["input_ids", "attention_mask", "special_embeddings_mask", "clothest_end_of_sentence_token_idx"]
     columns_to_remove = list(set(dataset.column_names) - set(columns_to_keep))
+
+    # Only half of data!
+    dataset = dataset.shard(num_shards=args.num_shards, index=args.shard_index)
 
     dataset = dataset.map(process_dataset_item, num_proc=num_proc, remove_columns=columns_to_remove)
 

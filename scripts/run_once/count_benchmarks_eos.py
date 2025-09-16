@@ -27,6 +27,7 @@ if __name__ == "__main__":
         eos_1_model = SentenceLlamaForCausalLM.from_pretrained(checkpoint_path)
 
         for benchmark in short_benchmarks:
+            # for benchmark in ['winogrande']:
             if benchmark == "pg19":
                 continue
 
@@ -48,15 +49,18 @@ if __name__ == "__main__":
                             request.context, request.choice, pairwise=pipeline_model.pairwise_tokenization
                         )
 
-                num_eos_tokens += sum(
-                    1 for x in request.tokenized_context if x == pipeline_model.tokenizer.end_of_sentence_token_ids[0]
-                )
-                total_tokens += len(request.tokenized_context)
+                    num_eos_tokens += sum(
+                        1 for x in request.tokenized_context if x == pipeline_model.tokenizer.end_of_sentence_token_ids[0]
+                    )
+                    total_tokens += len(request.tokenized_context)
+
+            compressed_ratio = num_eos_tokens / total_tokens
+            print(f"benchmark: {benchmark}, compressed_ratio: {compressed_ratio}")
 
             short_bench_tokens_stats[benchmark] = {
                 "total_tokens": total_tokens,
                 "num_eos_tokens": num_eos_tokens,
-                "compressed_ratio": num_eos_tokens / total_tokens,
+                "compressed_ratio": compressed_ratio,
             }
 
         short_benchmark_stats_path = "artifacts/evaluation/short_bench_tokens_stats.json"

@@ -140,12 +140,12 @@ def main():
             row = [f"{gist_tokens} gist tokens"]
             for benchmark in benchmarks_to_show:
                 rate = rates.get(benchmark, 0.0)
-                row.append(f"{rate:.4f}")
+                row.append(f"{rate:.2f}")
         table_data.append(row)
 
     # Print table
     print(f"\nCompression Rates by Benchmark and Gist Token Count ({args.benchmarks.upper()}):")
-    print(tabulate(table_data, headers=headers, tablefmt=args.tablefmt, floatfmt=".4f"))
+    print(tabulate(table_data, headers=headers, tablefmt=args.tablefmt, floatfmt=".2f"))
 
     # Print separate tables for short and long benchmarks if showing all
     if args.benchmarks == "all":
@@ -168,7 +168,7 @@ def main():
                     row.append(rate)
             short_table_data.append(row)
 
-        print(tabulate(short_table_data, headers=short_headers, tablefmt=args.tablefmt, floatfmt=".4f"))
+        print(tabulate(short_table_data, headers=short_headers, tablefmt=args.tablefmt, floatfmt=".2f"))
 
         print("\n" + "=" * 60)
         print("LONG BENCHMARKS")
@@ -183,10 +183,10 @@ def main():
             row = [f"{gist_tokens} gist tokens"]
             for benchmark in long_benchmarks:
                 rate = long_rates.get(benchmark, 0.0)
-                row.append(f"{rate:.4f}")
+                row.append(f"{rate:.2f}")
             long_table_data.append(row)
 
-        print(tabulate(long_table_data, headers=long_headers, tablefmt=args.tablefmt, floatfmt=".4f"))
+        print(tabulate(long_table_data, headers=long_headers, tablefmt=args.tablefmt, floatfmt=".2f"))
 
     # Print summary statistics
     # print("\n" + "="*60)
@@ -204,9 +204,9 @@ def main():
     #         max_rate = max(all_rates)
 
     #         print(f"\n{gist_tokens} gist tokens:")
-    #         print(f"  Average compression rate: {avg_rate:.4f}")
-    #         print(f"  Min compression rate: {min_rate:.4f}")
-    #         print(f"  Max compression rate: {max_rate:.4f}")
+    #         print(f"  Average compression rate: {avg_rate:.2f}")
+    #         print(f"  Min compression rate: {min_rate:.2f}")
+    #         print(f"  Max compression rate: {max_rate:.2f}")
 
 
 if __name__ == "__main__":

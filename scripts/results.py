@@ -152,7 +152,7 @@ def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         if value is None:
             return ""
         if isinstance(value, (int, float)):
-            return f"{value:.3f}"
+            return f"{value:.2f}"
         return str(value)
     except Exception:
         return ""
@@ -353,7 +353,7 @@ def main() -> None:
         rows=rows,
         benchmarks=benchmarks,
         training_mapping=training_mapping,
-        row_predicate=None,
+        row_predicate=lambda r: "llama-3-8b" not in r["experiment"],
         model_filter=args.model,
         eos_tokens_filter=args.eos_tokens,
     )
