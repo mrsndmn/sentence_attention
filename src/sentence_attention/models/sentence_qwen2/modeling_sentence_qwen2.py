@@ -493,9 +493,8 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         device: torch.device,
         cache_position: torch.Tensor,
         batch_size: int,
-        clothest_end_of_sentence_token_idx: torch.Tensor,
-        special_embeddings_mask: torch.Tensor,
         ft_with_bos_token: bool = False,
+        **kwargs,
     ):
         """
         Same signature as the original implementation, but now fully vectorized (no Python `for` loops).
@@ -528,12 +527,14 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         bs = batch_size
         q_len = sequence_length
         k_len = target_length
+
         min_val = torch.finfo(dtype).min
 
         # Convert the 2-D masks to bool for logical operations
         attention_mask_bool = attention_mask.to(dtype=torch.bool)  # [bs, k_len]
 
-        special_embeddings_mask = special_embeddings_mask.to(torch.bool)  # [bs, k_len]
+        clothest_end_of_sentence_token_idx = kwargs["clothest_end_of_sentence_token_idx"]  # [bs, q_len]
+        special_embeddings_mask = kwargs["special_embeddings_mask"].to(torch.bool)  # [bs, k_len]
 
         # ----------------------------------------------------------------------------
         # Build broadcastable index grids for queries (q) and keys (k)
@@ -544,30 +545,48 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         # ----------------------------------------------------------------------------
         # Base causal condition: k ≤ q
         # ----------------------------------------------------------------------------
-        causal_base = k_idx <= q_idx  # (1, q_len, k_len)
+        diff_q_idx_k_idx = k_idx.max() - q_idx.max()
+
+        causal_base = k_idx <= (q_idx + diff_q_idx_k_idx)  # (1, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Padding masks for queries and keys
         # ----------------------------------------------------------------------------
-        q_valid = attention_mask_bool.view(bs, q_len, 1)  # (bs, q_len, 1)
+        if q_len < attention_mask_bool.shape[1]:
+            # assert sequence is left padded
+            q_valid = attention_mask_bool[:, -q_len:].view(bs, q_len, 1)  # (bs, q_len, 1)
+        else:
+            q_valid = attention_mask_bool.view(bs, q_len, 1)  # (bs, q_len, 1)
+
         k_valid = attention_mask_bool.view(bs, 1, k_len)  # (bs, 1, k_len)
         valid_positions = q_valid & k_valid  # (bs, q_len, k_len)
 
+        causal_valid_positions = valid_positions.clone()
+        # if q_len < attention_mask_bool.shape[1]:
+        #     causal_valid_positions[:, :, :-q_len] = False
+
         # Apply base causal & validity
-        causal_and_valid = causal_base & valid_positions  # (bs, q_len, k_len)
+        causal_and_valid = causal_base & causal_valid_positions  # (bs, q_len, k_len)
+        full_causal_and_valid = causal_base & valid_positions  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Block-causal component via EOS index
         # ----------------------------------------------------------------------------
         # clothest_end_of_sentence_token_idx gives, for every query, the index of the closest EOS *at or before* q.
-        eos_idx = clothest_end_of_sentence_token_idx.view(bs, q_len, 1)  # (bs, q_len, 1)
-        block_causal = causal_and_valid & (k_idx >= eos_idx)  # (bs, q_len, k_len)
+        if q_len < clothest_end_of_sentence_token_idx.shape[1]:
+            eos_idx = clothest_end_of_sentence_token_idx[:, -q_len:].view(bs, q_len, 1)  # (bs, q_len, 1)
+        else:
+            eos_idx = clothest_end_of_sentence_token_idx.view(bs, q_len, 1)  # (bs, q_len, 1)
+
+        # block_causal = causal_and_valid.clone()
+        block_causal = causal_and_valid & (k_idx >= eos_idx)
+        # block_causal[:, :, -q_len:] = causal_and_valid[:, :, -q_len:] & (k_idx[:, :, -q_len:] >= eos_idx)
 
         # ----------------------------------------------------------------------------
         # Special embedding visibility (within causal window)
         # ----------------------------------------------------------------------------
         special_keys = special_embeddings_mask.view(bs, 1, k_len)  # (bs, 1, k_len)
-        special_visible = causal_and_valid & special_keys  # (bs, q_len, k_len)
+        special_visible = full_causal_and_valid & special_keys  # (bs, q_len, k_len)
 
         # ----------------------------------------------------------------------------
         # Final visibility mask
@@ -581,8 +600,14 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         final_mask = torch.full((bs, 1, q_len, k_len), min_val, dtype=dtype, device=device)
         final_mask.masked_fill_(allowed.unsqueeze(1), score_val)
 
+        # breakpoint()
+        # torch.save(final_mask, "final_mask_partial.pt")
         if ft_with_bos_token:
-            final_mask[:, :, 0, :] = 1
+            final_mask[:, :, :, 0] = 0
+
+        # torch.set_printoptions(profile='full', linewidth=10000)
+        # print("final_mask", final_mask.shape, "\n", final_mask == 0)
+        # breakpoint()
 
         return final_mask
 
@@ -611,6 +636,67 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
             kwargs["logits_processor"] = build_flexible_eos_logits_processors(self)
 
         return super().generate(*args, **kwargs)
+
+    def prepare_inputs_for_generation(
+        self,
+        input_ids: torch.LongTensor,
+        past_key_values: Optional[Cache] = None,
+        attention_mask: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
+    ):
+        outputs = super().prepare_inputs_for_generation(
+            input_ids, past_key_values, attention_mask, inputs_embeds, cache_position, **kwargs
+        )
+
+        input_ids = outputs["input_ids"]
+
+        if "past_key_values" in outputs:
+            if "special_embeddings_mask" not in outputs:
+                special_embeddings_mask = torch.zeros_like(attention_mask)
+            else:
+                special_embeddings_mask = outputs["special_embeddings_mask"]
+                if special_embeddings_mask.shape != attention_mask.shape:
+                    special_embeddings_mask = torch.cat(
+                        [outputs["special_embeddings_mask"], torch.zeros_like(input_ids)], dim=-1
+                    )
+
+            assert (
+                special_embeddings_mask.shape == attention_mask.shape
+            ), f"special_embeddings_mask.shape {special_embeddings_mask.shape} != attention_mask.shape {attention_mask.shape}"
+
+            if self.config.end_of_sentence_token_ids is not None:
+                special_tokens_count = 0
+                for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                    special_embeddings_mask[:, -input_ids.shape[1] :][input_ids == end_of_sentence_token_id] = 1
+                    special_tokens_count += special_embeddings_mask.sum().item()
+                    # if (input_ids == end_of_sentence_token_id).any():
+                    #     print("input_ids", input_ids)
+                    #     print("special_embeddings_mask", special_embeddings_mask)
+                    #     breakpoint()
+                # print("prepare_inputs_for_generation: number of end of sentence tokens", special_tokens_count)
+                # print("prepare_inputs_for_generation: total_tokens", input_ids.shape[1])
+
+            outputs["special_embeddings_mask"] = special_embeddings_mask
+        else:
+            # past_key_values is provided, so we don't need to recalculate special embeddings mask
+            special_embeddings_mask = torch.zeros_like(attention_mask)
+            if self.config.end_of_sentence_token_ids is not None:
+                special_tokens_count = 0
+                for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                    special_embeddings_mask[:, -input_ids.shape[1] :][input_ids == end_of_sentence_token_id] = 1
+                    special_tokens_count += special_embeddings_mask.sum().item()
+            outputs["special_embeddings_mask"] = special_embeddings_mask
+
+        # if "clothest_end_of_sentence_token_idx" not in outputs or need_recalc_special_embeddings_mask:
+        outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
+            outputs["special_embeddings_mask"],
+            num_special_tokens=len(self.config.end_of_sentence_token_ids),
+        )
+        # print('outputs["clothest_end_of_sentence_token_idx"]', outputs["clothest_end_of_sentence_token_idx"])
+
+        return outputs
 
     def get_input_embeddings(self):
         return self.model.embed_tokens

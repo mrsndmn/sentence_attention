@@ -184,7 +184,7 @@ def prettify_experiment_name(experiment_name: str) -> str:
 def row_to_base_values(row: dict, training_mapping: Dict[str, str]) -> List[str]:
     return [
         row["eos_tokens"],
-        row["family"],
+        # row["family"],
         training_mapping.get(row["training"], row["training"]),
         prettify_experiment_name(row["experiment"]),
     ]
@@ -216,8 +216,8 @@ def build_table(
     table_rows = sorted(
         table_rows,
         key=lambda x: (
-            x[3],  # experiment
-            x[2],  # training
+            x[2],  # experiment
+            x[1],  # training
             x[0],  # #EOS
         ),
     )
@@ -346,7 +346,7 @@ def main() -> None:
     else:
         raise ValueError(f"Invalid benchmarks: {args.benchmarks}")
 
-    headers = ["#EOS", "Family", "Training", "Experiment"] + benchmarks
+    headers = ["#EOS", "Training", "Experiment"] + benchmarks
 
     # Full table: all benchmarks (CLI filters apply only here)
     full_table_rows = build_table(
@@ -368,7 +368,7 @@ def main() -> None:
     )
 
     # Short results benchmark tables
-    short_headers = ["#EOS", "Family", "Training", "Experiment"] + short_benchmarks
+    short_headers = ["#EOS", "Training", "Experiment"] + short_benchmarks
 
     print("\n\nMain Short results:")
     # 1) Main results: base models (0 EOS) and fully finetuned models
@@ -391,7 +391,7 @@ def main() -> None:
     )
 
     # Long results benchmark tables
-    long_headers = ["#EOS", "Family", "Training", "Experiment"] + long_benchmarks
+    long_headers = ["#EOS", "Training", "Experiment"] + long_benchmarks
 
     print("\n\nMain Long results:")
     # 1) Main results: base models (0 EOS) and fully finetuned models
