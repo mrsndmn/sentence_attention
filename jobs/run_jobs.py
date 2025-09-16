@@ -707,7 +707,7 @@ def run_group_full_4k_distill_from_4eos_tokens(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
 ) -> None:
-    ngpus = 8
+    ngpus = 7
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "full"
