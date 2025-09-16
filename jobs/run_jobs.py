@@ -55,7 +55,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
         learning_rate = exp.pop("learning_rate", 1e-4)
         lr_scheduler_type = exp.pop("lr_scheduler_type", "cosine")
         max_grad_norm = exp.pop("max_grad_norm", 1)
-
+        max_steps = exp.pop("max_steps", -1)
         assert float(max_grad_norm) > 0
 
         optim = exp.pop("optim", "")
@@ -137,7 +137,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
             f"--limit_dataset_shards {limit_dataset_shards} --offset_dataset_shards {offset_dataset_shards} "
             f"--number_of_eos_tokens {number_of_eos_tokens} "
             f"--flexible_eos_tokens {flexible_eos_tokens} "
-            f"--ft_with_bos_token {ft_with_bos_token}"
+            f"--ft_with_bos_token {ft_with_bos_token} "
+            f"--max_steps {max_steps} "
         )
 
         print(f"\n\n{script_str}\n\n")
@@ -199,6 +200,7 @@ def run_training_experiments(
     logging_steps: str = "",
     max_grad_norm: float = 1.0,
     warmup_steps: int = 2000,
+    max_steps: int = -1,
     bf16: str = "0",
     add_end_of_sentence_token: str = "1",
     job_description=None,
@@ -229,6 +231,7 @@ def run_training_experiments(
         "select_train_dataset_items": select_train_dataset_items,
         "per_device_train_batch_size": per_device_train_batch_size,
         "logging_steps": logging_steps,
+        "max_steps": max_steps,
         "bf16": bf16,
         "optim": optim,
         "torch_compile": torch_compile,
@@ -262,10 +265,10 @@ def run_training_experiments(
 def _models_for_eos_only() -> List[str]:
     return [
         "unsloth/Llama-3.2-1B",
-        "Qwen/Qwen2.5-1.5B",
         "unsloth/Llama-3.2-3B",
-        "Qwen/Qwen2.5-3B",
-        "unsloth/llama-3-8b",
+        # "Qwen/Qwen2.5-1.5B",
+        # "Qwen/Qwen2.5-3B",
+        # "unsloth/llama-3-8b",
     ]
 
 
@@ -316,7 +319,7 @@ def _full_tuned_checkpoints() -> List[Dict[str, Any]]:
     """
     all_experiments: List[Dict[str, Any]] = []
 
-    for number_of_eos_tokens in [1, 4, 8, 16]:
+    for number_of_eos_tokens in [1, 2, 4]:
         eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
 
         if not os.path.exists(eos_dir):
@@ -380,11 +383,13 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 
 def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
-    ngpus = 8
+    ngpus = 4
     num_train_epochs = 1
     per_device_train_batch_size = 4
     save_steps = 250
     optimized_params = "only_eos_embedding"
+
+    max_steps = 300
 
     for number_of_eos_tokens in num_eos_tokens:
 
@@ -428,11 +433,12 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 max_grad_norm="1.0",
                 save_total_limit=100,
                 save_steps=save_steps,
+                max_steps=max_steps,
                 instance_type=f"a100.{ngpus}gpu",
                 model_checkpoint=model_checkpoint,
                 select_train_dataset_items=0,
                 adam_epsilon="1e-8",
-                warmup_steps=500,
+                warmup_steps=30,
                 dry=dry,
                 lr_scheduler_type="cosine",
                 bf16="0",
@@ -822,7 +828,7 @@ def main() -> None:
     parser = _cli()
     args = parser.parse_args()
 
-    num_eos_tokens = [1, 4, 8, 16] if args.num_eos_tokens is None else [args.num_eos_tokens]
+    num_eos_tokens = [1, 2, 4] if args.num_eos_tokens is None else [args.num_eos_tokens]
 
     if args.wait is not None:
         job_id = args.wait

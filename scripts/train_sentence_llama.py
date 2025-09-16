@@ -38,6 +38,8 @@ if __name__ == "__main__":
 
         os.environ["CLEARML_TASK"] = f"{base_output_dir}"
 
+        dataset_shards_limit = training_args.limit_dataset_shards
+
         if training_args.add_end_of_sentence_token:
             print("Loading fineweb edu tokenized with eos tokenizer")
             datasets_path_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data"
@@ -52,6 +54,8 @@ if __name__ == "__main__":
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
                 elif "qwen2" in training_args.model_checkpoint.lower():
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+                    dataset_shards_limit *= 2
+                    print("Increase dataset shards for Qwen2.5-1.5B to", dataset_shards_limit)
                 elif "smollm2" in training_args.model_checkpoint.lower():
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
                 else:
@@ -67,10 +71,7 @@ if __name__ == "__main__":
             dataset_shards = []
 
             for i in range(TOTAL_SHARDS):
-                if (
-                    i < training_args.offset_dataset_shards
-                    or i >= training_args.offset_dataset_shards + training_args.limit_dataset_shards
-                ):
+                if i < training_args.offset_dataset_shards or i >= training_args.offset_dataset_shards + dataset_shards_limit:
                     continue
                 dataset_shards.append(fineweb_dataset.shard(index=i, num_shards=TOTAL_SHARDS))
                 print(f"loading shard {i}")
