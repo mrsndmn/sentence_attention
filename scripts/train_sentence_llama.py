@@ -43,12 +43,10 @@ if __name__ == "__main__":
             datasets_path_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data"
 
             max_length_dataset_suffix = ""
-            # if '_4k_' in base_output_dir:
-            #     max_length_dataset_suffix = f"_max_length_4096"
+            if "_4k_" in base_output_dir:
+                max_length_dataset_suffix = "_max_length_4096"
 
-            dataset_suffix = ""
-            if training_args.number_of_eos_tokens > 1:
-                dataset_suffix = f"{dataset_suffix}_num_{training_args.number_of_eos_tokens}"
+            dataset_suffix = f"_num_{training_args.number_of_eos_tokens}"
 
             if training_args.model_type == "sentence_pretrained_checkpoint":
                 # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'

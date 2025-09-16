@@ -43,12 +43,13 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
         else:
             raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
 
-        print("tokenizer_class", tokenizer_class)
+        print("tokenizer_class", tokenizer_class, "number_of_eos_tokens", number_of_eos_tokens)
         tokenizer = tokenizer_class.from_pretrained(model_checkpoint, num_eos_tokens=number_of_eos_tokens)
 
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 
+    print("num_eos_tokens", tokenizer.num_eos_tokens, "end_of_sentence_tokens_list", tokenizer.end_of_sentence_tokens_list)
     print("tokenizer", tokenizer)
 
     torch_dtype = torch.bfloat16

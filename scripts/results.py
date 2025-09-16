@@ -1,4 +1,5 @@
 import argparse
+import glob
 import json
 import os
 from collections import defaultdict
@@ -10,7 +11,7 @@ import pandas as pd
 from tabulate import tabulate
 
 from sentence_attention.artifacts.experiments import get_all_checkpoints, get_all_last_checkpoints
-from sentence_attention.evaluation.benchmarks import all_benchmarks
+from sentence_attention.evaluation.benchmarks import all_benchmarks, long_benchmarks, short_benchmarks
 
 
 def infer_model_family(experiment_name: str) -> str:
@@ -40,6 +41,8 @@ def infer_training_type(experiment_name: str) -> str:
         return "lora"
     if "base_model" in name_lower:
         return "base model"
+    if "ft_4k_full" in name_lower:
+        return "full finetune 4k"
 
     return "unknown"
 
@@ -83,14 +86,62 @@ def group_rows(rows: List[dict]) -> Dict[Tuple[str, str], List[dict]]:
 
 
 def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
+
+    # if task_name == "pg19":
+    #     pass
+
+    if task_name in long_benchmarks:
+        return read_long_benchmark_metric(checkpoint_path, task_name)
+    else:
+        return read_short_benchmark_metric(checkpoint_path, task_name)
+
+
+def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
+    eval_file = os.path.join(checkpoint_path, "helmet_eval", task_name, "*.score")
+
+    score_files = glob.glob(eval_file)
+
+    # if 'Llama-3.2-3B' in checkpoint_path:
+    #     print("Llama-3.2-3B", checkpoint_path, task_name)
+    #     print("score_files", score_files)
+    #     breakpoint()
+
+    if len(score_files) == 0:
+        return ""
+
+    assert len(score_files) == 1, f"Multiple score files found for {checkpoint_path} {task_name}"
+    score_file = score_files[0]
+
+    task_metric = {
+        "recall": "ruler_recall",
+        "rerank": "NDCG@10",
+        "cite": "rougeLsum",
+        "longqa": "rougeL_recall",
+        "summ": "rougeL_recall",
+        "icl": "exact_match",
+    }[task_name]
+
+    with open(score_file) as f:
+        data = json.load(f)
+    return f"{data[task_metric]:.2f}"
+
+
+def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
     eval_file = os.path.join(checkpoint_path, "evaluation", f"{task_name}.json")
     if not os.path.exists(eval_file):
         return ""
     try:
         with open(eval_file) as f:
             data = json.load(f)
-        results_all = data.get("results", {}).get("all", {})
-        preferred_order = ["acc_norm", "ppl"]
+
+        if task_name == "pg19":
+            results_all = data
+        else:
+            results_all = data.get("results", {}).get("all", {})
+
+        preferred_order = ["acc_norm", "ppl", "overall_ppl"]
+        # if task_name == "pg19" and "Llama-3.2-3B_base_model" in checkpoint_path:
+        #     breakpoint()
         value = None
         for key in preferred_order:
             if key in results_all:
@@ -172,8 +223,6 @@ def plot_per_checkpoint_short_results():
     # TODO
 
     matplotlib.style.use("seaborn-v0_8-darkgrid")
-
-    short_benchmarks = ["mmlu_cloze", "hellaswag", "arc", "winogrande"]
 
     for eos_tokens_num in [1, 4, 8, 16]:
         all_checkpoints = get_all_checkpoints(eos_tokens_num=eos_tokens_num)
@@ -283,12 +332,12 @@ def main() -> None:
         "unknown": "Unknown",
     }
 
-    short_benchmarks = ["mmlu_cloze", "hellaswag", "arc", "winogrande"]
-
     if args.benchmarks == "all":
         benchmarks = all_benchmarks
     elif args.benchmarks == "short":
         benchmarks = short_benchmarks
+    elif args.benchmarks == "long":
+        benchmarks = long_benchmarks
     else:
         raise ValueError(f"Invalid benchmarks: {args.benchmarks}")
 
@@ -316,7 +365,7 @@ def main() -> None:
     # Short results benchmark tables
     short_headers = ["#EOS", "Family", "Training", "Experiment"] + short_benchmarks
 
-    print("\n\nMain results:")
+    print("\n\nMain Short results:")
     # 1) Main results: base models (0 EOS) and fully finetuned models
     main_short_rows = build_table(
         rows=rows,
@@ -328,6 +377,26 @@ def main() -> None:
         tabulate(
             main_short_rows,
             headers=short_headers,
+            tablefmt=args.tablefmt,
+            disable_numparse=True,
+        )
+    )
+
+    # Long results benchmark tables
+    long_headers = ["#EOS", "Family", "Training", "Experiment"] + long_benchmarks
+
+    print("\n\nMain Long results:")
+    # 1) Main results: base models (0 EOS) and fully finetuned models
+    main_long_rows = build_table(
+        rows=rows,
+        benchmarks=long_benchmarks,
+        training_mapping=training_mapping,
+        row_predicate=lambda r: int(r["eos_tokens"]) == 0 or r["training"] == "full finetune 4k",
+    )
+    print(
+        tabulate(
+            main_long_rows,
+            headers=long_headers,
             tablefmt=args.tablefmt,
             disable_numparse=True,
         )

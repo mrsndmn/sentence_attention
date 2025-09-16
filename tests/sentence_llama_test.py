@@ -201,7 +201,7 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():
 
     model.resize_token_embeddings(len(tokenizer))
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-    model.config.end_of_sentence_token_ids = [tokenizer.convert_tokens_to_ids("<end_of_sentence>")]
+    model.config.end_of_sentence_token_ids = [tokenizer.convert_tokens_to_ids("<end_of_sentence_0>")]
 
     # model.config._attn_implementation = "sentence_attention"
     model.config._attn_implementation = "sentence_attention_flex"
@@ -256,7 +256,7 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial
 
     model.resize_token_embeddings(len(tokenizer))
     print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-    model.config.end_of_sentence_token_ids = [tokenizer.convert_tokens_to_ids("<end_of_sentence>")]
+    model.config.end_of_sentence_token_ids = [tokenizer.convert_tokens_to_ids("<end_of_sentence_0>")]
 
     model.config._attn_implementation = "sentence_attention_flex"
 

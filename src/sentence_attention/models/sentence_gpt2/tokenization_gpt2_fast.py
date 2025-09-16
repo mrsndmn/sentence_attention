@@ -138,9 +138,6 @@ class GPT2TokenizerFastEOS(GPT2TokenizerFast):
 
         if self.num_eos_tokens >= 1:
             self.end_of_sentence_tokens_list = [f"<end_of_sentence_{i}>" for i in range(self.num_eos_tokens)]
-            if self.num_eos_tokens == 1:
-                # backward compatibility
-                self.end_of_sentence_tokens_list = ["<end_of_sentence>"]
         else:
             raise ValueError("num_eos_tokens cant be negative")
 

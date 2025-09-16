@@ -7,8 +7,8 @@ import datasets
 import numpy as np
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 from transformers import AutoTokenizer
-from transformers.cache_utils import DynamicCache
 
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     special_token_mask_to_clothest_token_idx_slow,
@@ -54,17 +54,20 @@ def evaluate_pg19_ppl(
 
     tokens_log_probas: List[float] = []
     samples_ppls: List[float] = []
-    per_sample_token_logprobs: List[List[float]] = []
+    samples_ppls_no_eos: List[float] = []
     all_input_ids: List[int] = []
     all_kv_lengths: List[int] = []
 
     prefix_lengths = [length for length in range(1024, max_length + 1, 1024)]
     tokens_log_probas_by_prefix: Dict[int, List[float]] = {length: [] for length in prefix_lengths}
+    tokens_log_probas_by_prefix_no_eos: Dict[int, List[float]] = {length: [] for length in prefix_lengths}
     samples_ppls_by_prefix: Dict[int, List[float]] = {length: [] for length in prefix_lengths}
+    samples_ppls_by_prefix_no_eos: Dict[int, List[float]] = {length: [] for length in prefix_lengths}
 
     with torch.no_grad():
-        for item in dataset:
+        for item in tqdm(dataset, desc="Evaluating PG19"):
             current_tokens_log_probas: List[float] = []
+            current_tokens_log_probas_no_eos: List[float] = []
 
             input_ids = tokenizer.encode(item["text"], return_tensors="pt", max_length=max_length, truncation=True)
             input_ids = input_ids.to(device)
@@ -83,15 +86,27 @@ def evaluate_pg19_ppl(
 
                 def outputs_hook(inner_input_ids, outputs, prev_sentence_i, sentence_i):
                     outputs_logits_normed = F.log_softmax(outputs.logits.float(), dim=-1)
-                    if sentence_i == inner_input_ids.shape[1]:
-                        labels = inner_input_ids[:, prev_sentence_i + 1 : sentence_i]
-                        labels = labels.unsqueeze(-1)
-                        log_probas = torch.gather(outputs_logits_normed[:, :-1, :], dim=-1, index=labels)
-                    else:
-                        labels = inner_input_ids[:, prev_sentence_i + 1 : sentence_i + 1]
-                        labels = labels.unsqueeze(-1)
-                        log_probas = torch.gather(outputs_logits_normed, dim=-1, index=labels)
-                    current_tokens_log_probas.extend(log_probas[0, :, 0].cpu().numpy().tolist())  # noqa: B023
+                    # if sentence_i == inner_input_ids.shape[1]:
+                    #     labels = inner_input_ids[:, prev_sentence_i + 1 : sentence_i]
+                    #     labels = labels.unsqueeze(-1)
+                    #     log_probas = torch.gather(outputs_logits_normed[:, :-1, :], dim=-1, index=labels)
+                    # else:
+                    input_ids = inner_input_ids[:, prev_sentence_i:sentence_i]
+                    labels = inner_input_ids[:, prev_sentence_i + 1 : sentence_i + 1]
+                    labels = labels.unsqueeze(-1)
+                    log_probas = torch.gather(outputs_logits_normed, dim=-1, index=labels)
+
+                    log_probas_list = log_probas[0, :, 0].cpu().numpy().tolist()
+                    current_tokens_log_probas.extend(log_probas_list)  # noqa: B023
+
+                    log_probas_list_no_eos = []
+                    for token_id, log_proba in zip(input_ids[0, :].cpu().numpy().tolist(), log_probas_list):
+                        # Ignore all except the last EOS token
+                        if token_id in special_token_ids[:-1]:  # noqa: B023
+                            continue
+                        log_probas_list_no_eos.append(log_proba)
+
+                    current_tokens_log_probas_no_eos.extend(log_probas_list_no_eos)  # noqa: B023
 
                 outputs = scrooge_prefill(
                     model,
@@ -104,23 +119,30 @@ def evaluate_pg19_ppl(
                 kv_seq_len = outputs["past_key_values"].get_seq_length()
                 del outputs
             else:
-                dynamic_cache = DynamicCache()
-                outputs = model(
-                    input_ids=input_ids, attention_mask=attention_mask, use_cache=True, past_key_values=dynamic_cache
-                )
+                # dynamic_cache = DynamicCache()
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
                 logits = outputs.logits.float()
                 log_probs = F.log_softmax(logits, dim=-1)
                 labels = input_ids[:, 1:]
                 gathered = torch.gather(log_probs[:, :-1, :], dim=-1, index=labels.unsqueeze(-1))
-                current_tokens_log_probas.extend(gathered[0, :, 0].cpu().numpy().tolist())
+                vanill_ppls = gathered[0, :, 0].cpu().numpy().tolist()
+                current_tokens_log_probas.extend(vanill_ppls)
+                current_tokens_log_probas_no_eos.extend(vanill_ppls)
                 kv_seq_len = input_ids.shape[1]
                 del outputs
 
             ppl_sample = (
                 math.exp(-float(np.mean(current_tokens_log_probas))) if len(current_tokens_log_probas) > 0 else float("nan")
             )
+
+            ppl_sample_no_eos = (
+                math.exp(-float(np.mean(current_tokens_log_probas_no_eos)))
+                if len(current_tokens_log_probas_no_eos) > 0
+                else float("nan")
+            )
+
             samples_ppls.append(ppl_sample)
-            per_sample_token_logprobs.append(current_tokens_log_probas)
+            samples_ppls_no_eos.append(ppl_sample_no_eos)
 
             tokens_log_probas.extend(current_tokens_log_probas)
             all_input_ids.append(int(input_ids.shape[1]))
@@ -132,12 +154,18 @@ def evaluate_pg19_ppl(
                     pref_ppl = math.exp(-float(np.mean(current_tokens_log_probas[:n_pred])))
                     samples_ppls_by_prefix[pref_len].append(pref_ppl)
                     tokens_log_probas_by_prefix[pref_len].extend(current_tokens_log_probas[:n_pred])
+
+                    pref_ppl_no_eos = math.exp(-float(np.mean(current_tokens_log_probas_no_eos[:n_pred])))
+                    samples_ppls_by_prefix_no_eos[pref_len].append(pref_ppl_no_eos)
+                    tokens_log_probas_by_prefix_no_eos[pref_len].extend(current_tokens_log_probas_no_eos[:n_pred])
                 else:
                     samples_ppls_by_prefix[pref_len].append(float("nan"))
+                    samples_ppls_by_prefix_no_eos[pref_len].append(float("nan"))
 
     overall_ppl = math.exp(-float(np.mean(tokens_log_probas))) if len(tokens_log_probas) > 0 else float("nan")
 
     aggregated_by_prefix = {}
+    aggregated_by_prefix_no_eos = {}
     for pref_len in prefix_lengths:
         token_logs = tokens_log_probas_by_prefix[pref_len]
         if len(token_logs) == 0:
@@ -146,6 +174,15 @@ def evaluate_pg19_ppl(
         aggregated_by_prefix[str(pref_len)] = {
             "ppl": float(ppl_pref),
             "num_tokens": int(len(token_logs)),
+        }
+
+        token_logs_no_eos = tokens_log_probas_by_prefix_no_eos[pref_len]
+        if len(token_logs_no_eos) == 0:
+            continue
+        ppl_pref_no_eos = math.exp(-float(np.mean(token_logs_no_eos)))
+        aggregated_by_prefix_no_eos[str(pref_len)] = {
+            "ppl": float(ppl_pref_no_eos),
+            "num_tokens": int(len(token_logs_no_eos)),
         }
 
     result = {
@@ -157,6 +194,7 @@ def evaluate_pg19_ppl(
         "samples_ppls_std": float(np.nanstd(samples_ppls)) if len(samples_ppls) > 0 else None,
         "per_sample_ppls": [float(x) if x == x else None for x in samples_ppls],
         "aggregated_ppl_by_prefix": aggregated_by_prefix,
+        "aggregated_ppl_by_prefix_no_eos": aggregated_by_prefix_no_eos,
         "diagnostics": {
             "input_ids_lengths": all_input_ids,
             "kv_cache_lengths": all_kv_lengths,
