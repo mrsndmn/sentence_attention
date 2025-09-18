@@ -43,6 +43,8 @@ def infer_training_type(experiment_name: str) -> str:
         return "base model"
     if "ft_4k_full" in name_lower:
         return "full finetune 4k"
+    if "ft_4k_distill" in name_lower:
+        return "full finetune 4k distill"
 
     return "unknown"
 
@@ -139,7 +141,7 @@ def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         else:
             results_all = data.get("results", {}).get("all", {})
 
-        preferred_order = ["acc_norm", "ppl", "overall_ppl"]
+        preferred_order = ["acc_norm", "ppl", "overall_ppl", "qem"]
         # if task_name == "pg19" and "Llama-3.2-3B_base_model" in checkpoint_path:
         #     breakpoint()
         value = None
@@ -150,7 +152,7 @@ def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         if value is None:
             return ""
         if isinstance(value, (int, float)):
-            return f"{value:.3f}"
+            return f"{value:.2f}"
         return str(value)
     except Exception:
         return ""
@@ -159,7 +161,11 @@ def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 def prettify_experiment_name(experiment_name: str) -> str:
     normalized_name = (
         experiment_name.replace("ft_full_", "")
+        .replace("_ft_4k_distill_full", "")
+        .replace("_ft_4k_full", "")
         .replace("_base_model", "")
+        .replace("_num_eos_tokens_1", "")
+        .replace("_num_eos_tokens_2", "")
         .replace("_num_eos_tokens_4", "")
         .replace("_num_eos_tokens_8", "")
         .replace("_num_eos_tokens_16", "")
@@ -179,7 +185,7 @@ def prettify_experiment_name(experiment_name: str) -> str:
 def row_to_base_values(row: dict, training_mapping: Dict[str, str]) -> List[str]:
     return [
         row["eos_tokens"],
-        row["family"],
+        # row["family"],
         training_mapping.get(row["training"], row["training"]),
         prettify_experiment_name(row["experiment"]),
     ]
@@ -211,8 +217,8 @@ def build_table(
     table_rows = sorted(
         table_rows,
         key=lambda x: (
-            x[3],  # experiment
-            x[2],  # training
+            x[2],  # experiment
+            x[1],  # training
             x[0],  # #EOS
         ),
     )
@@ -341,14 +347,14 @@ def main() -> None:
     else:
         raise ValueError(f"Invalid benchmarks: {args.benchmarks}")
 
-    headers = ["#EOS", "Family", "Training", "Experiment"] + benchmarks
+    headers = ["#EOS", "Training", "Experiment"] + benchmarks
 
     # Full table: all benchmarks (CLI filters apply only here)
     full_table_rows = build_table(
         rows=rows,
         benchmarks=benchmarks,
         training_mapping=training_mapping,
-        row_predicate=None,
+        row_predicate=lambda r: "llama-3-8b" not in r["experiment"],
         model_filter=args.model,
         eos_tokens_filter=args.eos_tokens,
     )
@@ -363,7 +369,7 @@ def main() -> None:
     )
 
     # Short results benchmark tables
-    short_headers = ["#EOS", "Family", "Training", "Experiment"] + short_benchmarks
+    short_headers = ["#EOS", "Training", "Experiment"] + short_benchmarks
 
     print("\n\nMain Short results:")
     # 1) Main results: base models (0 EOS) and fully finetuned models
@@ -371,7 +377,10 @@ def main() -> None:
         rows=rows,
         benchmarks=short_benchmarks,
         training_mapping=training_mapping,
-        row_predicate=lambda r: int(r["eos_tokens"]) == 0 or r["training"] == "full finetune",
+        row_predicate=lambda r: int(
+            ("Llama-3.2-3B" in r["experiment"] or "Llama-3.2-1B" in r["experiment"])
+            and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k distill"))
+        ),
     )
     print(
         tabulate(
@@ -383,7 +392,7 @@ def main() -> None:
     )
 
     # Long results benchmark tables
-    long_headers = ["#EOS", "Family", "Training", "Experiment"] + long_benchmarks
+    long_headers = ["#EOS", "Training", "Experiment"] + long_benchmarks
 
     print("\n\nMain Long results:")
     # 1) Main results: base models (0 EOS) and fully finetuned models
@@ -391,7 +400,10 @@ def main() -> None:
         rows=rows,
         benchmarks=long_benchmarks,
         training_mapping=training_mapping,
-        row_predicate=lambda r: int(r["eos_tokens"]) == 0 or r["training"] == "full finetune 4k",
+        row_predicate=lambda r: int(
+            ("Llama-3.2-3B" in r["experiment"] or "Llama-3.2-1B" in r["experiment"])
+            and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k distill"))
+        ),
     )
     print(
         tabulate(

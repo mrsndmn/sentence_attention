@@ -35,7 +35,8 @@ def evaluate_lighteval_task_save_results(model, model_checkpoint, task_name, ove
     return results
 
 
-def evaluate_lighteval_task(model, task_name, override_batch_size=None, num_fewshot_seeds=None):
+def build_evaluation_pipeline(model, task_name, override_batch_size=None, num_fewshot_seeds=None):
+
     evaluation_output_dir = os.path.join(workdir_prefix, "artifacts", "evaluation")
     os.makedirs(evaluation_output_dir, exist_ok=True)
 
@@ -45,7 +46,7 @@ def evaluate_lighteval_task(model, task_name, override_batch_size=None, num_fews
         num_fewshot_seeds = 0
 
     if override_batch_size is None:
-        override_batch_size = task_to_default_batch_size.get(task_name, 8)
+        override_batch_size = task_to_default_batch_size.get(task_name, 1)
 
     print(f"Evaluating {task_name} with override_batch_size={override_batch_size} and num_fewshot_seeds={num_fewshot_seeds}")
 
@@ -60,17 +61,25 @@ def evaluate_lighteval_task(model, task_name, override_batch_size=None, num_fews
         use_chat_template=False,
         system_prompt=None,
         load_responses_from_details_date_id=None,
+        max_samples=None,
     )
 
     tasks = f"custom|{task_name}|{num_fewshot_seeds}|1"
 
+    pipeline = Pipeline(
+        tasks=tasks,
+        pipeline_parameters=pipeline_params,
+        evaluation_tracker=evaluation_tracker,
+        model=model,
+    )
+
+    return pipeline
+
+
+def evaluate_lighteval_task(model, task_name, override_batch_size=None, num_fewshot_seeds=None):
+
     with torch.no_grad():
-        pipeline = Pipeline(
-            tasks=tasks,
-            pipeline_parameters=pipeline_params,
-            evaluation_tracker=evaluation_tracker,
-            model=model,
-        )
+        pipeline = build_evaluation_pipeline(model, task_name, override_batch_size, num_fewshot_seeds)
         pipeline.evaluate()
 
         pipeline.show_results()

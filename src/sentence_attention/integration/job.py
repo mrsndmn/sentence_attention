@@ -9,6 +9,8 @@ def accelerate_config_by_instance_type(instance_type: str, workdir_prefix: str) 
 
     if instance_type == "a100.8gpu":
         return f"{workdir_prefix}/configs/accelerate/8gpu.yaml"
+    elif instance_type == "a100.7gpu":
+        return f"{workdir_prefix}/configs/accelerate/7gpu.yaml"
     elif instance_type == "a100.6gpu":
         return f"{workdir_prefix}/configs/accelerate/6gpu.yaml"
     elif instance_type == "a100.4gpu":

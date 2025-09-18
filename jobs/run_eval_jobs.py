@@ -49,7 +49,7 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     assert benchmark in long_benchmarks, f"Invalid benchmark: {benchmark}"
 
-    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config configs/{benchmark}_tiny.yaml --model_name_or_path {pretrained_model} --use_chat_template False --output_dir {output_dir} '"
+    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config configs/{benchmark}_tiny.yaml --model_name_or_path {pretrained_model} --use_chat_template False --no_torch_compile --output_dir {output_dir} '"
 
     print(f"\n\n{script_str}\n")
 
@@ -255,7 +255,9 @@ if __name__ == "__main__":
     parser.add_argument("--num_checkpoints", type=int, default=1)
     parser.add_argument("--dry", action="store_true")
     parser.add_argument("--benchmark", type=str, default="all")
-    parser.add_argument("--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_4", "eos_8", "eos_16"])
+    parser.add_argument(
+        "--eos_num", type=str, default="all", choices=["all", "eos_0", "eos_1", "eos_2", "eos_4", "eos_8", "eos_16"]
+    )
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--limit_jobs", type=int, default=None)
     parser.add_argument("--max_jobs_queue_size", type=int, default=None)
@@ -304,6 +306,9 @@ if __name__ == "__main__":
         experiments_dirs = os.listdir(os.path.join(experiments_dir, eos_num))
 
         for benchmark in benchmarks:
+            if benchmark == "gsm8k":
+                continue
+
             for experiment_dir in experiments_dirs:
                 if stop:
                     break

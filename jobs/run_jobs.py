@@ -20,7 +20,6 @@ from sentence_attention.integration.job import accelerate_config_by_instance_typ
 REGION = "SR004"
 SEED = 1008
 INSTANCE_TYPE = "a100.4gpu"
-N_WORKERS = 1
 BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 
 # Workspace root used inside jobs
@@ -55,7 +54,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
         learning_rate = exp.pop("learning_rate", 1e-4)
         lr_scheduler_type = exp.pop("lr_scheduler_type", "cosine")
         max_grad_norm = exp.pop("max_grad_norm", 1)
-
+        max_steps = exp.pop("max_steps", -1)
         assert float(max_grad_norm) > 0
 
         optim = exp.pop("optim", "")
@@ -85,9 +84,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
             save_total_limit = f"--save_total_limit {save_total_limit}"
         torch_compile = exp.pop("torch_compile", 1)
 
-        instance_type = exp.pop("instance_type", INSTANCE_TYPE)
-
-        eval_strategy = exp.pop("eval_strategy", "steps")
+        eval_strategy = exp.pop("eval_strategy", "no")
         weight_decay = exp.pop("weight_decay", "0.01")
 
         add_end_of_sentence_token = exp.pop("add_end_of_sentence_token", 0)
@@ -104,6 +101,9 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
         flexible_eos_tokens = exp.pop("flexible_eos_tokens", "0")
         ft_with_bos_token = exp.pop("ft_with_bos_token", "0")
 
+        instance_type = exp.pop("instance_type", INSTANCE_TYPE)
+        num_nodes = exp.pop("num_nodes", 1)
+
         if len(exp.keys()) > 0:
             raise ValueError(f"unknown parsms:{exp}")
 
@@ -117,27 +117,39 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
         gradient_checkpointing_flag = "1" if str(gradient_checkpointing).lower() in {"1", "true", "yes"} else "0"
 
         # Use required full Python interpreter path and launch accelerate as a module
+
+        if num_nodes == 1:
+            script_prefix = f"{ENV_BIN}/python {ENV_BIN}/accelerate launch " f"--config_file {accelerate_config} "
+        else:
+            script_prefix = f"bash {workdir_prefix}/jobs/prepare_multinode_accelerate.sh"
+
         script_str = (
-            f"{ENV_BIN}/python {ENV_BIN}/accelerate launch "
-            f"--config_file {accelerate_config} "
+            f"{script_prefix} "
             f"{workdir_prefix}/scripts/train_sentence_llama.py "
-            f"--save_strategy steps --save_steps {save_steps} "
+            f"--save_strategy steps "
+            f" --save_steps {save_steps} "
             f"--per_device_train_batch_size {per_device_train_batch_size} "
             f"--learning_rate {learning_rate} --max_grad_norm {max_grad_norm} "
             f"--num_train_epochs {num_train_epochs} --seed {seed} "
             f"--model_type {model_type} --model_checkpoint {model_checkpoint} "
             f"--adam_beta1 {adam_beta1} --adam_beta2 {adam_beta2} {adam_epsilon} "
             f"--lr_scheduler_type {lr_scheduler_type} --optimized_params {optimized_params} "
-            f"--warmup_steps {warmup_steps} --output_dir {output_dir_full_path} "
+            f"--warmup_steps {warmup_steps} "
+            f"--output_dir {output_dir_full_path} "
+            f"--logging_dir {output_dir_full_path}/logs "
+            f"--report_to tensorboard "
             f"--select_train_dataset_items {select_train_dataset_items} "
             f"--weight_decay {weight_decay} --bf16 {bf16} --torch_compile {torch_compile}  "
-            f"{gradient_accumulation_steps}  --eval_strategy {eval_strategy} --eval_steps {eval_steps} "
+            f"{gradient_accumulation_steps} "
+            f"--eval_strategy {eval_strategy} "
+            f" --eval_steps {eval_steps} "
             f"--gradient_checkpointing {gradient_checkpointing_flag} {save_total_limit} {optim} {save_only_model} {logging_steps} "
             f"--add_end_of_sentence_token {add_end_of_sentence_token} --disable_tqdm 1 "
             f"--limit_dataset_shards {limit_dataset_shards} --offset_dataset_shards {offset_dataset_shards} "
             f"--number_of_eos_tokens {number_of_eos_tokens} "
             f"--flexible_eos_tokens {flexible_eos_tokens} "
-            f"--ft_with_bos_token {ft_with_bos_token}"
+            f"--ft_with_bos_token {ft_with_bos_token} "
+            f"--max_steps {max_steps} "
         )
 
         print(f"\n\n{script_str}\n\n")
@@ -148,15 +160,15 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
             type="binary",
             region=REGION,
             instance_type=instance_type,
-            n_workers=N_WORKERS,
+            n_workers=num_nodes,
             processes_per_worker=1,
             job_desc=f"{job_description} #rnd #multimodality #tarasov #notify_completed @mrsndmn",
             # stop_timer=600, # в минутах, = 10 часов
             env_variables={
                 "PATH": "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin:/home/user/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin",
-                "CLEARML_CONFIG_FILE": f"{workdir_prefix}/configs/clearml.conf",
-                "CLEARML_PROJECT": "sentence_attention",
-                "CLEARML_LOG_MODEL": "FALSE",
+                # "CLEARML_CONFIG_FILE": f"{workdir_prefix}/configs/clearml.conf",
+                # "CLEARML_PROJECT": "sentence_attention",
+                # "CLEARML_LOG_MODEL": "FALSE",
                 "WANDB_MODE": "offline",
                 # Always make sure PYTHONPATH and HF_HOME are set
                 "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
@@ -186,6 +198,7 @@ def run_training_experiments(
     select_train_dataset_items: int = 500000,
     lr_scheduler_type: str = "constant_with_warmup",
     instance_type: str = "a100.1gpu",
+    num_nodes: int = 1,
     experiment_prefix_base_name: str = "adaptive_llama31_8B",
     gradient_accumulation_steps: int = 4,
     gradient_checkpointing: bool = False,
@@ -199,6 +212,7 @@ def run_training_experiments(
     logging_steps: str = "",
     max_grad_norm: float = 1.0,
     warmup_steps: int = 2000,
+    max_steps: int = -1,
     bf16: str = "0",
     add_end_of_sentence_token: str = "1",
     job_description=None,
@@ -229,6 +243,7 @@ def run_training_experiments(
         "select_train_dataset_items": select_train_dataset_items,
         "per_device_train_batch_size": per_device_train_batch_size,
         "logging_steps": logging_steps,
+        "max_steps": max_steps,
         "bf16": bf16,
         "optim": optim,
         "torch_compile": torch_compile,
@@ -240,6 +255,7 @@ def run_training_experiments(
         "max_grad_norm": max_grad_norm,
         "gradient_accumulation_steps": gradient_accumulation_steps,
         "instance_type": instance_type,
+        "num_nodes": num_nodes,
         "flexible_eos_tokens": flexible_eos_tokens,
         "ft_with_bos_token": ft_with_bos_token,
     }
@@ -262,10 +278,10 @@ def run_training_experiments(
 def _models_for_eos_only() -> List[str]:
     return [
         "unsloth/Llama-3.2-1B",
-        "Qwen/Qwen2.5-1.5B",
         "unsloth/Llama-3.2-3B",
+        # "Qwen/Qwen2.5-1.5B",
         "Qwen/Qwen2.5-3B",
-        "unsloth/llama-3-8b",
+        # "unsloth/llama-3-8b",
     ]
 
 
@@ -278,14 +294,14 @@ def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
     """
     all_experiments: List[Dict[str, Any]] = []
 
-    for number_of_eos_tokens in [1, 4, 8, 16]:
+    for number_of_eos_tokens in [1, 2, 4]:
         eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
 
         if not os.path.exists(eos_dir):
             continue
 
         for experiment in os.listdir(eos_dir):
-            if "_ft_only_eos_embedding_num_eos_tokens_" not in experiment:
+            if "_ft_only_eos_embedding_" not in experiment:
                 continue
 
             experiment_path = f"{eos_dir}/{experiment}"
@@ -316,7 +332,7 @@ def _full_tuned_checkpoints() -> List[Dict[str, Any]]:
     """
     all_experiments: List[Dict[str, Any]] = []
 
-    for number_of_eos_tokens in [1, 4, 8, 16]:
+    for number_of_eos_tokens in [1, 2, 4]:
         eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
 
         if not os.path.exists(eos_dir):
@@ -380,11 +396,13 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 
 def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
-    ngpus = 8
+    ngpus = 7
     num_train_epochs = 1
     per_device_train_batch_size = 4
     save_steps = 250
     optimized_params = "only_eos_embedding"
+
+    max_steps = 300
 
     for number_of_eos_tokens in num_eos_tokens:
 
@@ -395,9 +413,11 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             # TODO check sucessful experiment has already been processed
 
             local_per_device_train_batch_size = per_device_train_batch_size
+            if model_checkpoint == "Qwen/Qwen2.5-3B":
+                local_per_device_train_batch_size = 1
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
-            gradient_accumulation_steps = math.ceil(4096 / ngpus / local_per_device_train_batch_size)
+            gradient_accumulation_steps = math.ceil(512 / ngpus / local_per_device_train_batch_size)
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
@@ -415,11 +435,11 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             run_training_experiments(
                 learning_rate=0.0001,
                 model_type="sentence_pretrained_checkpoint",
-                limit_dataset_shards=4,
+                limit_dataset_shards=1,
                 number_of_eos_tokens=number_of_eos_tokens,
                 optimized_params=optimized_params,
                 weight_decay="0.01",
-                per_device_train_batch_size=per_device_train_batch_size,
+                per_device_train_batch_size=local_per_device_train_batch_size,
                 gradient_accumulation_steps=gradient_accumulation_steps,
                 adam_beta1="0.9",
                 adam_beta2="0.95",
@@ -428,11 +448,12 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 max_grad_norm="1.0",
                 save_total_limit=100,
                 save_steps=save_steps,
+                max_steps=max_steps,
                 instance_type=f"a100.{ngpus}gpu",
                 model_checkpoint=model_checkpoint,
                 select_train_dataset_items=0,
                 adam_epsilon="1e-8",
-                warmup_steps=500,
+                warmup_steps=30,
                 dry=dry,
                 lr_scheduler_type="cosine",
                 bf16="0",
@@ -524,91 +545,6 @@ def run_group_full(
         )
 
 
-def run_group_full2(
-    *,
-    dry: bool,
-    num_eos_tokens: List[int],
-    in_progress_jobs: List[Dict],
-    model: str,
-    flexible_eos_tokens: bool = False,
-    ft_with_bos_token: bool = False,
-) -> None:
-    ngpus = 8
-    num_train_epochs = 1
-    save_steps = 1000
-    optimized_params = "full"
-    max_grad_norm = "2.0"
-
-    for exp_config in _full_tuned_checkpoints():
-        # TODO check sucessful experiment has already been processed
-        model_checkpoint = exp_config["model_checkpoint"]
-        model_slug = exp_config["model_slug"]
-        per_device_train_batch_size = exp_config["per_device_train_batch_size"]
-        number_of_eos_tokens = exp_config["number_of_eos_tokens"]
-
-        if model is not None and model.lower() not in model_checkpoint.lower():
-            continue
-
-        if int(number_of_eos_tokens) not in num_eos_tokens:
-            continue
-
-        model_dir_prefix_mid = "_ft2_"
-        if flexible_eos_tokens:
-            model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
-
-        if ft_with_bos_token:
-            model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
-
-        model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
-
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
-            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
-            continue
-
-        # gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(256 / ngpus / per_device_train_batch_size)
-
-        experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
-        job_description = f"ST: {experiment_prefix_base_name}"
-
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-            print(f"Experiment {experiment_prefix_base_name} is already in progress")
-            continue
-
-        run_training_experiments(
-            learning_rate=0.00005,
-            model_type="sentence_pretrained_checkpoint",
-            # Rertain on EOSo data
-            limit_dataset_shards=4,
-            offset_dataset_shards=0,
-            number_of_eos_tokens=number_of_eos_tokens,
-            optimized_params=optimized_params,
-            weight_decay="0.01",
-            per_device_train_batch_size=per_device_train_batch_size,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            adam_beta1="0.9",
-            adam_beta2="0.95",
-            optim="adamw_torch_fused",
-            num_train_epochs=num_train_epochs,
-            max_grad_norm=max_grad_norm,
-            save_total_limit=100,
-            save_steps=save_steps,
-            instance_type=f"a100.{ngpus}gpu",
-            model_checkpoint=model_checkpoint,
-            select_train_dataset_items=0,
-            adam_epsilon="1e-8",
-            warmup_steps=50,
-            dry=dry,
-            lr_scheduler_type="cosine",
-            bf16="0",
-            add_end_of_sentence_token=1,
-            experiment_prefix_base_name=experiment_prefix_base_name,
-            job_description=job_description,
-            flexible_eos_tokens="1" if flexible_eos_tokens else "0",
-            ft_with_bos_token="1" if ft_with_bos_token else "0",
-        )
-
-
 def run_group_full_4k(
     *,
     dry: bool,
@@ -619,6 +555,7 @@ def run_group_full_4k(
     ft_with_bos_token: bool = False,
 ) -> None:
     ngpus = 8
+    num_nodes = 5
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "full"
@@ -654,8 +591,8 @@ def run_group_full_4k(
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
 
-        # gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(512 / ngpus / per_device_train_batch_size)
+        # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(512 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -668,7 +605,7 @@ def run_group_full_4k(
             learning_rate=0.00005,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
-            limit_dataset_shards=8,
+            limit_dataset_shards=10,
             offset_dataset_shards=0,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
@@ -683,6 +620,7 @@ def run_group_full_4k(
             save_total_limit=100,
             save_steps=save_steps,
             instance_type=f"a100.{ngpus}gpu",
+            num_nodes=num_nodes,
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
@@ -907,7 +845,7 @@ def main() -> None:
     parser = _cli()
     args = parser.parse_args()
 
-    num_eos_tokens = [1, 4, 8, 16] if args.num_eos_tokens is None else [args.num_eos_tokens]
+    num_eos_tokens = [1, 2, 4] if args.num_eos_tokens is None else [args.num_eos_tokens]
 
     if args.wait is not None:
         job_id = args.wait
@@ -941,13 +879,6 @@ def main() -> None:
         )
     elif args.group == "full":
         run_group_full(
-            dry=args.dry,
-            num_eos_tokens=num_eos_tokens,
-            in_progress_jobs=in_progress_jobs,
-            model=args.model,
-        )
-    elif args.group == "full2":
-        run_group_full2(
             dry=args.dry,
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
