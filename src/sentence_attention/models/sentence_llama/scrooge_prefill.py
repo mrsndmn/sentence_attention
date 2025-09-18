@@ -131,8 +131,9 @@ def scrooge_prefill(
 
     eos_tokens_idxs = set(clothest_end_of_sentence_token_idx.cpu().numpy().tolist()[0])
     eos_tokens_idxs.remove(0)
-    if input_ids.shape[1] in eos_tokens_idxs:
-        eos_tokens_idxs.remove(input_ids.shape[1])
+    eos_tokens_idxs.add(input_ids.shape[1] - 1)
+    # if input_ids.shape[1] in eos_tokens_idxs:
+    #     eos_tokens_idxs.remove(input_ids.shape[1])
     eos_tokens_idxs = sorted(eos_tokens_idxs)
 
     num_eos_tokens = len(model.config.end_of_sentence_token_ids)
@@ -153,6 +154,10 @@ def scrooge_prefill(
         assert attention_mask[0, 0].item() == 0, "attention mask is left padded"
 
     last_outputs = None
+
+    last_eos_token_idx = None
+
+    assert eos_tokens_idxs[-1] == input_ids.shape[1] - 1, "last eos token idx should be the last token idx"
 
     for i, sentence_i in tqdm(enumerate(eos_tokens_idxs), desc="Scrooge prefill", total=len(eos_tokens_idxs)):
 
@@ -176,7 +181,12 @@ def scrooge_prefill(
         )
         # clothest_end_of_sentence_token_idx_current = torch.cat([clothest_end_of_sentence_token_idx_prefix, clothest_end_of_sentence_token_idx[:, prev_sentence_i:sentence_i]], dim=-1)
 
-        # print("process", input_ids[:, prev_sentence_i:sentence_i])
+        print("prev_sentence_i:sentence_i", prev_sentence_i, sentence_i)
+        print("processing", input_ids[:, prev_sentence_i:sentence_i])
+        print("attention_mask", attention_mask)
+        print("special_embeddings_mask_current", special_embeddings_mask_current)
+        print("clothest_end_of_sentence_token_idx_current", clothest_end_of_sentence_token_idx_current)
+        print("past_key_values", past_key_values.get_seq_length())
 
         outputs = model(
             input_ids=input_ids[:, prev_sentence_i:sentence_i],
@@ -193,6 +203,11 @@ def scrooge_prefill(
 
         if outputs_hook is not None:
             outputs_hook(input_ids, outputs, prev_sentence_i, sentence_i)
+
+        if sentence_i == input_ids.shape[1] - 1:
+            last_eos_token_idx = prev_sentence_i - 1
+            last_eos_token_idx = max(last_eos_token_idx, 0)
+            break
 
         # Leave only sentence attention cache
         for idx in range(len(past_key_values.key_cache)):

@@ -538,9 +538,9 @@ def test_kv_cache_forward():
 
     device = "cuda"
 
-    torch_dtype = torch.bfloat16
+    # torch_dtype = torch.bfloat16
     # torch_dtype = torch.float16
-    # torch_dtype = torch.float32
+    torch_dtype = torch.float32
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint, torch_dtype=torch_dtype).to(device)
     model.eval()
@@ -616,7 +616,34 @@ def test_kv_cache_forward():
                 eos_only_forward_cache.value_cache[i],
             ), "value cache should be the same"
 
-    # breakpoint()
+    # TODO test scrooge prefill
+    scrooge_prefill_outputs = scrooge_prefill(
+        model,
+        input_ids.clone(),
+        attention_mask,
+        special_embeddings_mask.clone(),
+        clothest_end_of_sentence_token_idx.clone(),
+    )
+    # scrooge_prefill_inputs = {
+    #     "input_ids": scrooge_prefill_outputs["input_ids"],
+    #     "attention_mask": scrooge_prefill_outputs["attention_mask"],
+    #     "special_embeddings_mask": scrooge_prefill_outputs["special_embeddings_mask"],
+    #     "clothest_end_of_sentence_token_idx": scrooge_prefill_outputs["clothest_end_of_sentence_token_idx"],
+    # }
+
+    assert (scrooge_prefill_outputs["input_ids"] == input_ids[:, -2:]).all(), "input ids should be the same"
+    assert (
+        scrooge_prefill_outputs["attention_mask"] == torch.ones([1, 6], device=device, dtype=torch.long)
+    ).all(), "attention mask should be the same"
+    # scrooge_prefill_outputs['past_key_values'].get_seq_length()
+
+    assert torch.allclose(
+        scrooge_prefill_outputs["past_key_values"].key_cache[0], eos_only_forward_cache.key_cache[0][:, :, :4, :]
+    )
+
+    # assert scrooge_prefill_outputs["input_ids"]
+    breakpoint()
+
     max_new_tokens = 50
 
     init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
@@ -757,5 +784,24 @@ def test_kv_cache_forward():
     print("eos_only_generated", eos_only_generated)
 
     assert init_generated == eos_only_generated, "generated tokens should be the same"
+
+    from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
+
+    logits_processor = build_flexible_eos_logits_processors(model)
+
+    scrooge_prefill_generated_outputs = model.generate(
+        input_ids=scrooge_prefill_outputs["input_ids"].clone(),
+        attention_mask=scrooge_prefill_outputs["attention_mask"].clone(),
+        special_embeddings_mask=scrooge_prefill_outputs["special_embeddings_mask"].clone(),
+        clothest_end_of_sentence_token_idx=scrooge_prefill_outputs["clothest_end_of_sentence_token_idx"].clone(),
+        past_key_values=scrooge_prefill_outputs["past_key_values"],
+        cache_position=scrooge_prefill_outputs["cache_position"],
+        max_new_tokens=max_new_tokens,
+        do_sample=False,
+        logits_processor=logits_processor,
+    )
+
+    scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_prefill_generated_outputs[0], skip_special_tokens=False)
+    print("Scrooge prefill generated output text", scrooge_prefill_generated_output_text)
 
     breakpoint()
