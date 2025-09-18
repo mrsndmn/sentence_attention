@@ -4,7 +4,6 @@ import pytest
 import torch
 from transformers import AutoTokenizer, DynamicCache
 
-from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
     special_token_mask_to_clothest_token_idx_slow,
@@ -457,9 +456,9 @@ def test_kv_cache_forward():
 
     device = "cuda"
 
-    # torch_dtype = torch.bfloat16
+    torch_dtype = torch.bfloat16
     # torch_dtype = torch.float16
-    torch_dtype = torch.float32
+    # torch_dtype = torch.float32
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint, torch_dtype=torch_dtype).to(device)
     model.eval()
@@ -550,7 +549,7 @@ def test_kv_cache_forward():
         eos_only_forward_cache.key_cache[0][:, :, :num_eos_tokens, :],
     )
 
-    max_new_tokens = 100
+    max_new_tokens = 20
 
     init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
     eos_only_input_ids = eos_only_out.logits[:, -1:].argmax(dim=-1)
@@ -566,7 +565,7 @@ def test_kv_cache_forward():
 
     for new_token_id in range(max_new_tokens):
 
-        print("full_forward_cache_init", full_forward_cache_init.get_seq_length())
+        # print("full_forward_cache_init", full_forward_cache_init.get_seq_length())
         full_attention_mask = torch.cat(
             [attention_mask, torch.tensor([init_attention_mask_continuation], device=device, dtype=torch.long)], dim=-1
         )
@@ -661,13 +660,13 @@ def test_kv_cache_forward():
         else:
             eos_only_special_embeddings_mask_continuation.append(0)
 
-        for hs_i in range(len(init_out.hidden_states)):
-            print(
-                "HS i",
-                hs_i,
-                "diff",
-                (init_out.hidden_states[hs_i] - eos_only_out.hidden_states[hs_i]).abs().mean(1).mean(-1),
-            )
+        # for hs_i in range(len(init_out.hidden_states)):
+        #     print(
+        #         "HS i",
+        #         hs_i,
+        #         "diff",
+        #         (init_out.hidden_states[hs_i] - eos_only_out.hidden_states[hs_i]).abs().mean(1).mean(-1),
+        #     )
 
         print("Logits max diff", (init_out.logits - eos_only_out.logits).abs().max())
         # print(
@@ -675,15 +674,16 @@ def test_kv_cache_forward():
         #     init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5],
         #     eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5],
         # )
-        print(
-            f"EOS [{eos_only_next_token}] token top logits:", eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
-        )
+        eos_top_k_tokens_ids = eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
+        print(f"EOS [{eos_only_next_token}] token top logits:", eos_top_k_tokens_ids)
+        print(f"EOS [{init_next_token}] token top logits values:", init_out.logits[:, -1, eos_top_k_tokens_ids])
+        print(f"FUL [{init_next_token}] token top logits:", init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5])
         if not (
             init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10]
             == eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10]
         ).all():
             print(f"{new_token_id} WARNING! ⚠️ Logits are affected! Order of tokens is changed!")
-            breakpoint()
+            # breakpoint()
         else:
             print(f"{new_token_id} ✅ Logits are the same")
 
@@ -706,7 +706,7 @@ def test_kv_cache_forward():
         atol=1e-6,
     ), "value cache should be the same"
 
-    logits_processor = build_flexible_eos_logits_processors(model)
+    # logits_processor = build_flexible_eos_logits_processors(model)
     os.environ["SATTN_DEBUG"] = "1"
 
     scrooge_prefill_generated_outputs = model.generate(
@@ -718,7 +718,7 @@ def test_kv_cache_forward():
         cache_position=scrooge_prefill_outputs["cache_position"],
         max_new_tokens=max_new_tokens,
         do_sample=False,
-        logits_processor=logits_processor,
+        # logits_processor=logits_processor,
     )
 
     scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_prefill_generated_outputs[0], skip_special_tokens=False)
