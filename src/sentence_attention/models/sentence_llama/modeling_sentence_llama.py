@@ -48,8 +48,6 @@ from transformers.utils import (
     logging,
 )
 
-from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
-
 logger = logging.get_logger(__name__)
 
 _CONFIG_FOR_DOC = "LlamaConfig"
@@ -131,6 +129,11 @@ def sentence_attention_forward(
         is_causal = is_causal.item()
 
     # print("is_causal", is_causal)
+    # import os
+    # if os.environ.get("DEBUG_SATTN", "0") == "1":
+    #     print("query", query.shape)
+    #     print("key", key.shape)
+
     attn_output = torch.nn.functional.scaled_dot_product_attention(
         query,
         key,
@@ -1062,7 +1065,8 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             final_mask[:, :, :, 0] = 0
 
         # torch.set_printoptions(profile='full', linewidth=10000)
-        # print("final_mask", final_mask.shape, "\n", final_mask == 0)
+        # print("final_mask", final_mask == 0)
+        # print("final_mask", final_mask.shape)
         # breakpoint()
 
         return final_mask
@@ -1083,15 +1087,103 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
     def generate(self, *args, **kwargs):
 
-        if self.config.flexible_eos_tokens:
-            if "logits_processor" in kwargs:
-                raise ValueError("custom logits_processor is not supported for flexible_eos_tokens models")
+        # if self.config.flexible_eos_tokens:
+        #     if "logits_processor" in kwargs:
+        #         raise ValueError("custom logits_processor is not supported for flexible_eos_tokens models")
 
-            print("Force Flexible EOS Logits Processor")
+        #     print("Force Flexible EOS Logits Processor")
 
-            kwargs["logits_processor"] = build_flexible_eos_logits_processors(self)
+        # kwargs["logits_processor"] = build_flexible_eos_logits_processors(self)
 
-        return super().generate(*args, **kwargs)
+        input_ids = kwargs["input_ids"]
+        assert input_ids.shape[1] == 1, "input_ids should be of shape (batch_size, 1)"
+
+        attention_mask = kwargs["attention_mask"]
+        special_embeddings_mask = kwargs["special_embeddings_mask"]
+        clothest_end_of_sentence_token_idx = kwargs["clothest_end_of_sentence_token_idx"]
+        past_key_values = kwargs["past_key_values"]
+        cache_position = kwargs["cache_position"]
+        max_new_tokens = kwargs["max_new_tokens"]
+        # do_sample = kwargs["do_sample"]
+        assert "logits_processor" not in kwargs, "logits_processor is not supported for flexible_eos_tokens models"
+
+        generated_tokens = [input_ids.item()]
+        attention_mask_continuation = []
+        special_embeddings_mask_continuation = []
+        current_cache_position = cache_position.clone()
+
+        current_input_ids = input_ids.clone()
+
+        device = input_ids.device
+
+        for _new_token_id in range(max_new_tokens):
+
+            attention_mask_cont_t = torch.tensor([attention_mask_continuation], device=device, dtype=torch.long)
+
+            current_attention_mask = torch.cat([attention_mask, attention_mask_cont_t], dim=-1)
+
+            special_embeddings_mask_cont_t = torch.tensor(
+                [special_embeddings_mask_continuation], device=device, dtype=torch.long
+            )
+            current_special_embeddings_mask = torch.cat([special_embeddings_mask, special_embeddings_mask_cont_t], dim=-1)
+
+            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+                current_special_embeddings_mask,
+                num_special_tokens=len(self.config.end_of_sentence_token_ids),
+            )
+
+            # print("forward_cache", past_key_values.get_seq_length())
+
+            model_out = self(
+                input_ids=current_input_ids,
+                attention_mask=current_attention_mask,
+                special_embeddings_mask=current_special_embeddings_mask,
+                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+                past_key_values=past_key_values,
+                cache_position=current_cache_position,
+                output_hidden_states=False,
+            )
+
+            current_input_ids = None
+
+            # Logits processing
+            if generated_tokens[-1] in self.config.end_of_sentence_token_ids:
+                prev_token_is_eos_idx = self.config.end_of_sentence_token_ids.index(generated_tokens[-1])
+                if prev_token_is_eos_idx < len(self.config.end_of_sentence_token_ids) - 1:
+                    current_input_ids = torch.tensor(
+                        [[self.config.end_of_sentence_token_ids[prev_token_is_eos_idx + 1]]],
+                        device=input_ids.device,
+                        dtype=torch.long,
+                    )
+
+            if current_input_ids is None:
+                current_input_ids = model_out.logits[:, -1:].argmax(dim=-1)
+
+            next_token_id = current_input_ids.item()
+            generated_tokens.append(next_token_id)
+
+            current_cache_position += 1
+
+            attention_mask_continuation.append(1)
+            if next_token_id in self.config.end_of_sentence_token_ids:
+                special_embeddings_mask_continuation.append(1)
+            else:
+                special_embeddings_mask_continuation.append(0)
+
+            # if next_token_id == 1732:
+            #     breakpoint()
+            #     print("top tokens", model_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10])
+            #     # SP tokens    : [430, 1364, 374, 264, 1695, 1732, 13, 220, 128256, 128257, 128258, 128259, 8100, 374, 264, 1695, 1732, 1606, 1364, 374, 3169]
+            #     # Decode tokens: [430, 1364, 374, 264, 1695, 1732, 13, 220, 128256, 128257, 128258, 128259, 8100, 374, 264, 1695, 6691, 323, 264, 1695, 7555]
+            #     print("generated_tokens", generated_tokens)
+
+        generated_tokens_t = torch.tensor([generated_tokens], device=input_ids.device, dtype=torch.long)
+        if kwargs.get("return_dict_in_generate", False):
+            return {
+                "sequences": generated_tokens_t,
+            }
+
+        return generated_tokens_t
 
     def prepare_inputs_for_generation(
         self,
@@ -1146,6 +1238,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             outputs["special_embeddings_mask"] = special_embeddings_mask
 
         # if "clothest_end_of_sentence_token_idx" not in outputs or need_recalc_special_embeddings_mask:
+        # print('outputs["special_embeddings_mask"]', outputs["special_embeddings_mask"])
         outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
             outputs["special_embeddings_mask"],
             num_special_tokens=len(self.config.end_of_sentence_token_ids),
