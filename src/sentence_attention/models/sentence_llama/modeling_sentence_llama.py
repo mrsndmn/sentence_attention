@@ -1068,7 +1068,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         # torch.set_printoptions(profile='full', linewidth=10000)
         # print("final_mask", final_mask == 0)
-        print("final_mask", final_mask.shape)
+        # print("final_mask", final_mask.shape)
         # breakpoint()
 
         return final_mask
@@ -1152,6 +1152,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             outputs["special_embeddings_mask"] = special_embeddings_mask
 
         # if "clothest_end_of_sentence_token_idx" not in outputs or need_recalc_special_embeddings_mask:
+        # print('outputs["special_embeddings_mask"]', outputs["special_embeddings_mask"])
         outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
             outputs["special_embeddings_mask"],
             num_special_tokens=len(self.config.end_of_sentence_token_ids),

@@ -3,19 +3,11 @@ from tqdm.auto import tqdm
 from transformers import DynamicCache
 
 
-def full_kv_scrooge_prefill(
+def full_prefill_small_kv_cache(
     model, input_ids, attention_mask, special_embeddings_mask, clothest_end_of_sentence_token_idx, output_hidden_states=False
 ):
 
-    prev_sentence_i = 0  # (attention_mask == 0).sum().item()
-
     assert clothest_end_of_sentence_token_idx.shape[0] == 1, "only single size batch is supported"
-
-    eos_tokens_idxs = set(clothest_end_of_sentence_token_idx.cpu().numpy().tolist()[0])
-    eos_tokens_idxs.remove(0)
-    if input_ids.shape[1] in eos_tokens_idxs:
-        eos_tokens_idxs.remove(input_ids.shape[1])
-    eos_tokens_idxs = sorted(eos_tokens_idxs)
 
     # TODO Sentence Cache - saves only the last sentence embedding
     past_key_values = DynamicCache()
@@ -27,44 +19,27 @@ def full_kv_scrooge_prefill(
 
     hidden_states = []
 
-    last_outputs = None
-
-    sentence_i = None
-
-    for sentence_i in eos_tokens_idxs:
-        kv_length = past_key_values.get_seq_length()
-        # print("kv_length", kv_length)
-
-        # print("prev_sentence_i, sentence_i", prev_sentence_i, sentence_i)
-        # current_attention_mask = full_ones_attention_mask[:, :(sentence_i-prev_sentence_i + past_key_values.get_seq_length())]
-
-        sentence_i = min(sentence_i + 1, input_ids.shape[1])
-
-        outputs = model(
-            input_ids=input_ids[:, prev_sentence_i:sentence_i],
-            attention_mask=attention_mask[:, (prev_sentence_i - kv_length) : sentence_i],
-            special_embeddings_mask=special_embeddings_mask[:, (prev_sentence_i - kv_length) : sentence_i],
-            clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx[
-                :, (prev_sentence_i - kv_length) : sentence_i
-            ],
-            past_key_values=past_key_values,
-            output_hidden_states=output_hidden_states,
-        )
-        prev_sentence_i = sentence_i
-
-        if output_hidden_states:
-            hidden_states.append(outputs.hidden_states)
-
-        last_outputs = outputs
+    outputs = model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        special_embeddings_mask=special_embeddings_mask,
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        past_key_values=past_key_values,
+        output_hidden_states=output_hidden_states,
+    )
+    last_outputs = outputs
 
     kv_length = past_key_values.get_seq_length()
-    special_embeddings_mask_kv_cache = special_embeddings_mask[:, :kv_length]
-    # Convert boolean mask to indices for selecting special embedding positions
-    # special_embeddings_mask_kv_cache has shape [batch_size, seq_len]
-    # We need to get indices where the mask is True
+    special_embeddings_mask_kv_cache = special_embeddings_mask.clone()
+
+    last_eos_token_idx = clothest_end_of_sentence_token_idx[0][-1].item()
+    len_last_normal_tokens = input_ids.shape[1] - (last_eos_token_idx + 1)
+
+    special_embeddings_mask_kv_cache[:, last_eos_token_idx:] = 1
+
+    print("full_prefill_small_kv_cache special_embeddings_mask_kv_cache", special_embeddings_mask_kv_cache)
+
     indices = torch.nonzero(special_embeddings_mask_kv_cache, as_tuple=False)
-    # indices has shape [num_true_positions, 2] where each row is [batch_idx, seq_idx]
-    # We need to extract the sequence indices for selecting
     seq_indices = indices[:, 1]  # Extract sequence dimension indices
 
     for i in range(len(past_key_values.key_cache)):
@@ -81,27 +56,36 @@ def full_kv_scrooge_prefill(
 
     kv_length = past_key_values.get_seq_length()
 
-    last_input_ids = input_ids[:, prev_sentence_i:]
-    attention_mask = torch.ones([1, kv_length + last_input_ids.shape[1]], device=input_ids.device, dtype=torch.long)
+    next_token = outputs.logits[:, -1:].argmax(dim=-1)
 
-    if sentence_i is None:
-        sentence_i = input_ids.shape[1]
-
-    # last_cache_position = torch.arange(prev_sentence_i, sentence_i, device=input_ids.device)
+    last_input_ids = torch.tensor([[next_token]], device=input_ids.device, dtype=input_ids.dtype)
+    attention_mask = torch.ones([1, kv_length + 1], device=input_ids.device, dtype=torch.long)
 
     special_embeddings_mask_prefix = torch.ones(
-        [1, kv_length], device=special_embeddings_mask.device, dtype=special_embeddings_mask.dtype
+        [1, kv_length - len_last_normal_tokens], device=special_embeddings_mask.device, dtype=special_embeddings_mask.dtype
+    )
+    special_embeddings_mask_suffix = [0]
+    if last_input_ids[0, 0].item() in model.config.end_of_sentence_token_ids:
+        special_embeddings_mask_suffix = [1]
+
+    special_embeddings_mask_suffix = torch.tensor(
+        [special_embeddings_mask_suffix], device=special_embeddings_mask.device, dtype=special_embeddings_mask.dtype
     )
 
     special_embeddings_mask_current = torch.cat(
-        [special_embeddings_mask_prefix, special_embeddings_mask[:, prev_sentence_i:]], dim=-1
+        [special_embeddings_mask_prefix, special_embeddings_mask[:, last_eos_token_idx + 1 :], special_embeddings_mask_suffix],
+        dim=-1,
     )
+
+    assert (
+        attention_mask.shape == special_embeddings_mask_current.shape
+    ), "attention mask and special embeddings mask should have the same shape"
 
     clothest_end_of_sentence_token_idx_current = torch.zeros_like(
         last_input_ids, device=clothest_end_of_sentence_token_idx.device, dtype=clothest_end_of_sentence_token_idx.dtype
     )
     past_key_values = past_key_values
-    cache_position = torch.arange(prev_sentence_i, input_ids.shape[1], device=input_ids.device)
+    cache_position = torch.arange(input_ids.shape[1], input_ids.shape[1] + 1, device=input_ids.device)
 
     assert cache_position.shape[0] == last_input_ids.shape[1], "cache position should have the same length as last input ids"
 
@@ -181,12 +165,12 @@ def scrooge_prefill(
         )
         # clothest_end_of_sentence_token_idx_current = torch.cat([clothest_end_of_sentence_token_idx_prefix, clothest_end_of_sentence_token_idx[:, prev_sentence_i:sentence_i]], dim=-1)
 
-        print("prev_sentence_i:sentence_i", prev_sentence_i, sentence_i)
-        print("processing", input_ids[:, prev_sentence_i:sentence_i])
-        print("attention_mask", attention_mask)
-        print("special_embeddings_mask_current", special_embeddings_mask_current)
-        print("clothest_end_of_sentence_token_idx_current", clothest_end_of_sentence_token_idx_current)
-        print("past_key_values", past_key_values.get_seq_length())
+        # print("prev_sentence_i:sentence_i", prev_sentence_i, sentence_i)
+        # print("processing", input_ids[:, prev_sentence_i:sentence_i])
+        # print("attention_mask", attention_mask)
+        # print("special_embeddings_mask_current", special_embeddings_mask_current)
+        # print("clothest_end_of_sentence_token_idx_current", clothest_end_of_sentence_token_idx_current)
+        # print("past_key_values", past_key_values.get_seq_length())
 
         outputs = model(
             input_ids=input_ids[:, prev_sentence_i:sentence_i],
