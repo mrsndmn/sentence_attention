@@ -364,6 +364,90 @@ def _new_test_scrooge_prefill_kv_cache():
         breakpoint()
 
 
+def test_scrooge_prefills():
+    """
+    Test full_prefill_small_kv_cache and scrooge_prefill returns the same outputs
+    """
+
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX,
+        "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/",
+    )
+
+    device = "cuda"
+
+    # torch_dtype = torch.bfloat16
+    # torch_dtype = torch.float16
+    torch_dtype = torch.float32
+
+    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint, torch_dtype=torch_dtype).to(device)
+    model.eval()
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+
+    input_ids = tokenizer.encode(
+        # "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts.\n\nHere is summary of the provided text:\nJennifer is a young woman who marries", return_tensors="pt"
+        "Jennifer is an earnest intelligent woman. She think",
+        return_tensors="pt",
+    )
+    input_ids = input_ids.to(device)
+
+    attention_mask = torch.ones_like(input_ids, device=device)
+
+    special_embeddings_mask = torch.zeros_like(attention_mask)
+    if model.config.end_of_sentence_token_ids is not None:
+        total_eos_tokens = 0
+        for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
+            special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+            total_eos_tokens += (input_ids == end_of_sentence_token_id).sum().item()
+        print("number of end of sentence tokens", total_eos_tokens)
+
+    clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+        special_embeddings_mask,
+        num_special_tokens=len(model.config.end_of_sentence_token_ids),
+    )
+
+    print("input_ids", input_ids.shape)
+    print("clothest_end_of_sentence_token_idx", clothest_end_of_sentence_token_idx)
+
+    # TODO test scrooge prefill
+    scrooge_prefill_outputs = scrooge_prefill(
+        model,
+        input_ids.clone(),
+        attention_mask.clone(),
+        special_embeddings_mask.clone(),
+        clothest_end_of_sentence_token_idx.clone(),
+    )
+
+    full_prefill_small_kv_cache_outputs = full_prefill_small_kv_cache(
+        model,
+        input_ids.clone(),
+        attention_mask.clone(),
+        special_embeddings_mask.clone(),
+        clothest_end_of_sentence_token_idx.clone(),
+    )
+
+    for key in scrooge_prefill_outputs:
+        if key in ["last_outputs", "hidden_states"]:
+            continue
+        if key == "past_key_values":
+            assert torch.allclose(
+                scrooge_prefill_outputs[key].key_cache[0][:, :, :, :],
+                full_prefill_small_kv_cache_outputs[key].key_cache[0][:, :, :, :],
+                atol=1e-6,
+            ), f"{key} should be the same"
+            assert torch.allclose(
+                scrooge_prefill_outputs[key].value_cache[0][:, :, :, :],
+                full_prefill_small_kv_cache_outputs[key].value_cache[0][:, :, :, :],
+                atol=1e-6,
+            ), f"{key} should be the same"
+        else:
+            assert torch.allclose(
+                scrooge_prefill_outputs[key], full_prefill_small_kv_cache_outputs[key]
+            ), f"{key} should be the same"
+
+    return
+
+
 def test_kv_cache_forward():
 
     checkpoint = os.path.join(
@@ -446,43 +530,13 @@ def test_kv_cache_forward():
                 eos_only_forward_cache.value_cache[i],
             ), "value cache should be the same"
 
-    # TODO test scrooge prefill
-    scrooge_prefill_outputs = scrooge_prefill(
+    scrooge_prefill_outputs = full_prefill_small_kv_cache(
         model,
         input_ids.clone(),
         attention_mask.clone(),
         special_embeddings_mask.clone(),
         clothest_end_of_sentence_token_idx.clone(),
     )
-
-    full_prefill_small_kv_cache_outputs = full_prefill_small_kv_cache(
-        model,
-        input_ids.clone(),
-        attention_mask.clone(),
-        special_embeddings_mask.clone(),
-        clothest_end_of_sentence_token_idx.clone(),
-    )
-
-    scrooge_prefill_outputs = full_prefill_small_kv_cache_outputs
-
-    for key in scrooge_prefill_outputs:
-        if key in ["last_outputs", "hidden_states"]:
-            continue
-        if key == "past_key_values":
-            assert torch.allclose(
-                scrooge_prefill_outputs[key].key_cache[0][:, :, :, :],
-                full_prefill_small_kv_cache_outputs[key].key_cache[0][:, :, :, :],
-                atol=1e-6,
-            ), f"{key} should be the same"
-            assert torch.allclose(
-                scrooge_prefill_outputs[key].value_cache[0][:, :, :, :],
-                full_prefill_small_kv_cache_outputs[key].value_cache[0][:, :, :, :],
-                atol=1e-6,
-            ), f"{key} should be the same"
-        else:
-            assert torch.allclose(
-                scrooge_prefill_outputs[key], full_prefill_small_kv_cache_outputs[key]
-            ), f"{key} should be the same"
 
     # assert (scrooge_prefill_outputs["input_ids"] == input_ids[:, -2:]).all(), "input ids should be the same"
     expected_attention_mask_shape = scrooge_prefill_outputs["attention_mask"].shape
