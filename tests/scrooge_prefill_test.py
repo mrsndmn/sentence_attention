@@ -463,6 +463,8 @@ def test_kv_cache_forward():
         clothest_end_of_sentence_token_idx.clone(),
     )
 
+    scrooge_prefill_outputs = full_prefill_small_kv_cache_outputs
+
     for key in scrooge_prefill_outputs:
         if key in ["last_outputs", "hidden_states"]:
             continue
@@ -483,15 +485,18 @@ def test_kv_cache_forward():
             ), f"{key} should be the same"
 
     # assert (scrooge_prefill_outputs["input_ids"] == input_ids[:, -2:]).all(), "input ids should be the same"
+    expected_attention_mask_shape = scrooge_prefill_outputs["attention_mask"].shape
     assert (
-        scrooge_prefill_outputs["attention_mask"] == torch.ones([1, 7], device=device, dtype=torch.long)
+        scrooge_prefill_outputs["attention_mask"] == torch.ones(expected_attention_mask_shape, device=device, dtype=torch.long)
     ).all(), "attention mask should be the same"
 
+    num_eos_tokens = len(model.config.end_of_sentence_token_ids)
     assert torch.allclose(
-        scrooge_prefill_outputs["past_key_values"].key_cache[0][:, :, :4, :], eos_only_forward_cache.key_cache[0][:, :, :4, :]
+        scrooge_prefill_outputs["past_key_values"].key_cache[0][:, :, :num_eos_tokens, :],
+        eos_only_forward_cache.key_cache[0][:, :, :num_eos_tokens, :],
     )
 
-    max_new_tokens = 10
+    max_new_tokens = 100
 
     init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
     eos_only_input_ids = eos_only_out.logits[:, -1:].argmax(dim=-1)
@@ -529,7 +534,7 @@ def test_kv_cache_forward():
             special_embeddings_mask=full_special_embeddings_mask,
             clothest_end_of_sentence_token_idx=full_clothest_end_of_sentence_token_idx,
             past_key_values=full_forward_cache_init,
-            cache_position=torch.tensor([input_ids.shape[1] + 1], device=input_ids.device, dtype=torch.long),
+            cache_position=torch.tensor([input_ids.shape[1] + new_token_id + 1], device=input_ids.device, dtype=torch.long),
             output_hidden_states=True,
         )
 
@@ -558,6 +563,7 @@ def test_kv_cache_forward():
         eos_only_attention_mask = torch.tensor(
             [[1, 1, 1, 1, 1, 1] + eos_only_attention_mask_continuation], device=device, dtype=torch.long
         )
+
         eos_only_special_embeddings_mask = torch.tensor(
             [[1, 1, 1, 1, 0, 0] + eos_only_special_embeddings_mask_continuation], device=device, dtype=torch.long
         )
@@ -574,7 +580,7 @@ def test_kv_cache_forward():
             special_embeddings_mask=eos_only_special_embeddings_mask,
             clothest_end_of_sentence_token_idx=eos_only_clothest_end_of_sentence_token_idx,
             past_key_values=eos_only_forward_cache,
-            cache_position=torch.tensor([input_ids.shape[1] + 1], device=input_ids.device, dtype=torch.long),
+            cache_position=torch.tensor([input_ids.shape[1] + new_token_id + 1], device=input_ids.device, dtype=torch.long),
             output_hidden_states=True,
         )
 
@@ -619,13 +625,13 @@ def test_kv_cache_forward():
             f"EOS [{eos_only_next_token}] token top logits:", eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
         )
         if not (
-            init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
-            == eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
+            init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10]
+            == eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10]
         ).all():
-            print(f"{new_token_id} WARNING! ⚠️ Logist are affected! Order of tokens is changed!")
-            # breakpoint()
+            print(f"{new_token_id} WARNING! ⚠️ Logits are affected! Order of tokens is changed!")
+            breakpoint()
         else:
-            print(f"{new_token_id} ✅ Logist are the same")
+            print(f"{new_token_id} ✅ Logits are the same")
 
     init_generated = tokenizer.decode(init_generated_tokens, skip_special_tokens=False)
     eos_only_generated = tokenizer.decode(eos_only_generated_tokens, skip_special_tokens=False)
@@ -636,16 +642,18 @@ def test_kv_cache_forward():
     assert init_generated == eos_only_generated, "generated tokens should be the same"
 
     assert torch.allclose(
-        eos_only_forward_cache.key_cache[0][:, :, :6, :], scrooge_prefill_outputs["past_key_values"].key_cache[0], atol=1e-6
+        eos_only_forward_cache.key_cache[0][:, :, :num_last_kv_cache_tokens, :],
+        scrooge_prefill_outputs["past_key_values"].key_cache[0],
+        atol=1e-6,
     ), "key cache should be the same"
     assert torch.allclose(
-        eos_only_forward_cache.value_cache[0][:, :, :6, :], scrooge_prefill_outputs["past_key_values"].value_cache[0], atol=1e-6
+        eos_only_forward_cache.value_cache[0][:, :, :num_last_kv_cache_tokens, :],
+        scrooge_prefill_outputs["past_key_values"].value_cache[0],
+        atol=1e-6,
     ), "value cache should be the same"
 
     logits_processor = build_flexible_eos_logits_processors(model)
     os.environ["SATTN_DEBUG"] = "1"
-
-    breakpoint()
 
     scrooge_prefill_generated_outputs = model.generate(
         input_ids=scrooge_prefill_outputs["input_ids"].clone(),
@@ -669,11 +677,11 @@ def test_kv_cache_forward():
         eos_only_forward_cache.value_cache[0][:, :, :, :], scrooge_prefill_outputs["past_key_values"].value_cache[0], atol=1e-6
     ), "value cache should be the same"
 
+    assert scrooge_prefill_generated_output_text == eos_only_generated, "generated tokens should be the same"
+
     print(
         "kv cache seq diff",
         (eos_only_forward_cache.value_cache[0][:, :, :, :] - scrooge_prefill_outputs["past_key_values"].value_cache[0])
         .abs()
         .mean([0, 1, 3]),
     )
-
-    breakpoint()
