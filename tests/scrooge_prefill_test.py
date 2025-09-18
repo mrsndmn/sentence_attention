@@ -538,8 +538,9 @@ def test_kv_cache_forward():
 
     device = "cuda"
 
-    # torch_dtype = torch.bfloat16
-    torch_dtype = torch.float32
+    torch_dtype = torch.bfloat16
+    # torch_dtype = torch.float16
+    # torch_dtype = torch.float32
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint, torch_dtype=torch_dtype).to(device)
     model.eval()
@@ -547,7 +548,7 @@ def test_kv_cache_forward():
 
     input_ids = tokenizer.encode(
         # "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts.\n\nHere is summary of the provided text:\nJennifer is a young woman who marries", return_tensors="pt"
-        " ".join(["Jennifer"] * 0) + " " + "Jennifer is an earnest intelligent woman. She think",
+        "Jennifer is an earnest intelligent woman. She think",
         return_tensors="pt",
     )
     input_ids = input_ids.to(device)
@@ -616,7 +617,7 @@ def test_kv_cache_forward():
             ), "value cache should be the same"
 
     # breakpoint()
-    max_new_tokens = 10
+    max_new_tokens = 50
 
     init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
     eos_only_input_ids = eos_only_out.logits[:, -1:].argmax(dim=-1)
@@ -624,14 +625,24 @@ def test_kv_cache_forward():
     init_generated_tokens = [init_input_ids.item()]
     eos_only_generated_tokens = [eos_only_input_ids.item()]
 
+    init_attention_mask_continuation = [1]
+    init_special_embeddings_mask_continuation = [0]
+
+    eos_only_attention_mask_continuation = [1]
+    eos_only_special_embeddings_mask_continuation = [0]
+
     for new_token_id in range(max_new_tokens):
 
         print("full_forward_cache_init", full_forward_cache_init.get_seq_length())
         full_attention_mask = torch.cat(
-            [attention_mask, torch.tensor([[1] * (new_token_id + 1)], device=device, dtype=torch.long)], dim=-1
+            [attention_mask, torch.tensor([init_attention_mask_continuation], device=device, dtype=torch.long)], dim=-1
         )
         full_special_embeddings_mask = torch.cat(
-            [special_embeddings_mask, torch.tensor([[0] * (new_token_id + 1)], device=device, dtype=torch.long)], dim=-1
+            [
+                special_embeddings_mask,
+                torch.tensor([init_special_embeddings_mask_continuation], device=device, dtype=torch.long),
+            ],
+            dim=-1,
         )
         full_clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
             full_special_embeddings_mask,
@@ -648,12 +659,33 @@ def test_kv_cache_forward():
             output_hidden_states=True,
         )
 
-        init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
-        init_generated_tokens.append(init_input_ids.item())
+        init_input_ids = None
+        if init_generated_tokens[-1] in model.config.end_of_sentence_token_ids:
+            prev_token_is_eos_idx = model.config.end_of_sentence_token_ids.index(init_generated_tokens[-1])
+            if prev_token_is_eos_idx < len(model.config.end_of_sentence_token_ids) - 1:
+                init_input_ids = torch.tensor(
+                    [[model.config.end_of_sentence_token_ids[prev_token_is_eos_idx + 1]]],
+                    device=input_ids.device,
+                    dtype=torch.long,
+                )
 
-        eos_only_attention_mask = torch.tensor([[1, 1, 1, 1, 1, 1, 1] + ([1] * new_token_id)], device=device, dtype=torch.long)
+        if init_input_ids is None:
+            init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
+
+        init_next_token = init_input_ids.item()
+        init_generated_tokens.append(init_next_token)
+
+        init_attention_mask_continuation.append(1)
+        if init_next_token in model.config.end_of_sentence_token_ids:
+            init_special_embeddings_mask_continuation.append(1)
+        else:
+            init_special_embeddings_mask_continuation.append(0)
+
+        eos_only_attention_mask = torch.tensor(
+            [[1, 1, 1, 1, 1, 1] + eos_only_attention_mask_continuation], device=device, dtype=torch.long
+        )
         eos_only_special_embeddings_mask = torch.tensor(
-            [[1, 1, 1, 1, 0, 0, 0] + ([0] * new_token_id)], device=device, dtype=torch.long
+            [[1, 1, 1, 1, 0, 0] + eos_only_special_embeddings_mask_continuation], device=device, dtype=torch.long
         )
         eos_only_clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
             eos_only_special_embeddings_mask,
@@ -672,8 +704,28 @@ def test_kv_cache_forward():
             output_hidden_states=True,
         )
 
-        eos_only_input_ids = eos_only_out.logits[:, -1:].argmax(dim=-1)
-        eos_only_generated_tokens.append(eos_only_input_ids.item())
+        eos_only_input_ids = None
+
+        if eos_only_generated_tokens[-1] in model.config.end_of_sentence_token_ids:
+            prev_token_is_eos_idx = model.config.end_of_sentence_token_ids.index(eos_only_generated_tokens[-1])
+            if prev_token_is_eos_idx < len(model.config.end_of_sentence_token_ids) - 1:
+                eos_only_input_ids = torch.tensor(
+                    [[model.config.end_of_sentence_token_ids[prev_token_is_eos_idx + 1]]],
+                    device=input_ids.device,
+                    dtype=torch.long,
+                )
+
+        if eos_only_input_ids is None:
+            eos_only_input_ids = eos_only_out.logits[:, -1:].argmax(dim=-1)
+
+        eos_only_next_token = eos_only_input_ids.item()
+        eos_only_generated_tokens.append(eos_only_next_token)
+
+        eos_only_attention_mask_continuation.append(1)
+        if eos_only_next_token in model.config.end_of_sentence_token_ids:
+            eos_only_special_embeddings_mask_continuation.append(1)
+        else:
+            eos_only_special_embeddings_mask_continuation.append(0)
 
         # for hs_i in range(len(init_out.hidden_states)):
         #     print(
@@ -684,17 +736,17 @@ def test_kv_cache_forward():
         #     )
 
         print("Logits max diff", (init_out.logits - eos_only_out.logits).abs().max())
-        print(
-            "Logits max",
-            init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5],
-            eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5],
-        )
+        # print(
+        #     "Logits max",
+        #     init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5],
+        #     eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5],
+        # )
         if not (
             init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
             == eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
         ).all():
             print(f"{new_token_id} WARNING! ⚠️ Logist are affected! Order of tokens is changed!")
-            breakpoint()
+            # breakpoint()
         else:
             print(f"{new_token_id} ✅ Logist are the same")
 
