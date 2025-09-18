@@ -4,6 +4,7 @@ import pytest
 import torch
 from transformers import AutoTokenizer, DynamicCache
 
+from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
     special_token_mask_to_clothest_token_idx_slow,
@@ -589,11 +590,6 @@ def test_kv_cache_forward():
         past_key_values=eos_only_forward_cache,
     )
 
-    # indices = torch.nonzero(special_embeddings_mask, as_tuple=False)
-    # indices has shape [num_true_positions, 2] where each row is [batch_idx, seq_idx]
-    # We need to extract the sequence indices for selecting
-    # seq_indices = indices[:, 1]  # Extract sequence dimension indices
-
     num_last_kv_cache_tokens = 6
 
     for i in range(len(eos_only_forward_cache.key_cache)):
@@ -624,27 +620,17 @@ def test_kv_cache_forward():
         special_embeddings_mask.clone(),
         clothest_end_of_sentence_token_idx.clone(),
     )
-    # scrooge_prefill_inputs = {
-    #     "input_ids": scrooge_prefill_outputs["input_ids"],
-    #     "attention_mask": scrooge_prefill_outputs["attention_mask"],
-    #     "special_embeddings_mask": scrooge_prefill_outputs["special_embeddings_mask"],
-    #     "clothest_end_of_sentence_token_idx": scrooge_prefill_outputs["clothest_end_of_sentence_token_idx"],
-    # }
 
-    assert (scrooge_prefill_outputs["input_ids"] == input_ids[:, -2:]).all(), "input ids should be the same"
+    # assert (scrooge_prefill_outputs["input_ids"] == input_ids[:, -2:]).all(), "input ids should be the same"
     assert (
-        scrooge_prefill_outputs["attention_mask"] == torch.ones([1, 6], device=device, dtype=torch.long)
+        scrooge_prefill_outputs["attention_mask"] == torch.ones([1, 7], device=device, dtype=torch.long)
     ).all(), "attention mask should be the same"
-    # scrooge_prefill_outputs['past_key_values'].get_seq_length()
 
     assert torch.allclose(
-        scrooge_prefill_outputs["past_key_values"].key_cache[0], eos_only_forward_cache.key_cache[0][:, :, :4, :]
+        scrooge_prefill_outputs["past_key_values"].key_cache[0][:, :, :4, :], eos_only_forward_cache.key_cache[0][:, :, :4, :]
     )
 
-    # assert scrooge_prefill_outputs["input_ids"]
-    breakpoint()
-
-    max_new_tokens = 50
+    max_new_tokens = 10
 
     init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
     eos_only_input_ids = eos_only_out.logits[:, -1:].argmax(dim=-1)
@@ -785,9 +771,15 @@ def test_kv_cache_forward():
 
     assert init_generated == eos_only_generated, "generated tokens should be the same"
 
-    from sentence_attention.generation.logits_processor import build_flexible_eos_logits_processors
+    assert torch.allclose(
+        eos_only_forward_cache.key_cache[0][:, :, :6, :], scrooge_prefill_outputs["past_key_values"].key_cache[0], atol=1e-6
+    ), "key cache should be the same"
+    assert torch.allclose(
+        eos_only_forward_cache.value_cache[0][:, :, :6, :], scrooge_prefill_outputs["past_key_values"].value_cache[0], atol=1e-6
+    ), "value cache should be the same"
 
     logits_processor = build_flexible_eos_logits_processors(model)
+    os.environ["SATTN_DEBUG"] = "1"
 
     scrooge_prefill_generated_outputs = model.generate(
         input_ids=scrooge_prefill_outputs["input_ids"].clone(),
@@ -803,5 +795,16 @@ def test_kv_cache_forward():
 
     scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_prefill_generated_outputs[0], skip_special_tokens=False)
     print("Scrooge prefill generated output text", scrooge_prefill_generated_output_text)
+
+    assert torch.allclose(
+        eos_only_forward_cache.value_cache[0][:, :, :, :], scrooge_prefill_outputs["past_key_values"].value_cache[0], atol=1e-6
+    ), "value cache should be the same"
+
+    print(
+        "kv cache seq diff",
+        (eos_only_forward_cache.value_cache[0][:, :, :, :] - scrooge_prefill_outputs["past_key_values"].value_cache[0])
+        .abs()
+        .mean([0, 1, 3]),
+    )
 
     breakpoint()

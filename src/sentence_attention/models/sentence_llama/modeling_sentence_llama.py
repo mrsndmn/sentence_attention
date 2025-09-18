@@ -1067,7 +1067,8 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             final_mask[:, :, :, 0] = 0
 
         # torch.set_printoptions(profile='full', linewidth=10000)
-        # print("final_mask", final_mask.shape, "\n", final_mask == 0)
+        # print("final_mask", final_mask == 0)
+        print("final_mask", final_mask.shape)
         # breakpoint()
 
         return final_mask

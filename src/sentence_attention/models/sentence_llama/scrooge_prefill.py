@@ -155,7 +155,7 @@ def scrooge_prefill(
 
     last_outputs = None
 
-    last_eos_token_idx = None
+    len_last_normal_tokens = None
 
     assert eos_tokens_idxs[-1] == input_ids.shape[1] - 1, "last eos token idx should be the last token idx"
 
@@ -204,9 +204,10 @@ def scrooge_prefill(
         if outputs_hook is not None:
             outputs_hook(input_ids, outputs, prev_sentence_i, sentence_i)
 
-        if sentence_i == input_ids.shape[1] - 1:
-            last_eos_token_idx = prev_sentence_i - 1
-            last_eos_token_idx = max(last_eos_token_idx, 0)
+        last_outputs = outputs
+
+        if sentence_i == input_ids.shape[1]:
+            len_last_normal_tokens = sentence_i - prev_sentence_i
             break
 
         # Leave only sentence attention cache
@@ -238,17 +239,28 @@ def scrooge_prefill(
 
         # print("past_key_values.get_seq_length()", past_key_values.get_seq_length())
 
-        last_outputs = outputs
+    assert len_last_normal_tokens is not None, "len_last_normal_tokens should be set"
+    assert len_last_normal_tokens > 0
 
     kv_length = past_key_values.get_seq_length()
-    last_input_ids = input_ids[:, prev_sentence_i:]
-    attention_mask = torch.ones([1, kv_length + last_input_ids.shape[1]], device=input_ids.device, dtype=torch.long)
+    last_input_ids = torch.zeros_like(input_ids[:, -1:])
+    last_input_ids[0, 0] = last_outputs.logits[:, -1:].argmax(dim=-1)
+
+    attention_mask = torch.ones([1, kv_length + 1], device=input_ids.device, dtype=torch.long)
 
     special_embeddings_mask_prefix = torch.ones(
-        [1, kv_length], device=special_embeddings_mask.device, dtype=special_embeddings_mask.dtype
+        [1, kv_length - len_last_normal_tokens], device=special_embeddings_mask.device, dtype=special_embeddings_mask.dtype
     )
+    special_embeddings_mask_suffix = [0]
+    if last_input_ids[0, 0].item() in model.config.end_of_sentence_token_ids:
+        special_embeddings_mask_suffix = [1]
+
+    special_embeddings_mask_suffix = torch.tensor(
+        [special_embeddings_mask_suffix], device=special_embeddings_mask.device, dtype=special_embeddings_mask.dtype
+    )
+
     special_embeddings_mask_current = torch.cat(
-        [special_embeddings_mask_prefix, special_embeddings_mask[:, prev_sentence_i:]], dim=-1
+        [special_embeddings_mask_prefix, special_embeddings_mask[:, prev_sentence_i:], special_embeddings_mask_suffix], dim=-1
     )
 
     assert (
@@ -259,7 +271,7 @@ def scrooge_prefill(
         last_input_ids, device=clothest_end_of_sentence_token_idx.device, dtype=clothest_end_of_sentence_token_idx.dtype
     )
     past_key_values = past_key_values
-    cache_position = torch.arange(prev_sentence_i, input_ids.shape[1], device=input_ids.device)
+    cache_position = torch.arange(sentence_i, sentence_i + 1, device=input_ids.device)
 
     assert cache_position.shape[0] == last_input_ids.shape[1], "cache position should have the same length as last input ids"
 
