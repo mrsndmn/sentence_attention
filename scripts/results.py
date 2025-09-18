@@ -141,7 +141,7 @@ def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         else:
             results_all = data.get("results", {}).get("all", {})
 
-        preferred_order = ["acc_norm", "ppl", "overall_ppl"]
+        preferred_order = ["acc_norm", "ppl", "overall_ppl", "qem"]
         # if task_name == "pg19" and "Llama-3.2-3B_base_model" in checkpoint_path:
         #     breakpoint()
         value = None
@@ -164,6 +164,7 @@ def prettify_experiment_name(experiment_name: str) -> str:
         .replace("_ft_4k_distill_full", "")
         .replace("_ft_4k_full", "")
         .replace("_base_model", "")
+        .replace("_num_eos_tokens_1", "")
         .replace("_num_eos_tokens_2", "")
         .replace("_num_eos_tokens_4", "")
         .replace("_num_eos_tokens_8", "")
@@ -377,7 +378,7 @@ def main() -> None:
         benchmarks=short_benchmarks,
         training_mapping=training_mapping,
         row_predicate=lambda r: int(
-            "Llama-3.2-3B" in r["experiment"]
+            ("Llama-3.2-3B" in r["experiment"] or "Llama-3.2-1B" in r["experiment"])
             and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k distill"))
         ),
     )
@@ -400,7 +401,7 @@ def main() -> None:
         benchmarks=long_benchmarks,
         training_mapping=training_mapping,
         row_predicate=lambda r: int(
-            "Llama-3.2-3B" in r["experiment"]
+            ("Llama-3.2-3B" in r["experiment"] or "Llama-3.2-1B" in r["experiment"])
             and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k distill"))
         ),
     )

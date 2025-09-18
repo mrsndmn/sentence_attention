@@ -19,6 +19,7 @@ short_benchmarks = [
     "hellaswag",
     "mmlu_cloze",
     "winogrande",
+    "gsm8k",
     "pg19",  # long benchmark
 ]
 

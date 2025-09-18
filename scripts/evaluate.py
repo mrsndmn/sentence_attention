@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import transformers
 from peft import PeftConfig, PeftModel
 from transformers import AutoConfig, AutoTokenizer, LlamaForCausalLM, Qwen2ForCausalLM
 
@@ -50,6 +51,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--checkpoint", type=str, required=True)
+    parser.add_argument("--sel-llm", action="store_true", default=False)
     parser.add_argument("--benchmark", type=str, required=True, choices=all_benchmarks)
     parser.add_argument("--no-save-results", action="store_true", default=False)
 
@@ -62,6 +64,12 @@ if __name__ == "__main__":
         model = model.merge_and_unload()
     else:
         model, tokenizer = load_model_from_checkpoint(args.checkpoint)
+
+    if args.sel_llm:
+        assert transformers.__version__ == "4.53.0", "transformers version must be 4.53.0"
+        import os
+
+        os.environ["SEPCACHE_ENABLED"] = "1"
 
     if args.benchmark == "pg19":
 

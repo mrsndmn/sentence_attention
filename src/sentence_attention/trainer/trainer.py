@@ -160,7 +160,7 @@ class SentenceTrainer(Trainer):
     def prediction_step(
         self,
         model: nn.Module,
-        inputs: Dict[str, Union[torch.Tensor, Any]],
+        inputs: Optional[Dict[str, Union[torch.Tensor, Any]]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
@@ -190,6 +190,10 @@ class SentenceTrainer(Trainer):
 
         # print("inputs", inputs.keys())
         # breakpoint()
+
+        # Handle case where inputs is None
+        if inputs is None:
+            return (None, None, None)
 
         # For CLIP-like models capable of returning loss values.
         # If `return_loss` is not specified or being `None` in `inputs`, we check if the default value of `return_loss`

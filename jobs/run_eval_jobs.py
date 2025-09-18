@@ -306,6 +306,9 @@ if __name__ == "__main__":
         experiments_dirs = os.listdir(os.path.join(experiments_dir, eos_num))
 
         for benchmark in benchmarks:
+            if benchmark == "gsm8k":
+                continue
+
             for experiment_dir in experiments_dirs:
                 if stop:
                     break

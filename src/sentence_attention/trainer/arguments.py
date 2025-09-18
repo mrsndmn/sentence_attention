@@ -40,11 +40,11 @@ class SentenceTrainingArguments(TrainingArguments):
     save_strategy: str = field(default="steps")
     save_steps: int = field(default=10000)
     save_total_limit: Optional[int] = field(default=3)
-    save_only_model: bool = field(default=True)
+    save_only_model: bool = field(default=False)
 
     push_to_hub: bool = field(default=False)
     optim: str = field(default="adamw_torch_fused")
-    report_to: str = field(default="wandb")  # clearml | wandb | none
+    report_to: str = field(default="tensorboard")  # clearml | wandb | none | tensorboard
     logging_steps: int = field(default=100)
     dataloader_drop_last: bool = field(default=True)
     dataloader_num_workers: int = field(default=0)

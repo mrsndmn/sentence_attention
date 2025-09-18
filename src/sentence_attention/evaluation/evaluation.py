@@ -46,7 +46,7 @@ def build_evaluation_pipeline(model, task_name, override_batch_size=None, num_fe
         num_fewshot_seeds = 0
 
     if override_batch_size is None:
-        override_batch_size = task_to_default_batch_size.get(task_name, 8)
+        override_batch_size = task_to_default_batch_size.get(task_name, 1)
 
     print(f"Evaluating {task_name} with override_batch_size={override_batch_size} and num_fewshot_seeds={num_fewshot_seeds}")
 
@@ -61,6 +61,7 @@ def build_evaluation_pipeline(model, task_name, override_batch_size=None, num_fe
         use_chat_template=False,
         system_prompt=None,
         load_responses_from_details_date_id=None,
+        max_samples=None,
     )
 
     tasks = f"custom|{task_name}|{num_fewshot_seeds}|1"
