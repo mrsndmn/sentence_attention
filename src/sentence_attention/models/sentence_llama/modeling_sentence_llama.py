@@ -131,6 +131,11 @@ def sentence_attention_forward(
         is_causal = is_causal.item()
 
     # print("is_causal", is_causal)
+    # import os
+    # if os.environ.get("DEBUG_SATTN", "0") == "1":
+    #     print("query", query.shape)
+    #     print("key", key.shape)
+
     attn_output = torch.nn.functional.scaled_dot_product_attention(
         query,
         key,

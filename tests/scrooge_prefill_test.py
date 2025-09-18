@@ -533,7 +533,7 @@ def test_kv_cache_forward():
 
     checkpoint = os.path.join(
         ARTIFACTS_PREFIX,
-        "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-6000/",
+        "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/",
     )
 
     device = "cuda"
@@ -547,7 +547,7 @@ def test_kv_cache_forward():
 
     input_ids = tokenizer.encode(
         # "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts.\n\nHere is summary of the provided text:\nJennifer is a young woman who marries", return_tensors="pt"
-        " ".join(["Jennifer"] * 100) + " " + "Jennifer is an earnest intelligent woman. She think",
+        " ".join(["Jennifer"] * 0) + " " + "Jennifer is an earnest intelligent woman. She think",
         return_tensors="pt",
     )
     input_ids = input_ids.to(device)
@@ -605,8 +605,6 @@ def test_kv_cache_forward():
         eos_only_forward_cache.key_cache[i] = eos_only_forward_cache.key_cache[i][:, :, -num_last_kv_cache_tokens:, :]
         eos_only_forward_cache.value_cache[i] = eos_only_forward_cache.value_cache[i][:, :, -num_last_kv_cache_tokens:, :]
 
-    print("full_forward_cache_processed", eos_only_forward_cache.get_seq_length())
-
     for _ in range(len(model.config.end_of_sentence_token_ids)):
         for i in range(len(full_forward_cache_init.key_cache)):
             assert torch.allclose(
@@ -618,146 +616,94 @@ def test_kv_cache_forward():
             ), "value cache should be the same"
 
     # breakpoint()
+    max_new_tokens = 10
 
-    full_attention_mask = torch.cat([attention_mask, torch.tensor([[1]], device=device, dtype=torch.long)], dim=-1)
-    full_special_embeddings_mask = torch.cat(
-        [special_embeddings_mask, torch.tensor([[0]], device=device, dtype=torch.long)], dim=-1
-    )
-    full_clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-        full_special_embeddings_mask,
-        num_special_tokens=len(model.config.end_of_sentence_token_ids),
-    )
+    init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
+    eos_only_input_ids = eos_only_out.logits[:, -1:].argmax(dim=-1)
 
-    full_kv_cache_out = model(
-        input_ids=init_out.logits[:, -1:].argmax(dim=-1),
-        attention_mask=full_attention_mask,
-        special_embeddings_mask=full_special_embeddings_mask,
-        clothest_end_of_sentence_token_idx=full_clothest_end_of_sentence_token_idx,
-        past_key_values=full_forward_cache_init,
-        cache_position=torch.tensor([input_ids.shape[1] + 1], device=input_ids.device, dtype=torch.long),
-        output_hidden_states=True,
-    )
+    init_generated_tokens = [init_input_ids.item()]
+    eos_only_generated_tokens = [eos_only_input_ids.item()]
 
-    eos_only_attention_mask = torch.tensor([[1, 1, 1, 1, 1, 1, 1]], device=device, dtype=torch.long)
-    eos_only_special_embeddings_mask = torch.tensor([[1, 1, 1, 1, 0, 0, 0]], device=device, dtype=torch.long)
-    eos_only_clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-        eos_only_special_embeddings_mask,
-        num_special_tokens=len(model.config.end_of_sentence_token_ids),
-    )
+    for new_token_id in range(max_new_tokens):
 
-    print("eos_only_forward_cache", eos_only_forward_cache.get_seq_length())
-
-    eos_only_kv_cache_out = model(
-        input_ids=eos_only_out.logits[:, -1:].argmax(dim=-1),
-        attention_mask=eos_only_attention_mask,
-        special_embeddings_mask=eos_only_special_embeddings_mask,
-        clothest_end_of_sentence_token_idx=eos_only_clothest_end_of_sentence_token_idx,
-        past_key_values=eos_only_forward_cache,
-        cache_position=torch.tensor([input_ids.shape[1] + 1], device=input_ids.device, dtype=torch.long),
-        output_hidden_states=True,
-    )
-
-    for hs_i in range(len(full_kv_cache_out.hidden_states)):
-        print(
-            "HS i",
-            hs_i,
-            "diff",
-            (full_kv_cache_out.hidden_states[hs_i] - eos_only_kv_cache_out.hidden_states[hs_i]).abs().mean(1).mean(-1),
+        print("full_forward_cache_init", full_forward_cache_init.get_seq_length())
+        full_attention_mask = torch.cat(
+            [attention_mask, torch.tensor([[1] * (new_token_id + 1)], device=device, dtype=torch.long)], dim=-1
+        )
+        full_special_embeddings_mask = torch.cat(
+            [special_embeddings_mask, torch.tensor([[0] * (new_token_id + 1)], device=device, dtype=torch.long)], dim=-1
+        )
+        full_clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+            full_special_embeddings_mask,
+            num_special_tokens=len(model.config.end_of_sentence_token_ids),
         )
 
-    print("Logits max diff", (full_kv_cache_out.logits - eos_only_kv_cache_out.logits).abs().max())
-    print(
-        "Logits max",
-        full_kv_cache_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10],
-        eos_only_kv_cache_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10],
-    )
-    if not (
-        full_kv_cache_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :100]
-        == eos_only_kv_cache_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :100]
-    ).all():
-        print("WARNING! ⚠️ Logist are affected! Ordrt of tokens is changed!")
-    else:
-        print("✅ Logist are the same")
+        init_out = model(
+            input_ids=init_input_ids,
+            attention_mask=full_attention_mask,
+            special_embeddings_mask=full_special_embeddings_mask,
+            clothest_end_of_sentence_token_idx=full_clothest_end_of_sentence_token_idx,
+            past_key_values=full_forward_cache_init,
+            cache_position=torch.tensor([input_ids.shape[1] + 1], device=input_ids.device, dtype=torch.long),
+            output_hidden_states=True,
+        )
 
-    # breakpoint()
+        init_input_ids = init_out.logits[:, -1:].argmax(dim=-1)
+        init_generated_tokens.append(init_input_ids.item())
 
+        eos_only_attention_mask = torch.tensor([[1, 1, 1, 1, 1, 1, 1] + ([1] * new_token_id)], device=device, dtype=torch.long)
+        eos_only_special_embeddings_mask = torch.tensor(
+            [[1, 1, 1, 1, 0, 0, 0] + ([0] * new_token_id)], device=device, dtype=torch.long
+        )
+        eos_only_clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+            eos_only_special_embeddings_mask,
+            num_special_tokens=len(model.config.end_of_sentence_token_ids),
+        )
 
-def test_scrooge_prefill_recompute():
+        print("eos_only_forward_cache", eos_only_forward_cache.get_seq_length())
 
-    checkpoint = os.path.join(
-        ARTIFACTS_PREFIX,
-        "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-5000/",
-    )
+        eos_only_out = model(
+            input_ids=eos_only_input_ids,
+            attention_mask=eos_only_attention_mask,
+            special_embeddings_mask=eos_only_special_embeddings_mask,
+            clothest_end_of_sentence_token_idx=eos_only_clothest_end_of_sentence_token_idx,
+            past_key_values=eos_only_forward_cache,
+            cache_position=torch.tensor([input_ids.shape[1] + 1], device=input_ids.device, dtype=torch.long),
+            output_hidden_states=True,
+        )
 
-    device = "cuda"
-    torch_dtype = torch.float32
+        eos_only_input_ids = eos_only_out.logits[:, -1:].argmax(dim=-1)
+        eos_only_generated_tokens.append(eos_only_input_ids.item())
 
-    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint, torch_dtype=torch_dtype, device_map=device)
-    print("model.dtype", model.dtype)
-    model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+        # for hs_i in range(len(init_out.hidden_states)):
+        #     print(
+        #         "HS i",
+        #         hs_i,
+        #         "diff",
+        #         (init_out.hidden_states[hs_i] - eos_only_out.hidden_states[hs_i]).abs().mean(1).mean(-1),
+        #     )
 
-    input_ids = tokenizer.encode(
-        "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts.\n\nHere is summary of the provided text:\n",
-        return_tensors="pt",
-    )
+        print("Logits max diff", (init_out.logits - eos_only_out.logits).abs().max())
+        print(
+            "Logits max",
+            init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5],
+            eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5],
+        )
+        if not (
+            init_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
+            == eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :5]
+        ).all():
+            print(f"{new_token_id} WARNING! ⚠️ Logist are affected! Order of tokens is changed!")
+            breakpoint()
+        else:
+            print(f"{new_token_id} ✅ Logist are the same")
 
-    input_ids_2 = tokenizer.encode(
-        "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts.\n\nHere is summary of the provided text:\nJennifer is a young woman who marries",
-        return_tensors="pt",
-    )
+    init_generated = tokenizer.decode(init_generated_tokens, skip_special_tokens=False)
+    eos_only_generated = tokenizer.decode(eos_only_generated_tokens, skip_special_tokens=False)
 
-    attention_mask = torch.ones_like(input_ids)
-    attention_mask_2 = torch.ones_like(input_ids_2)
+    print("init_generated    ", init_generated)
+    print("eos_only_generated", eos_only_generated)
 
-    special_embeddings_mask = torch.zeros_like(attention_mask)
-    special_embeddings_mask_2 = torch.zeros_like(attention_mask_2)
-    if model.config.end_of_sentence_token_ids is not None:
-        total_eos_tokens = 0
-        for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
-            special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
-            special_embeddings_mask_2[input_ids_2 == end_of_sentence_token_id] = 1
-            total_eos_tokens += (input_ids == end_of_sentence_token_id).sum().item()
-        print("number of end of sentence tokens", total_eos_tokens)
-
-    clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-        special_embeddings_mask,
-        num_special_tokens=len(model.config.end_of_sentence_token_ids),
-    )
-
-    clothest_end_of_sentence_token_idx_2 = special_token_mask_to_clothest_token_idx_slow(
-        special_embeddings_mask_2,
-        num_special_tokens=len(model.config.end_of_sentence_token_ids),
-    )
-
-    max_new_tokens = 100
-
-    no_kv_cache_generated_outputs = model.generate(
-        input_ids.clone().to(device),
-        attention_mask=attention_mask.clone().to(device),
-        special_embeddings_mask=special_embeddings_mask.clone().to(device),
-        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx.clone().to(device),
-        use_cache=False,
-        max_new_tokens=max_new_tokens,
-        do_sample=False,
-    )
-
-    no_kv_cache_generated_output_text = tokenizer.decode(no_kv_cache_generated_outputs[0], skip_special_tokens=False)
-    print("No kv cache generated outputs", no_kv_cache_generated_output_text)
-
-    breakpoint()
-
-    no_kv_cache_generated_outputs2 = model.generate(
-        input_ids_2.clone().to(device),
-        attention_mask=attention_mask_2.clone().to(device),
-        special_embeddings_mask=special_embeddings_mask_2.clone().to(device),
-        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx_2.clone().to(device),
-        use_cache=False,
-        max_new_tokens=max_new_tokens,
-        do_sample=False,
-    )
-
-    no_kv_cache_generated_output_text2 = tokenizer.decode(no_kv_cache_generated_outputs2[0], skip_special_tokens=False)
-    print("No kv cache generated outputs 2", no_kv_cache_generated_output_text2)
+    assert init_generated == eos_only_generated, "generated tokens should be the same"
 
     breakpoint()
