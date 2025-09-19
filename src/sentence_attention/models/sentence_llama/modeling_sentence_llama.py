@@ -1096,14 +1096,55 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         # kwargs["logits_processor"] = build_flexible_eos_logits_processors(self)
 
         input_ids = kwargs["input_ids"]
-        assert input_ids.shape[1] == 1, "input_ids should be of shape (batch_size, 1)"
+        assert input_ids.shape[0] == 1, "only batch size == 1 is supported"
 
         attention_mask = kwargs["attention_mask"]
-        special_embeddings_mask = kwargs["special_embeddings_mask"]
-        clothest_end_of_sentence_token_idx = kwargs["clothest_end_of_sentence_token_idx"]
-        past_key_values = kwargs["past_key_values"]
-        cache_position = kwargs["cache_position"]
-        max_new_tokens = kwargs["max_new_tokens"]
+
+        special_embeddings_mask = kwargs.get("special_embeddings_mask", None)
+
+        if special_embeddings_mask is None:
+            special_embeddings_mask = torch.zeros_like(attention_mask)
+            if self.config.end_of_sentence_token_ids is not None:
+                for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                    special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+
+        clothest_end_of_sentence_token_idx = kwargs.get("clothest_end_of_sentence_token_idx", None)
+        if clothest_end_of_sentence_token_idx is None:
+            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+                special_embeddings_mask,
+                num_special_tokens=len(self.config.end_of_sentence_token_ids),
+            )
+
+        past_key_values = kwargs.get("past_key_values", None)
+        if past_key_values is None:
+            past_key_values = DynamicCache()
+
+        cache_position = kwargs.get("cache_position", None)
+        if cache_position is None:
+            assert past_key_values.get_seq_length() == 0, "cache_position must be provided if past_key_values is provided"
+            cache_position = torch.arange(0, input_ids.shape[1], device=input_ids.device)
+
+        if input_ids.shape[1] > 1 and past_key_values.get_seq_length() == 0:
+            # Prefill
+
+            from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache
+
+            scrooge_prefill_outputs = full_prefill_small_kv_cache(
+                self,
+                input_ids.clone(),
+                attention_mask.clone(),
+                special_embeddings_mask.clone(),
+                clothest_end_of_sentence_token_idx.clone(),
+            )
+
+            input_ids = scrooge_prefill_outputs["input_ids"]
+            attention_mask = scrooge_prefill_outputs["attention_mask"]
+            past_key_values = scrooge_prefill_outputs["past_key_values"]
+            cache_position = scrooge_prefill_outputs["cache_position"]
+            special_embeddings_mask = scrooge_prefill_outputs["special_embeddings_mask"]
+            clothest_end_of_sentence_token_idx = scrooge_prefill_outputs["clothest_end_of_sentence_token_idx"]
+
+        max_new_tokens = kwargs.get("max_new_tokens", 10)
         # do_sample = kwargs["do_sample"]
         assert "logits_processor" not in kwargs, "logits_processor is not supported for flexible_eos_tokens models"
 
@@ -1163,6 +1204,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             generated_tokens.append(next_token_id)
 
             current_cache_position += 1
+            print("cache_position", current_cache_position)
 
             attention_mask_continuation.append(1)
             if next_token_id in self.config.end_of_sentence_token_ids:

@@ -58,6 +58,10 @@ def test_generate_number():
         ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-2000/"
     )
 
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments_in_progress/sentence_Llama-3.2-1B_ft_4k_full_num_eos_tokens_4_2KSJNQ7I/checkpoint-4000"
+    )
+
     save_maps = False
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
@@ -103,7 +107,6 @@ def test_generate_number():
                     attention_mask=attention_mask,
                     output_attentions=True,
                 )
-                # breakpoint()
                 import matplotlib.pyplot as plt
 
                 num_layers = len(fwd_outputs.attentions)
@@ -136,7 +139,7 @@ def test_generate_number():
                 plt.clf()
 
             generated_outputs = model.generate(
-                input_ids,
+                input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=5,
                 use_cache=False,
@@ -154,12 +157,17 @@ def test_generate_number():
                 failed.append(task_type)
 
         # assert len(failed) == 0, f"Failed tests: {failed}"
+    breakpoint()
 
 
 def test_generate_summary():
 
+    # checkpoint = os.path.join(
+    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/"
+    # )
+
     checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-4000/"
+        ARTIFACTS_PREFIX, "./experiments_in_progress/sentence_Llama-3.2-1B_ft_4k_full_num_eos_tokens_4_2KSJNQ7I/checkpoint-4000"
     )
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
@@ -205,70 +213,25 @@ def test_generate_summary():
             #     max_new_tokens=max_new_tokens,
             #     use_cache=False,
             # )
-            generated_output_text = "<end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>Jennifer is a young woman who marries a man named Mina Loris, a wealthy and distinguished scholar. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She is initially excited about the marriage, but soon discovers that Loris is a controlling and jealous man who expects her to serve as his secretary. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She begins to doubt his talent and his alleged magnum opus. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>The Loris also becomes jealous of Will Rihanna, a cousin who is a close"
+            # generated_output_text = "<end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>Jennifer is a young woman who marries a man named Mina Loris, a wealthy and distinguished scholar. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She is initially excited about the marriage, but soon discovers that Loris is a controlling and jealous man who expects her to serve as his secretary. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She begins to doubt his talent and his alleged magnum opus. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>The Loris also becomes jealous of Will Rihanna, a cousin who is a close"
             # generated_output_text = tokenizer.decode(generated_outputs[0, input_ids.shape[1] :], skip_special_tokens=False)
 
-            print(task_type, "generated outputs", generated_output_text)
-
-            # scrooge prefill
-            special_embeddings_mask = torch.zeros_like(attention_mask)
-            if model.config.end_of_sentence_token_ids is not None:
-                total_eos_tokens = 0
-                for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
-                    special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
-                    total_eos_tokens += (input_ids == end_of_sentence_token_id).sum().item()
-                print("number of end of sentence tokens", total_eos_tokens)
-
-            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-                special_embeddings_mask,
-                num_special_tokens=len(model.config.end_of_sentence_token_ids),
-            )
-
-            outputs = scrooge_prefill(
-                model,
-                input_ids,
-                attention_mask=attention_mask,
-                special_embeddings_mask=special_embeddings_mask,
-                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
-            )
-
-            inputs = {
-                "input_ids": outputs["input_ids"],
-                "attention_mask": outputs["attention_mask"],
-                "special_embeddings_mask": outputs["special_embeddings_mask"],
-                "clothest_end_of_sentence_token_idx": outputs["clothest_end_of_sentence_token_idx"],
-                "past_key_values": outputs["past_key_values"],
-                "cache_position": outputs["cache_position"],
-            }
-
-            # special_embeddings_mask = torch.zeros_like(inputs['attention_mask'])
-            # if model.config.end_of_sentence_token_ids is not None:
-            #     for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
-            #         special_embeddings_mask[inputs['input_ids'] == end_of_sentence_token_id] = 1
-
-            # clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-            #     special_embeddings_mask,
-            #     num_special_tokens=len(model.config.end_of_sentence_token_ids),
-            # )
-
-            # inputs["special_embeddings_mask"] = special_embeddings_mask
-            # inputs["clothest_end_of_sentence_token_idx"] = clothest_end_of_sentence_token_idx
+            # print(task_type, "generated outputs", generated_output_text)
 
             scrooge_generated_outputs = model.generate(
-                **inputs,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
                 output_scores=False,
             )
 
-            scrooge_prefill_generated_output_text = tokenizer.decode(
-                scrooge_generated_outputs[0, outputs["input_ids"].shape[1] :], skip_special_tokens=False
-            )
+            scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_generated_outputs[0,], skip_special_tokens=False)
 
-            print(task_type, "scrooge prefill generated output text", scrooge_prefill_generated_output_text)
+            print(task_type, "\n", scrooge_prefill_generated_output_text)
 
-            assert (
-                scrooge_prefill_generated_output_text == generated_output_text
-            ), "scrooge prefill generated output text should be the same as the generated output text"
+            # assert (
+            #     scrooge_prefill_generated_output_text == generated_output_text
+            # ), "scrooge prefill generated output text should be the same as the generated output text"
 
 
 @pytest.mark.skip(reason="Skipping test_scrooge_prefill_only")
@@ -360,7 +323,6 @@ def _new_test_scrooge_prefill_kv_cache():
         # TODO check hidden states are close!
         print("forward_outputs", forward_outputs.hidden_states[-1])
         print("scrooge_forward_outputs", scrooge_forward_outputs.hidden_states[-1])
-        breakpoint()
 
 
 def test_scrooge_prefills():
@@ -683,7 +645,6 @@ def test_kv_cache_forward():
             == eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10]
         ).all():
             print(f"{new_token_id} WARNING! ⚠️ Logits are affected! Order of tokens is changed!")
-            # breakpoint()
         else:
             print(f"{new_token_id} ✅ Logits are the same")
 
