@@ -312,11 +312,6 @@ def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
             model_slug = re.sub(r"_ft_.*", "", model_slug)
 
             current_checkpoint = os.path.join(eos_dir, experiment, last_checkpoint)
-            if (
-                current_checkpoint
-                == "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_2/sentence_Llama-3.2-3B_ft_only_eos_embedding_num_eos_tokens_2_K6IZI9D6/checkpoint-300"
-            ):
-                current_checkpoint = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_only_eos_embedding_num_eos_tokens_4_QUGFL58Y/checkpoint-674"
 
             all_experiments.append(
                 {
@@ -406,10 +401,10 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
     ngpus = 4
     num_train_epochs = 1
     per_device_train_batch_size = 4
-    save_steps = 250
+    save_steps = 1000
     optimized_params = "only_eos_embedding"
 
-    max_steps = 300
+    max_steps = -1
 
     for number_of_eos_tokens in num_eos_tokens:
 
@@ -695,7 +690,7 @@ def run_group_full_4k_distill_from_4eos_tokens(
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
 
-        model_dir_prefix_mid = "_ft_4k_"
+        model_dir_prefix_mid = "_ft_4k_distill_"
         if flexible_eos_tokens:
             model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
 
