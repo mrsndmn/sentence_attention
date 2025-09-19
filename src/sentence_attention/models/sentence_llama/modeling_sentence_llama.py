@@ -1204,7 +1204,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             generated_tokens.append(next_token_id)
 
             current_cache_position += 1
-            print("cache_position", current_cache_position)
+            # print("cache_position", current_cache_position)
 
             attention_mask_continuation.append(1)
             if next_token_id in self.config.end_of_sentence_token_ids:
