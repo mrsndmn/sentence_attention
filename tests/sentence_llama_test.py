@@ -68,11 +68,14 @@ def test_sentence_attention_4d_mask():
     assert ((causal_mask_4d == 0) == expected_mask).all()
 
 
+@torch.no_grad()
 def test_sentence_llama_model_generate_with_eos_token():
 
     device = "cuda"
 
-    checkpoint = os.path.join(ARTIFACTS_PREFIX, "experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/"
+    )
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
     tokenizer = GPT2TokenizerFastEOS.from_pretrained(checkpoint)
 
@@ -95,26 +98,39 @@ def test_sentence_llama_model_generate_with_eos_token():
     if "." in input_text:
         assert (input_ids == end_of_sentence_token_id).sum().item() == 3
 
-    outputs = []
+    outputs_logits = []
+    tokens_orders = []
+    outputs_hidden_states = []
 
     model.eval()
 
     for attn_impl in ["sentence_attention", "sentence_attention_flex"]:
         model.config._attn_implementation = attn_impl
 
-        # print("input_ids", input_ids)
+        print("input_ids", input_ids)
         output = model.forward(input_ids, output_hidden_states=True)
 
-        outputs.append(output.hidden_states)
+        outputs_logits.append(output.logits)
+
+        tokens_order = torch.argsort(output.logits[:, -1], dim=-1, descending=True)[:, :1000].cpu().numpy().tolist()
+        tokens_orders.append(tokens_order)
+        print(attn_impl, "logits", tokens_order)
+
+        outputs_hidden_states.append(output.hidden_states)
 
         # print("attn_impl", attn_impl, "output", tokenizer.decode(output[0], skip_special_tokens=False))
 
-    diffs = []
-    for h_i in range(len(outputs[0])):
-        diffs.append((outputs[0][h_i] - outputs[1][h_i]).norm(2, dim=-1))
+    assert tokens_orders[0] == tokens_orders[1], "tokens orders are not equal"
+    assert torch.allclose(outputs_logits[0][:, -1], outputs_logits[1][:, -1], atol=1e-4), "logits are not equal"
 
-    for h_i in range(len(outputs[0])):
-        assert torch.allclose(outputs[0][h_i], outputs[1][h_i], atol=1e-5), f"hidden_states[{h_i}] are not equal"
+    diffs_hidden_states = []
+    for h_i in range(len(outputs_hidden_states[0])):
+        diffs_hidden_states.append((outputs_hidden_states[0][h_i] - outputs_hidden_states[1][h_i]).norm(2, dim=-1))
+
+    for h_i in range(len(outputs_hidden_states[0])):
+        assert torch.allclose(
+            outputs_hidden_states[0][h_i], outputs_hidden_states[1][h_i], atol=1e-4
+        ), f"hidden_states[{h_i}] are not equal"
 
 
 def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():

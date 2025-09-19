@@ -130,9 +130,11 @@ def sentence_attention_forward(
 
     # print("is_causal", is_causal)
     # import os
-    # if os.environ.get("DEBUG_SATTN", "0") == "1":
-    #     print("query", query.shape)
-    #     print("key", key.shape)
+    if True:
+        print("query", query.shape)
+        print("key", key.shape)
+        print("value", value.shape)
+        print("module.num_key_value_groups", module.num_key_value_groups)
 
     attn_output = torch.nn.functional.scaled_dot_product_attention(
         query,
@@ -183,6 +185,12 @@ def sentence_attention_forward_flex(
         causal_triu_mask = causal_mask & (kv_idx >= eos_token_idx)
 
         return torch.where((causal_triu_mask | eos_sync_tokens), score, -float("inf"))
+
+    if True:
+        print("query", query.shape)
+        print("key", key.shape)
+        print("value", value.shape)
+        print("module.num_key_value_groups", module.num_key_value_groups)
 
     debug = False
     # debug = True
@@ -317,7 +325,7 @@ class SentenceLlamaAttention(nn.Module):
                 ft_with_bos_token=self.config.ft_with_bos_token,
                 **kwargs,
             )
-        else:
+        elif self.config._attn_implementation == "sentence_attention":
             attn_output, attn_weights = attention_interface(
                 self,
                 query_states,
@@ -328,6 +336,8 @@ class SentenceLlamaAttention(nn.Module):
                 scaling=self.scaling,
                 **kwargs,
             )
+        else:
+            raise ValueError(f"Invalid attention implementation: {self.config._attn_implementation}")
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
         attn_output = self.o_proj(attn_output)
@@ -878,7 +888,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             )
 
         if (
-            (self.config._attn_implementation in ["sdpa", "sentence_attention", "eager"])
+            (self.config._attn_implementation in ["sdpa", "sentence_attention", "sentence_attention_flex", "eager"])
             and attention_mask is not None
             and attention_mask.device.type == "cuda"
             and not output_attentions
