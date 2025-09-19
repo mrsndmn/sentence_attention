@@ -311,9 +311,16 @@ def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
             model_slug = experiment.replace("sentence_", "")
             model_slug = re.sub(r"_ft_.*", "", model_slug)
 
+            current_checkpoint = os.path.join(eos_dir, experiment, last_checkpoint)
+            if (
+                current_checkpoint
+                == "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_2/sentence_Llama-3.2-3B_ft_only_eos_embedding_num_eos_tokens_2_K6IZI9D6/checkpoint-300"
+            ):
+                current_checkpoint = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_only_eos_embedding_num_eos_tokens_4_QUGFL58Y/checkpoint-674"
+
             all_experiments.append(
                 {
-                    "model_checkpoint": os.path.join(eos_dir, experiment, last_checkpoint),
+                    "model_checkpoint": current_checkpoint,
                     "model_slug": model_slug,
                     "number_of_eos_tokens": number_of_eos_tokens,
                     "per_device_train_batch_size": 4,
@@ -417,7 +424,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 local_per_device_train_batch_size = 1
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
-            gradient_accumulation_steps = math.ceil(4096 / ngpus / local_per_device_train_batch_size)
+            gradient_accumulation_steps = math.ceil(1024 / ngpus / local_per_device_train_batch_size)
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
@@ -435,7 +442,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             run_training_experiments(
                 learning_rate=0.0001,
                 model_type="sentence_pretrained_checkpoint",
-                limit_dataset_shards=4,
+                limit_dataset_shards=2,
                 number_of_eos_tokens=number_of_eos_tokens,
                 optimized_params=optimized_params,
                 weight_decay="0.01",
@@ -555,7 +562,7 @@ def run_group_full_4k(
     ft_with_bos_token: bool = False,
 ) -> None:
     ngpus = 8
-    num_nodes = 5
+    num_nodes = 4
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "full"
@@ -645,7 +652,9 @@ def run_group_full_4k_distill_from_4eos_tokens(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
 ) -> None:
+
     ngpus = 8
+    num_nodes = 4
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "full"
@@ -686,7 +695,7 @@ def run_group_full_4k_distill_from_4eos_tokens(
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
 
-        model_dir_prefix_mid = "_ft_4k_distill_"
+        model_dir_prefix_mid = "_ft_4k_"
         if flexible_eos_tokens:
             model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
 
@@ -699,8 +708,8 @@ def run_group_full_4k_distill_from_4eos_tokens(
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
 
-        # gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(512 / ngpus / per_device_train_batch_size)
+        # gradient_accumulation_steps = math.ceil(4096 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(512 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -713,7 +722,7 @@ def run_group_full_4k_distill_from_4eos_tokens(
             learning_rate=0.00005,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
-            limit_dataset_shards=1,
+            limit_dataset_shards=10,
             offset_dataset_shards=0,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
@@ -728,10 +737,11 @@ def run_group_full_4k_distill_from_4eos_tokens(
             save_total_limit=100,
             save_steps=save_steps,
             instance_type=f"a100.{ngpus}gpu",
+            num_nodes=num_nodes,
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=100,
+            warmup_steps=1000,
             dry=dry,
             lr_scheduler_type="cosine",
             bf16="0",
