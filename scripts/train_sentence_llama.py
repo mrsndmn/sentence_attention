@@ -15,6 +15,10 @@ from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 from sentence_attention.trainer.trainer import SentenceTrainer
 
+# print("Setting inductor config for flex sentence attention")
+# inductor_config.max_autotune = True
+# inductor_config.max_autotune_gemm_backends = "ATEN,CUBLAS,TRITON"
+
 if __name__ == "__main__":
 
     import subprocess

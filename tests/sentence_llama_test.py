@@ -1,6 +1,7 @@
 import os
 
 import torch
+from transformers import AutoTokenizer
 
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
@@ -236,5 +237,65 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial
     assert torch.allclose(output1.logits[:, : seq_len // 2, :], output2.logits, atol=1e-2), "logits are not equal"
 
 
+@torch.no_grad()
+def test_generate_flex_attention():
+
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/"
+    )
+
+    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+
+    device = "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("device", device)
+
+    model.to(device)
+
+    base_story_text = "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts."
+
+    texts = [
+        ("instruction_last", base_story_text + "\n\nHere is the summary of previous text: "),
+        # (
+        #     "instruction_fitst",
+        #     "You are a summary writer. You are given a story text and you need to write a summary of the story. \n\nText:.\n"
+        #     + base_story_text
+        #     + "\n\nHere is the summary of previous text: ",
+        # ),
+    ]
+
+    print("Model config flexible_eos_tokens", model.config.flexible_eos_tokens)
+    print("Model config ft_with_bos_token", model.config.ft_with_bos_token)
+
+    max_new_tokens = 10
+
+    for sattn_impl in ["sentence_attention_flex", "sentence_attention"]:
+        for task_type, task_prefix in texts:
+            model.config._attn_implementation = sattn_impl
+            input_ids = tokenizer.encode(
+                task_prefix,
+                return_tensors="pt",
+            )
+            input_ids = input_ids.to(device)
+
+            attention_mask = torch.ones_like(input_ids).to(device)
+
+            scrooge_generated_outputs = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=max_new_tokens,
+                output_scores=False,
+            )
+
+            # scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_generated_outputs[0,], skip_special_tokens=False)
+            scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_generated_outputs[0,], skip_special_tokens=True)
+
+            print(sattn_impl, task_type, "\n", scrooge_generated_outputs[0].cpu().numpy().tolist())
+
+            print(sattn_impl, task_type, "\n", scrooge_prefill_generated_output_text)
+
+
 if __name__ == "__main__":
-    test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial_logits()
+    test_generate_flex_attention()

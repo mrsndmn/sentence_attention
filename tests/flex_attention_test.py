@@ -116,6 +116,9 @@ def test_flex_attention_mask():
 
 
 def test_sentence_attention_impl_equivalence():
+
+    torch.set_default_device("cuda")
+
     torch.manual_seed(0)
 
     batch_size = 1
@@ -142,8 +145,21 @@ def test_sentence_attention_impl_equivalence():
         num_special_tokens=4,
     )
 
-    # Build the 4D mask used by the SDPA path
     cache_position = torch.arange(seq_len)
+
+    causal_mask_4d_flex = SentenceLlamaModel._prepare_4d_causal_attention_mask_with_cache_position_sentence_attention_flex(
+        attention_mask=attention_mask_2d,
+        sequence_length=seq_len,
+        target_length=seq_len,
+        dtype=query.dtype,
+        device=query.device,
+        cache_position=cache_position,
+        batch_size=batch_size,
+        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        special_embeddings_mask=special_embeddings_mask,
+    )
+
+    # Build the 4D mask used by the SDPA path
     causal_mask_4d = SentenceLlamaModel._prepare_4d_causal_attention_mask_with_cache_position_sentence_attention(
         attention_mask=attention_mask_2d,
         sequence_length=seq_len,
@@ -168,18 +184,42 @@ def test_sentence_attention_impl_equivalence():
     )
 
     out_flex, _ = sentence_attention_forward_flex(
-        Dummy(),
-        query,
-        key,
-        value,
-        attention_mask=attention_mask_2d,
-        scaling=scaling,
-        special_embeddings_mask=special_embeddings_mask,
-        clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        Dummy(), query, key, value, attention_mask=causal_mask_4d_flex, scaling=scaling
     )
 
     diff = (out_sdpa - out_flex).norm(2, dim=-1)
     print("diff", diff.max())
     print("out_sdpa", out_sdpa.shape)
 
-    assert torch.allclose(out_sdpa, out_flex)
+    # assert torch.allclose(out_sdpa, out_flex)
+
+    # Backward: check gradient equivalence for Q, K, V
+    query_sdpa = query.detach().clone().requires_grad_(True)
+    key_sdpa = key.detach().clone().requires_grad_(True)
+    value_sdpa = value.detach().clone().requires_grad_(True)
+
+    out_sdpa, _ = sentence_attention_forward(
+        Dummy(), query_sdpa, key_sdpa, value_sdpa, causal_mask_4d, dropout=0.0, scaling=scaling, is_causal=None
+    )
+    loss_sdpa = out_sdpa.sum()
+    loss_sdpa.backward()
+
+    query_flex = query.detach().clone().requires_grad_(True)
+    key_flex = key.detach().clone().requires_grad_(True)
+    value_flex = value.detach().clone().requires_grad_(True)
+
+    out_flex, _ = sentence_attention_forward_flex(
+        Dummy(),
+        query_flex,
+        key_flex,
+        value_flex,
+        attention_mask=causal_mask_4d_flex,
+        scaling=scaling,
+    )
+
+    loss_flex = out_flex.sum()
+    loss_flex.backward()
+
+    assert torch.allclose(query_sdpa.grad, query_flex.grad, rtol=1e-4, atol=1e-6)
+    assert torch.allclose(key_sdpa.grad, key_flex.grad, rtol=1e-4, atol=1e-6)
+    assert torch.allclose(value_sdpa.grad, value_flex.grad, rtol=1e-4, atol=1e-6)

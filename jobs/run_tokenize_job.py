@@ -16,18 +16,18 @@ if __name__ == "__main__":
     # for num_eos_tokens in [ 1, 4, 8, 16 ]:
     # for seq_length in [1024, 4096]:
 
-    num_processing_shards = 20
+    num_processing_shards = 40
 
     for seq_length in [4096]:
         # for num_eos_tokens in [1, 2, 4]:
         # for num_eos_tokens in [1]:
-        for num_eos_tokens in [2, 4]:
+        for num_eos_tokens in [16]:
 
-            for shard_index in range(num_processing_shards // 2):
+            for shard_index in range(num_processing_shards // 4):
                 # for pretrained_model_name in ["unsloth/llama-3-8b", "Qwen/Qwen2.5-1.5B"]:
                 # for pretrained_model_name in ["unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
-                # for pretrained_model_name in ["unsloth/Llama-3.2-1B"]:
-                for pretrained_model_name in ["Qwen/Qwen2.5-1.5B"]:
+                for pretrained_model_name in ["unsloth/Llama-3.2-1B"]:
+                    # for pretrained_model_name in ["Qwen/Qwen2.5-1.5B"]:
 
                     script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python scripts/tokenize_fineweb_edu.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --num_shards {num_processing_shards} --shard_index {shard_index}'"
                     print("\n\n", script)
