@@ -513,7 +513,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         super().__init__(config)
 
         self.config._attn_implementation = "sentence_attention"
-        self.config._attn_implementation = "sentence_attention_flex"
+        # self.config._attn_implementation = "sentence_attention_flex"
 
         print("SentenceLlamaModel self.config._attn_implementation", self.config._attn_implementation)
 
