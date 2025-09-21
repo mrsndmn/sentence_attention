@@ -96,7 +96,7 @@ def tdc_available() -> bool:
     return FileSystemReader is not None and tdc_load_state_dict is not None
 
 
-def load_fsdp_distcp_into_model(fsdp_shard_dir: Path, model: AutoModelForCausalLM) -> None:
+def load_fsdp_distcp_into_model(fsdp_shard_dir: Path, model: AutoModelForCausalLM, device: torch.device) -> None:
     if not tdc_available():
         raise RuntimeError(
             "torch.distributed.checkpoint is not available. Please install PyTorch >= 2.0 with distributed checkpoint support."
@@ -109,9 +109,15 @@ def load_fsdp_distcp_into_model(fsdp_shard_dir: Path, model: AutoModelForCausalL
     # Initialize a single-process process group so FSDP APIs are usable
     init_distributed_if_needed(backend="gloo")
 
+    # Ensure model on the expected compute device for FSDP
+    model.to(device)
+
     # Wrap with FSDP to materialize expected FSDP state_dict structure
     # Note: with world_size=1 this does not actually shard parameters
-    fsdp_model = FSDP(model)
+    fsdp_kwargs = {}
+    if device.type == "cuda":
+        fsdp_kwargs["device_id"] = torch.cuda.current_device()
+    fsdp_model = FSDP(model, **fsdp_kwargs)
     # Expect SHARDED_STATE_DICT format which matches distcp layout created by FSDP integration
     FSDP.set_state_dict_type(fsdp_model, StateDictType.SHARDED_STATE_DICT)
 
@@ -175,6 +181,12 @@ def main() -> None:
     parser.add_argument(
         "--save-tokenizer-from", type=str, default=None, help="Optional path/model id to load tokenizer from and save alongside"
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Device to use for FSDP load: auto|cuda|cpu. Default auto prefers CUDA if available",
+    )
     args = parser.parse_args()
 
     checkpoint_dir = Path(args.checkpoint_dir).resolve()
@@ -214,8 +226,20 @@ def main() -> None:
 
     model = build_model(args.base_model, dtype, tokenizer)
     model.eval()
+    # resolve device
+    if args.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    elif args.device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA requested via --device=cuda but not available")
+        device = torch.device("cuda")
+    elif args.device == "cpu":
+        device = torch.device("cpu")
+    else:
+        raise ValueError("--device must be one of: auto|cuda|cpu")
+
     with torch.no_grad():
-        load_fsdp_distcp_into_model(fsdp_shard_dir, model)
+        load_fsdp_distcp_into_model(fsdp_shard_dir, model, device)
 
     # Save model
     _print(f"Saving consolidated model to: {output_dir}")
