@@ -9,6 +9,7 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 import torch.nn as nn
+from accelerate import Accelerator
 from torch.distributed.checkpoint import FileSystemReader
 from torch.distributed.checkpoint import load as tdc_load_state_dict
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -65,7 +66,6 @@ def build_model(
 
     # Ensure embeddings match tokenizer length if provided
     if tokenizer is not None and hasattr(tokenizer, "__len__"):
-        # config = AutoConfig.from_pretrained(str(config_source))
         tok_len = len(tokenizer)
         if getattr(model.config, "vocab_size", None) != tok_len:
             model.resize_token_embeddings(tok_len)
@@ -237,30 +237,30 @@ def main() -> None:
             model.config.tie_word_embeddings = True
         model.tie_weights()
     model.eval()
-    # resolve device
-    if args.device == "auto":
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    elif args.device == "cuda":
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA requested via --device=cuda but not available")
-        device = torch.device("cuda")
-    elif args.device == "cpu":
-        device = torch.device("cpu")
-    else:
-        raise ValueError("--device must be one of: auto|cuda|cpu")
 
-    with torch.no_grad():
-        load_fsdp_distcp_into_model(fsdp_shard_dir, model, device)
+    from accelerate import FullyShardedDataParallelPlugin
+    from accelerate.utils.fsdp_utils import load_fsdp_model
+    from torch.distributed.fsdp import ShardedStateDictConfig, StateDictType
 
-    # Save model
-    print(f"Saving consolidated model to: {output_dir}")
-    model.save_pretrained(str(output_dir), safe_serialization=True)
-    tokenizer.save_pretrained(str(output_dir))
+    fsdp_plugin = FullyShardedDataParallelPlugin(
+        state_dict_type=StateDictType.SHARDED_STATE_DICT, state_dict_config=ShardedStateDictConfig(offload_to_cpu=False)
+    )
 
-    # Also copy generation config if present
-    copy_if_exists(checkpoint_dir, output_dir, ["generation_config.json"])
+    accelerator = Accelerator()
+    container1 = nn.Module()
+    container1._orig_mod = model
+    container1 = accelerator.prepare(container1)
 
-    print("Done.")
+    load_fsdp_model(
+        fsdp_plugin,
+        accelerator,
+        container1,
+        args.checkpoint_dir,
+    )
+
+    # accelerator.load_state( args.checkpoint_dir )
+
+    breakpoint()
 
 
 if __name__ == "__main__":

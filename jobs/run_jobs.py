@@ -562,7 +562,7 @@ def run_group_full_4k(
     # ngpus = 8
     # num_nodes = 3
     ngpus = 8
-    num_nodes = 3
+    num_nodes = 1
 
     num_train_epochs = 1
     save_steps = 1000
