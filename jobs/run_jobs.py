@@ -404,9 +404,10 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
     ngpus = 4
+    n_nodes = 1
     num_train_epochs = 1
     per_device_train_batch_size = 4
-    save_steps = 1000
+    save_steps = 250
     optimized_params = "only_eos_embedding"
 
     max_steps = -1
@@ -424,7 +425,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 local_per_device_train_batch_size = 1
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
-            gradient_accumulation_steps = math.ceil(1024 / ngpus / local_per_device_train_batch_size)
+            gradient_accumulation_steps = math.ceil(4096 / ngpus / n_nodes / local_per_device_train_batch_size)
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
@@ -435,14 +436,14 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
             job_description = f"ST: {experiment_prefix_base_name}"
 
-            if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-                print(f"Experiment {experiment_prefix_base_name} is already in progress")
-                continue
+            # if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+            #     print(f"Experiment {experiment_prefix_base_name} is already in progress")
+            #     continue
 
             run_training_experiments(
                 learning_rate=0.0001,
                 model_type="sentence_pretrained_checkpoint",
-                limit_dataset_shards=2,
+                limit_dataset_shards=4,
                 number_of_eos_tokens=number_of_eos_tokens,
                 optimized_params=optimized_params,
                 weight_decay="0.01",
@@ -457,10 +458,11 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 save_steps=save_steps,
                 max_steps=max_steps,
                 instance_type=f"a100.{ngpus}gpu",
+                num_nodes=n_nodes,
                 model_checkpoint=model_checkpoint,
                 select_train_dataset_items=0,
                 adam_epsilon="1e-8",
-                warmup_steps=30,
+                warmup_steps=500,
                 dry=dry,
                 bf16="0",
                 add_end_of_sentence_token=1,
@@ -581,13 +583,13 @@ def run_group_full_4k(
                 "per_device_train_batch_size": 1,
                 "limit_dataset_shards": 15,
             },
-            {
-                "model_checkpoint": "unsloth/Llama-3.2-1B",
-                "model_slug": "Llama-3.2-1B",
-                "number_of_eos_tokens": 16,
-                "per_device_train_batch_size": 1,
-                "limit_dataset_shards": 15,
-            },
+            # {
+            #     "model_checkpoint": "unsloth/Llama-3.2-1B",
+            #     "model_slug": "Llama-3.2-1B",
+            #     "number_of_eos_tokens": 16,
+            #     "per_device_train_batch_size": 1,
+            #     "limit_dataset_shards": 15,
+            # },
             {
                 "model_checkpoint": "unsloth/Llama-3.2-1B",
                 "model_slug": "Llama-3.2-1B",
