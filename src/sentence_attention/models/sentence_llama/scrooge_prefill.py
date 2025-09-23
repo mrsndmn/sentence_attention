@@ -37,7 +37,7 @@ def full_prefill_small_kv_cache(
 
     special_embeddings_mask_kv_cache[:, last_eos_token_idx:] = 1
 
-    print("full_prefill_small_kv_cache special_embeddings_mask_kv_cache", special_embeddings_mask_kv_cache)
+    # print("full_prefill_small_kv_cache special_embeddings_mask_kv_cache", special_embeddings_mask_kv_cache)
 
     indices = torch.nonzero(special_embeddings_mask_kv_cache, as_tuple=False)
     seq_indices = indices[:, 1]  # Extract sequence dimension indices
@@ -52,7 +52,7 @@ def full_prefill_small_kv_cache(
         past_key_values.key_cache[i] = torch.index_select(past_key_values.key_cache[i], dim=-2, index=seq_indices)
         past_key_values.value_cache[i] = torch.index_select(past_key_values.value_cache[i], dim=-2, index=seq_indices)
 
-    print("past_key_values.key_cache", past_key_values.get_seq_length())
+    # print("past_key_values.key_cache", past_key_values.get_seq_length())
 
     kv_length = past_key_values.get_seq_length()
 

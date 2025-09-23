@@ -130,9 +130,11 @@ def sentence_attention_forward(
 
     # print("is_causal", is_causal)
     # import os
-    # if os.environ.get("DEBUG_SATTN", "0") == "1":
+    # if True:
     #     print("query", query.shape)
     #     print("key", key.shape)
+    #     print("value", value.shape)
+    #     print("module.num_key_value_groups", module.num_key_value_groups)
 
     attn_output = torch.nn.functional.scaled_dot_product_attention(
         query,
@@ -168,56 +170,20 @@ def sentence_attention_forward_flex(
         key = repeat_kv(key, module.num_key_value_groups)
         value = repeat_kv(value, module.num_key_value_groups)
 
-    clothest_eos_token_idx = kwargs["clothest_end_of_sentence_token_idx"]
-    attention_mask_bool = attention_mask.bool()
-    special_embeddings_mask = kwargs["special_embeddings_mask"].to(torch.bool)
+    assert isinstance(attention_mask, torch.nn.attention.flex_attention.BlockMask), "attention_mask must be a BlockMask"
 
-    # [ bs, seq_len ]
-    assert len(attention_mask_bool.shape) == 2
+    query = query.contiguous()
+    key = key.contiguous()
+    value = value.contiguous()
 
-    def score_mod(score, b, h, q_idx, kv_idx):
-        eos_token_idx = clothest_eos_token_idx[b, q_idx]
-
-        causal_mask = (kv_idx <= q_idx) & attention_mask_bool[b, q_idx] & attention_mask_bool[b, kv_idx]
-        eos_sync_tokens = causal_mask & special_embeddings_mask[b, kv_idx]
-        causal_triu_mask = causal_mask & (kv_idx >= eos_token_idx)
-
-        return torch.where((causal_triu_mask | eos_sync_tokens), score, -float("inf"))
-
-    debug = False
-    # debug = True
-    if debug:
-        sa_4d_causal_attention_mask = (
-            SentenceLlamaModel._prepare_4d_causal_attention_mask_with_cache_position_sentence_attention(
-                attention_mask=attention_mask,
-                sequence_length=query.shape[2],
-                target_length=key.shape[2],
-                dtype=query.dtype,
-                device=query.device,
-                cache_position=torch.arange(query.shape[2], device=query.device),
-                batch_size=query.shape[0],
-                clothest_end_of_sentence_token_idx=clothest_eos_token_idx,
-                special_embeddings_mask=special_embeddings_mask,
-                ft_with_bos_token=kwargs["ft_with_bos_token"],
-            )
-        )
-
-        result_mask = torch.nn.attention.flex_attention.create_mask(
-            score_mod, query.shape[0], query.shape[1], query.shape[2], key.shape[2], device=query.device
-        )
-        torch.set_printoptions(profile="full", linewidth=100000)
-        print(result_mask)
-
-        assert torch.all(result_mask[0, 0] == (sa_4d_causal_attention_mask[0, 0] == 0))
-
-        breakpoint()
-
+    # attn_output = torch.nn.functional.flex_attention.flex_attention(
     attn_output = compile_friendly_flex_attention(
+        # attn_output = torch.nn.attention.flex_attention.flex_attention(
         query,
         key,
         value,
-        score_mod=score_mod,
-        block_mask=None,
+        score_mod=None,
+        block_mask=attention_mask,
         enable_gqa=False,  # explicit repeat kv is already done above
         scale=scaling,
         # Last time checked on PyTorch == 2.5.1: Flex Attention always computes the lse regardless.
@@ -290,6 +256,14 @@ class SentenceLlamaAttention(nn.Module):
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
+        # if self.layer_idx == 0:
+        #     print("cache_position", cache_position[:3], cache_position[-3:])
+        #     print("query_states", query_states.shape)
+        #     print("key_states", key_states.shape)
+        #     print("value_states", value_states.shape)
+        #     print("attention_mask", attention_mask.shape)
+        #     # breakpoint()
+
         attention_interface: Callable = eager_attention_forward
 
         # assert self.config._attn_implementation == 'sentence_attention', f"self.config._attn_implementation os not sentence_attention: {self.config._attn_implementation}"
@@ -317,7 +291,7 @@ class SentenceLlamaAttention(nn.Module):
                 ft_with_bos_token=self.config.ft_with_bos_token,
                 **kwargs,
             )
-        else:
+        elif self.config._attn_implementation == "sentence_attention":
             attn_output, attn_weights = attention_interface(
                 self,
                 query_states,
@@ -328,6 +302,8 @@ class SentenceLlamaAttention(nn.Module):
                 scaling=self.scaling,
                 **kwargs,
             )
+        else:
+            raise ValueError(f"Invalid attention implementation: {self.config._attn_implementation}")
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
         attn_output = self.o_proj(attn_output)
@@ -538,6 +514,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         self.config._attn_implementation = "sentence_attention"
         # self.config._attn_implementation = "sentence_attention_flex"
+
         print("SentenceLlamaModel self.config._attn_implementation", self.config._attn_implementation)
 
         self.padding_idx = config.pad_token_id
@@ -818,17 +795,11 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             if isinstance(attention_mask, BlockMask):
                 return attention_mask
 
-        if self.config._attn_implementation == "sentence_attention_flex":
-            # Force 2d attention mask, not 4d
-            return attention_mask
-
         # For SDPA, when possible, we will rely on its `is_causal` argument instead of its `attn_mask` argument, in
         # order to dispatch on Flash Attention 2. This feature is not compatible with static cache, as SDPA will fail
         # to infer the attention mask.
         past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
         using_static_cache = isinstance(past_key_values, StaticCache)
-
-        # print("update causal mask: past_seen_tokens", past_seen_tokens)
 
         # When output attentions is True, sdpa implementation's forward method calls the eager implementation's forward
         if self.config._attn_implementation == "sdpa" and not using_static_cache and not output_attentions:
@@ -865,6 +836,18 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 special_embeddings_mask=special_embeddings_mask,
                 ft_with_bos_token=self.config.ft_with_bos_token,
             )
+        elif self.config._attn_implementation in ["sentence_attention_flex"]:
+            causal_mask = self._prepare_4d_causal_attention_mask_with_cache_position_sentence_attention_flex(
+                attention_mask,
+                sequence_length=sequence_length,
+                target_length=target_length,
+                dtype=dtype,
+                device=device,
+                cache_position=cache_position,
+                batch_size=input_tensor.shape[0],
+                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+                special_embeddings_mask=special_embeddings_mask,
+            )
         else:
             # In case the provided `attention` mask is 2D, we generate a causal mask here (4D).
             causal_mask = self._prepare_4d_causal_attention_mask_with_cache_position(
@@ -890,6 +873,53 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             causal_mask = AttentionMaskConverter._unmask_unattended(causal_mask, min_dtype)
 
         return causal_mask
+
+    @staticmethod
+    def _prepare_4d_causal_attention_mask_with_cache_position_sentence_attention_flex(
+        attention_mask: torch.Tensor,
+        sequence_length: int,
+        target_length: int,
+        dtype: torch.dtype,
+        device: torch.device,
+        cache_position: torch.Tensor,
+        batch_size: int,
+        clothest_end_of_sentence_token_idx: torch.Tensor,
+        special_embeddings_mask: torch.Tensor,
+    ):
+
+        attention_mask_bool = attention_mask.bool()
+        special_embeddings_mask = special_embeddings_mask.bool()
+
+        # [ bs, seq_len ]
+        assert len(attention_mask_bool.shape) == 2
+
+        def mask_mod(b, h, q_idx, kv_idx):
+            eos_token_idx = clothest_end_of_sentence_token_idx[b, q_idx]
+
+            causal_mask = (kv_idx <= q_idx) & attention_mask_bool[b, q_idx] & attention_mask_bool[b, kv_idx]
+            eos_sync_tokens = causal_mask & special_embeddings_mask[b, kv_idx]
+            causal_triu_mask = causal_mask & (kv_idx >= eos_token_idx)
+
+            return causal_triu_mask | eos_sync_tokens
+
+        batch_size = attention_mask.shape[0]
+        q_idx = sequence_length
+        kv_idx = target_length
+
+        # print("input_tensor.device", input_tensor.device)
+        block_mask = torch.nn.attention.flex_attention.create_block_mask(
+            mask_mod,
+            batch_size,
+            None,
+            q_idx,
+            kv_idx,
+            device=attention_mask.device,
+            BLOCK_SIZE=128,
+        )
+
+        print("block_mask", block_mask)
+
+        return block_mask
 
     @staticmethod
     def _prepare_4d_causal_attention_mask_with_cache_position(
@@ -1096,14 +1126,55 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         # kwargs["logits_processor"] = build_flexible_eos_logits_processors(self)
 
         input_ids = kwargs["input_ids"]
-        assert input_ids.shape[1] == 1, "input_ids should be of shape (batch_size, 1)"
+        assert input_ids.shape[0] == 1, "only batch size == 1 is supported"
 
         attention_mask = kwargs["attention_mask"]
-        special_embeddings_mask = kwargs["special_embeddings_mask"]
-        clothest_end_of_sentence_token_idx = kwargs["clothest_end_of_sentence_token_idx"]
-        past_key_values = kwargs["past_key_values"]
-        cache_position = kwargs["cache_position"]
-        max_new_tokens = kwargs["max_new_tokens"]
+
+        special_embeddings_mask = kwargs.get("special_embeddings_mask", None)
+
+        if special_embeddings_mask is None:
+            special_embeddings_mask = torch.zeros_like(attention_mask)
+            if self.config.end_of_sentence_token_ids is not None:
+                for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                    special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
+
+        clothest_end_of_sentence_token_idx = kwargs.get("clothest_end_of_sentence_token_idx", None)
+        if clothest_end_of_sentence_token_idx is None:
+            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+                special_embeddings_mask,
+                num_special_tokens=len(self.config.end_of_sentence_token_ids),
+            )
+
+        past_key_values = kwargs.get("past_key_values", None)
+        if past_key_values is None:
+            past_key_values = DynamicCache()
+
+        cache_position = kwargs.get("cache_position", None)
+        if cache_position is None:
+            assert past_key_values.get_seq_length() == 0, "cache_position must be provided if past_key_values is provided"
+            cache_position = torch.arange(0, input_ids.shape[1], device=input_ids.device)
+
+        if input_ids.shape[1] > 1 and past_key_values.get_seq_length() == 0:
+            # Prefill
+
+            from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache
+
+            scrooge_prefill_outputs = full_prefill_small_kv_cache(
+                self,
+                input_ids.clone(),
+                attention_mask.clone(),
+                special_embeddings_mask.clone(),
+                clothest_end_of_sentence_token_idx.clone(),
+            )
+
+            input_ids = scrooge_prefill_outputs["input_ids"]
+            attention_mask = scrooge_prefill_outputs["attention_mask"]
+            past_key_values = scrooge_prefill_outputs["past_key_values"]
+            cache_position = scrooge_prefill_outputs["cache_position"]
+            special_embeddings_mask = scrooge_prefill_outputs["special_embeddings_mask"]
+            clothest_end_of_sentence_token_idx = scrooge_prefill_outputs["clothest_end_of_sentence_token_idx"]
+
+        max_new_tokens = kwargs.get("max_new_tokens", 10)
         # do_sample = kwargs["do_sample"]
         assert "logits_processor" not in kwargs, "logits_processor is not supported for flexible_eos_tokens models"
 
@@ -1131,8 +1202,6 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                 current_special_embeddings_mask,
                 num_special_tokens=len(self.config.end_of_sentence_token_ids),
             )
-
-            # print("forward_cache", past_key_values.get_seq_length())
 
             model_out = self(
                 input_ids=current_input_ids,
@@ -1163,6 +1232,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             generated_tokens.append(next_token_id)
 
             current_cache_position += 1
+            # print("cache_position", current_cache_position)
 
             attention_mask_continuation.append(1)
             if next_token_id in self.config.end_of_sentence_token_ids:

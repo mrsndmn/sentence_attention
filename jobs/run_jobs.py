@@ -14,7 +14,7 @@ from mls.manager.job.utils import training_job_api_from_profile
 from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
 
 from sentence_attention.artifacts.experiments import sort_checkpoints
-from sentence_attention.integration.job import accelerate_config_by_instance_type, get_in_progress_jobs
+from sentence_attention.integration.job import get_in_progress_jobs
 
 # Defaults and constants
 REGION = "SR004"
@@ -52,7 +52,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
         number_of_eos_tokens = exp.pop("number_of_eos_tokens", 1)
 
         learning_rate = exp.pop("learning_rate", 1e-4)
-        lr_scheduler_type = exp.pop("lr_scheduler_type", "cosine")
+        lr_scheduler_type = exp.pop("lr_scheduler_type", "cosine_with_min_lr")
         max_grad_norm = exp.pop("max_grad_norm", 1)
         max_steps = exp.pop("max_steps", -1)
         assert float(max_grad_norm) > 0
@@ -103,13 +103,14 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
 
         instance_type = exp.pop("instance_type", INSTANCE_TYPE)
         num_nodes = exp.pop("num_nodes", 1)
+        fsdp = exp.pop("fsdp", False)
 
         if len(exp.keys()) > 0:
             raise ValueError(f"unknown parsms:{exp}")
 
         save_only_model = ""
 
-        accelerate_config = accelerate_config_by_instance_type(instance_type, workdir_prefix)
+        # accelerate_config = accelerate_config_by_instance_type(instance_type, workdir_prefix)
 
         seed = SEED
 
@@ -118,8 +119,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
 
         # Use required full Python interpreter path and launch accelerate as a module
 
-        if num_nodes == 1:
-            script_prefix = f"{ENV_BIN}/python {ENV_BIN}/accelerate launch " f"--config_file {accelerate_config} "
+        if fsdp:
+            script_prefix = f"bash {workdir_prefix}/jobs/prepare_multinode_accelerate_fsdp.sh"
         else:
             script_prefix = f"bash {workdir_prefix}/jobs/prepare_multinode_accelerate.sh"
 
@@ -133,7 +134,9 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
             f"--num_train_epochs {num_train_epochs} --seed {seed} "
             f"--model_type {model_type} --model_checkpoint {model_checkpoint} "
             f"--adam_beta1 {adam_beta1} --adam_beta2 {adam_beta2} {adam_epsilon} "
-            f"--lr_scheduler_type {lr_scheduler_type} --optimized_params {optimized_params} "
+            f"--lr_scheduler_type {lr_scheduler_type} "
+            '--lr_scheduler_kwargs {\\"min_lr\\":0.00002} '
+            f"--optimized_params {optimized_params} "
             f"--warmup_steps {warmup_steps} "
             f"--output_dir {output_dir_full_path} "
             f"--logging_dir {output_dir_full_path}/logs "
@@ -196,7 +199,7 @@ def run_training_experiments(
     offset_dataset_shards: int = 0,
     model_checkpoint: str = "unsloth/Meta-Llama-3.1-8B",
     select_train_dataset_items: int = 500000,
-    lr_scheduler_type: str = "constant_with_warmup",
+    lr_scheduler_type: str = "cosine_with_min_lr",
     instance_type: str = "a100.1gpu",
     num_nodes: int = 1,
     experiment_prefix_base_name: str = "adaptive_llama31_8B",
@@ -218,6 +221,7 @@ def run_training_experiments(
     job_description=None,
     flexible_eos_tokens: str = "0",
     ft_with_bos_token: str = "0",
+    fsdp: bool = False,
     **kwargs: Dict,
 ) -> None:
 
@@ -258,6 +262,7 @@ def run_training_experiments(
         "num_nodes": num_nodes,
         "flexible_eos_tokens": flexible_eos_tokens,
         "ft_with_bos_token": ft_with_bos_token,
+        "fsdp": fsdp,
     }
 
     experiments = []
@@ -311,9 +316,11 @@ def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
             model_slug = experiment.replace("sentence_", "")
             model_slug = re.sub(r"_ft_.*", "", model_slug)
 
+            current_checkpoint = os.path.join(eos_dir, experiment, last_checkpoint)
+
             all_experiments.append(
                 {
-                    "model_checkpoint": os.path.join(eos_dir, experiment, last_checkpoint),
+                    "model_checkpoint": current_checkpoint,
                     "model_slug": model_slug,
                     "number_of_eos_tokens": number_of_eos_tokens,
                     "per_device_train_batch_size": 4,
@@ -396,13 +403,14 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 
 def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
-    ngpus = 7
+    ngpus = 4
+    n_nodes = 1
     num_train_epochs = 1
     per_device_train_batch_size = 4
     save_steps = 250
     optimized_params = "only_eos_embedding"
 
-    max_steps = 300
+    max_steps = -1
 
     for number_of_eos_tokens in num_eos_tokens:
 
@@ -417,7 +425,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 local_per_device_train_batch_size = 1
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
-            gradient_accumulation_steps = math.ceil(512 / ngpus / local_per_device_train_batch_size)
+            gradient_accumulation_steps = math.ceil(4096 / ngpus / n_nodes / local_per_device_train_batch_size)
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
@@ -428,14 +436,14 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
             job_description = f"ST: {experiment_prefix_base_name}"
 
-            if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-                print(f"Experiment {experiment_prefix_base_name} is already in progress")
-                continue
+            # if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+            #     print(f"Experiment {experiment_prefix_base_name} is already in progress")
+            #     continue
 
             run_training_experiments(
                 learning_rate=0.0001,
                 model_type="sentence_pretrained_checkpoint",
-                limit_dataset_shards=1,
+                limit_dataset_shards=4,
                 number_of_eos_tokens=number_of_eos_tokens,
                 optimized_params=optimized_params,
                 weight_decay="0.01",
@@ -450,12 +458,12 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 save_steps=save_steps,
                 max_steps=max_steps,
                 instance_type=f"a100.{ngpus}gpu",
+                num_nodes=n_nodes,
                 model_checkpoint=model_checkpoint,
                 select_train_dataset_items=0,
                 adam_epsilon="1e-8",
-                warmup_steps=30,
+                warmup_steps=500,
                 dry=dry,
-                lr_scheduler_type="cosine",
                 bf16="0",
                 add_end_of_sentence_token=1,
                 experiment_prefix_base_name=experiment_prefix_base_name,
@@ -535,7 +543,6 @@ def run_group_full(
             adam_epsilon="1e-8",
             warmup_steps=100,
             dry=dry,
-            lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
             experiment_prefix_base_name=experiment_prefix_base_name,
@@ -554,14 +561,57 @@ def run_group_full_4k(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
 ) -> None:
+    # ngpus = 8
+    # num_nodes = 3
     ngpus = 8
-    num_nodes = 5
+    num_nodes = 1
+
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "full"
     max_grad_norm = "2.0"
 
-    for exp_config in _eos_tuned_checkpoints():
+    default_limit_shards = 10
+
+    all_experiments = []
+    all_experiments.extend(
+        [
+            {
+                "model_checkpoint": "unsloth/Llama-3.2-1B",
+                "model_slug": "Llama-3.2-1B",
+                "number_of_eos_tokens": 8,
+                "per_device_train_batch_size": 1,
+                "limit_dataset_shards": 15,
+            },
+            # {
+            #     "model_checkpoint": "unsloth/Llama-3.2-1B",
+            #     "model_slug": "Llama-3.2-1B",
+            #     "number_of_eos_tokens": 16,
+            #     "per_device_train_batch_size": 1,
+            #     "limit_dataset_shards": 15,
+            # },
+            {
+                "model_checkpoint": "unsloth/Llama-3.2-1B",
+                "model_slug": "Llama-3.2-1B",
+                "number_of_eos_tokens": 4,
+                "per_device_train_batch_size": 1,
+                "limit_dataset_shards": 4,
+            },
+            {
+                "model_checkpoint": "unsloth/Meta-Llama-3.1-8B",
+                "model_slug": "Llama-3.1-8B",
+                "number_of_eos_tokens": 4,
+                "per_device_train_batch_size": 1,
+                "limit_dataset_shards": 4,
+                # "torch_compile": "0",
+                "fsdp": True,
+                "save_steps": 500,
+            },
+        ]
+    )
+
+    for exp_config in all_experiments:
+        # for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
         model_checkpoint = exp_config["model_checkpoint"]
         model_slug = exp_config["model_slug"]
@@ -571,6 +621,18 @@ def run_group_full_4k(
             per_device_train_batch_size = 1
 
         number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        local_limit_shards = exp_config.get("limit_dataset_shards", default_limit_shards)
+
+        extra_kwargs = {}
+        fsdp = exp_config.get("fsdp", None)
+        if fsdp is not None:
+            extra_kwargs["fsdp"] = fsdp
+        torch_compile = exp_config.get("torch_compile", None)
+        if torch_compile is not None:
+            extra_kwargs["torch_compile"] = torch_compile
+
+        local_save_steps = exp_config.get("save_steps", save_steps)
 
         if model is not None and model.lower() not in model_checkpoint.lower():
             continue
@@ -587,9 +649,9 @@ def run_group_full_4k(
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
 
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
-            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
-            continue
+        # if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+        #     print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
+        #     continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
         gradient_accumulation_steps = math.ceil(512 / ngpus / num_nodes / per_device_train_batch_size)
@@ -597,15 +659,15 @@ def run_group_full_4k(
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
 
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-            print(f"Experiment {experiment_prefix_base_name} is already in progress")
-            continue
+        # if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+        #     print(f"Experiment {experiment_prefix_base_name} is already in progress")
+        #     continue
 
         run_training_experiments(
             learning_rate=0.00005,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
-            limit_dataset_shards=10,
+            limit_dataset_shards=local_limit_shards,
             offset_dataset_shards=0,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
@@ -618,7 +680,7 @@ def run_group_full_4k(
             num_train_epochs=num_train_epochs,
             max_grad_norm=max_grad_norm,
             save_total_limit=100,
-            save_steps=save_steps,
+            save_steps=local_save_steps,
             instance_type=f"a100.{ngpus}gpu",
             num_nodes=num_nodes,
             model_checkpoint=model_checkpoint,
@@ -626,13 +688,13 @@ def run_group_full_4k(
             adam_epsilon="1e-8",
             warmup_steps=1000,
             dry=dry,
-            lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
             experiment_prefix_base_name=experiment_prefix_base_name,
             job_description=job_description,
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
             ft_with_bos_token="1" if ft_with_bos_token else "0",
+            **extra_kwargs,
         )
 
 
@@ -645,7 +707,9 @@ def run_group_full_4k_distill_from_4eos_tokens(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
 ) -> None:
+
     ngpus = 8
+    num_nodes = 4
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "full"
@@ -699,8 +763,8 @@ def run_group_full_4k_distill_from_4eos_tokens(
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
 
-        # gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(512 / ngpus / per_device_train_batch_size)
+        # gradient_accumulation_steps = math.ceil(4096 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(512 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -713,7 +777,7 @@ def run_group_full_4k_distill_from_4eos_tokens(
             learning_rate=0.00005,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
-            limit_dataset_shards=1,
+            limit_dataset_shards=10,
             offset_dataset_shards=0,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
@@ -728,12 +792,12 @@ def run_group_full_4k_distill_from_4eos_tokens(
             save_total_limit=100,
             save_steps=save_steps,
             instance_type=f"a100.{ngpus}gpu",
+            num_nodes=num_nodes,
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=100,
+            warmup_steps=1000,
             dry=dry,
-            lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
             experiment_prefix_base_name=experiment_prefix_base_name,
@@ -804,7 +868,6 @@ def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
             adam_epsilon="1e-8",
             warmup_steps=100,
             dry=dry,
-            lr_scheduler_type="cosine",
             bf16="0",
             add_end_of_sentence_token=1,
             experiment_prefix_base_name=experiment_prefix_base_name,

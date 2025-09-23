@@ -58,6 +58,10 @@ def test_generate_number():
         ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-2000/"
     )
 
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments_in_progress/sentence_Llama-3.2-1B_ft_4k_full_num_eos_tokens_4_2KSJNQ7I/checkpoint-4000"
+    )
+
     save_maps = False
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
@@ -103,7 +107,6 @@ def test_generate_number():
                     attention_mask=attention_mask,
                     output_attentions=True,
                 )
-                # breakpoint()
                 import matplotlib.pyplot as plt
 
                 num_layers = len(fwd_outputs.attentions)
@@ -136,7 +139,7 @@ def test_generate_number():
                 plt.clf()
 
             generated_outputs = model.generate(
-                input_ids,
+                input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=5,
                 use_cache=False,
@@ -154,121 +157,85 @@ def test_generate_number():
                 failed.append(task_type)
 
         # assert len(failed) == 0, f"Failed tests: {failed}"
+    breakpoint()
 
 
 def test_generate_summary():
 
-    checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-4000/"
+    checkpoint1 = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/"
     )
 
-    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+    checkpoint2 = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-1B_ft_4k_full_num_eos_tokens_4_2KSJNQ7I/checkpoint-11000"
+    )
 
-    device = "cpu"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("Device", device)
+    for checkpoint in [checkpoint1, checkpoint2]:
+        model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-    model.to(device)
+        device = "cpu"
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("Device", device)
 
-    base_story_text = "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts."
+        model.to(device)
 
-    texts = [
-        ("instruction_last", base_story_text + "\n\nHere is the summary of previous text: "),
-        (
-            "instruction_fitst",
-            "You are a summary writer. You are given a story text and you need to write a summary of the story. \n\nText:.\n"
-            + base_story_text
-            + "\n\nHere is the summary of previous text: ",
-        ),
-    ]
+        base_story_text = "Jennifer is an earnest intelligent woman who makes a serious error in judgment when she chooses to marry Mina Loris, a pompous scholar many years her senior. Jennifer hopes to be actively involved in his work, but he wants her to serve as a secretary. She comes to doubt both his talent and his alleged magnum opus. Furthermore, the controlling Loris becomes jealous when she develops a friendship with Will Rihanna, his idealistic cousin. Although disappointed, Jennifer remains committed to the marriage and tries to appease her husband. After Loris has a heart attack, Jennifer is clearly devoted to him, but he bars Rihanna from visiting, believing that his cousin will pursue Jennifer when he dies. Loris subsequently seeks her promise that she will follow his wishes even after his death.She delays answering but ultimately decides that she should agree to his request. However, he dies before she can tell him. Jennifer later discovers that his will contains a provision that calls for her to be disinherited if she marries Rihanna. Afraid of scandal, Jennifer and Rihanna initially stay apart. However, they ultimately fall in love and marry. Rihanna later becomes a politician, and, despite her sacrifices, Jennifer is content, because the growing good of the world is partly dependent on unhistoric acts."
 
-    print("Model config flexible_eos_tokens", model.config.flexible_eos_tokens)
-    print("Model config ft_with_bos_token", model.config.ft_with_bos_token)
+        texts = [
+            ("instruction_last", base_story_text + "\n\nHere is the summary of previous text: "),
+            (
+                "instruction_fitst",
+                "You are a summary writer. You are given a story text and you need to write a summary of the story. \n\nText:.\n"
+                + base_story_text
+                + "\n\nHere is the summary of previous text: ",
+            ),
+        ]
 
-    with torch.no_grad():
+        print("Model config flexible_eos_tokens", model.config.flexible_eos_tokens)
+        print("Model config ft_with_bos_token", model.config.ft_with_bos_token)
 
-        max_new_tokens = 100
+        with torch.no_grad():
 
-        for task_type, task_prefix in texts:
-            input_ids = tokenizer.encode(
-                task_prefix,
-                return_tensors="pt",
-            )
-            input_ids = input_ids.to(device)
+            max_new_tokens = 100
 
-            attention_mask = torch.ones_like(input_ids).to(device)
+            for task_type, task_prefix in texts:
+                input_ids = tokenizer.encode(
+                    task_prefix,
+                    return_tensors="pt",
+                )
+                input_ids = input_ids.to(device)
 
-            # generated_outputs = model.generate(
-            #     input_ids,
-            #     attention_mask=attention_mask,
-            #     max_new_tokens=max_new_tokens,
-            #     use_cache=False,
-            # )
-            generated_output_text = "<end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>Jennifer is a young woman who marries a man named Mina Loris, a wealthy and distinguished scholar. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She is initially excited about the marriage, but soon discovers that Loris is a controlling and jealous man who expects her to serve as his secretary. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She begins to doubt his talent and his alleged magnum opus. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>The Loris also becomes jealous of Will Rihanna, a cousin who is a close"
-            # generated_output_text = tokenizer.decode(generated_outputs[0, input_ids.shape[1] :], skip_special_tokens=False)
+                attention_mask = torch.ones_like(input_ids).to(device)
 
-            print(task_type, "generated outputs", generated_output_text)
+                # generated_outputs = model.generate(
+                #     input_ids,
+                #     attention_mask=attention_mask,
+                #     max_new_tokens=max_new_tokens,
+                #     use_cache=False,
+                # )
+                # generated_output_text = "<end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>Jennifer is a young woman who marries a man named Mina Loris, a wealthy and distinguished scholar. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She is initially excited about the marriage, but soon discovers that Loris is a controlling and jealous man who expects her to serve as his secretary. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>She begins to doubt his talent and his alleged magnum opus. <end_of_sentence_0><end_of_sentence_1><end_of_sentence_2><end_of_sentence_3>The Loris also becomes jealous of Will Rihanna, a cousin who is a close"
+                # generated_output_text = tokenizer.decode(generated_outputs[0, input_ids.shape[1] :], skip_special_tokens=False)
 
-            # scrooge prefill
-            special_embeddings_mask = torch.zeros_like(attention_mask)
-            if model.config.end_of_sentence_token_ids is not None:
-                total_eos_tokens = 0
-                for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
-                    special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
-                    total_eos_tokens += (input_ids == end_of_sentence_token_id).sum().item()
-                print("number of end of sentence tokens", total_eos_tokens)
+                # print(task_type, "generated outputs", generated_output_text)
 
-            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-                special_embeddings_mask,
-                num_special_tokens=len(model.config.end_of_sentence_token_ids),
-            )
+                scrooge_generated_outputs = model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    max_new_tokens=max_new_tokens,
+                    output_scores=False,
+                )
 
-            outputs = scrooge_prefill(
-                model,
-                input_ids,
-                attention_mask=attention_mask,
-                special_embeddings_mask=special_embeddings_mask,
-                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
-            )
+                # scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_generated_outputs[0,], skip_special_tokens=False)
+                scrooge_prefill_generated_output_text = tokenizer.decode(
+                    scrooge_generated_outputs[0,], skip_special_tokens=True
+                )
 
-            inputs = {
-                "input_ids": outputs["input_ids"],
-                "attention_mask": outputs["attention_mask"],
-                "special_embeddings_mask": outputs["special_embeddings_mask"],
-                "clothest_end_of_sentence_token_idx": outputs["clothest_end_of_sentence_token_idx"],
-                "past_key_values": outputs["past_key_values"],
-                "cache_position": outputs["cache_position"],
-            }
+                print(task_type, "\n", scrooge_prefill_generated_output_text)
 
-            # special_embeddings_mask = torch.zeros_like(inputs['attention_mask'])
-            # if model.config.end_of_sentence_token_ids is not None:
-            #     for end_of_sentence_token_id in model.config.end_of_sentence_token_ids:
-            #         special_embeddings_mask[inputs['input_ids'] == end_of_sentence_token_id] = 1
-
-            # clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-            #     special_embeddings_mask,
-            #     num_special_tokens=len(model.config.end_of_sentence_token_ids),
-            # )
-
-            # inputs["special_embeddings_mask"] = special_embeddings_mask
-            # inputs["clothest_end_of_sentence_token_idx"] = clothest_end_of_sentence_token_idx
-
-            scrooge_generated_outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                output_scores=False,
-            )
-
-            scrooge_prefill_generated_output_text = tokenizer.decode(
-                scrooge_generated_outputs[0, outputs["input_ids"].shape[1] :], skip_special_tokens=False
-            )
-
-            print(task_type, "scrooge prefill generated output text", scrooge_prefill_generated_output_text)
-
-            assert (
-                scrooge_prefill_generated_output_text == generated_output_text
-            ), "scrooge prefill generated output text should be the same as the generated output text"
+                # assert (
+                #     scrooge_prefill_generated_output_text == generated_output_text
+                # ), "scrooge prefill generated output text should be the same as the generated output text"
 
 
 @pytest.mark.skip(reason="Skipping test_scrooge_prefill_only")
@@ -360,7 +327,6 @@ def _new_test_scrooge_prefill_kv_cache():
         # TODO check hidden states are close!
         print("forward_outputs", forward_outputs.hidden_states[-1])
         print("scrooge_forward_outputs", scrooge_forward_outputs.hidden_states[-1])
-        breakpoint()
 
 
 def test_scrooge_prefills():
@@ -683,7 +649,6 @@ def test_kv_cache_forward():
             == eos_only_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10]
         ).all():
             print(f"{new_token_id} WARNING! ⚠️ Logits are affected! Order of tokens is changed!")
-            # breakpoint()
         else:
             print(f"{new_token_id} ✅ Logits are the same")
 

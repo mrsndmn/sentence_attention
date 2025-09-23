@@ -66,9 +66,12 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
         print("model_class", model_class)
         model = model_class.from_pretrained(model_checkpoint, torch_dtype=torch_dtype)
 
-        model.config._attn_implementation = "sentence_attention"
     else:
         raise ValueError(f"{training_args.model_type} is not supported")
+
+    model.config._attn_implementation = training_args.sentence_attention_implementation
+
+    print("model.config._attn_implementation", model.config._attn_implementation)
 
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token

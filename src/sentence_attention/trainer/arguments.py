@@ -37,6 +37,9 @@ class SentenceTrainingArguments(TrainingArguments):
     weight_decay: float = field(default=0.01)
     eval_strategy: str = field(default="steps")
     eval_steps: int = field(default=10000)
+
+    sentence_attention_implementation: str = field(default="sentence_attention")  # sentence_attention | sentence_attention_flex
+
     save_strategy: str = field(default="steps")
     save_steps: int = field(default=10000)
     save_total_limit: Optional[int] = field(default=3)
