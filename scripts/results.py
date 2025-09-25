@@ -174,6 +174,7 @@ def prettify_experiment_name(experiment_name: str) -> str:
         .replace("ft_bos_token_full_", "")
         .replace("ft_flexible_eos_tokens_full_", "")
         .replace("sentence_", "")
+        .replace("_5V455ZHK", "")
     )
 
     if normalized_name[-9] == "_":
