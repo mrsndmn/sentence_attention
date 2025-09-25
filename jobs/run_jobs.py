@@ -397,6 +397,8 @@ def check_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eo
 
     matches = glob.glob(experiment_prefix_base_name_full + "*")
 
+    matches = [match for match in matches if ".old1.3ksteps" not in match]
+
     if len(matches) == 1:
         if matches[0].startswith(experiment_prefix_base_name_full):
             return True
@@ -819,7 +821,7 @@ def main() -> None:
     parser = _cli()
     args = parser.parse_args()
 
-    num_eos_tokens = [1, 2, 4] if args.num_eos_tokens is None else [args.num_eos_tokens]
+    num_eos_tokens = [1, 2, 4, 8] if args.num_eos_tokens is None else [args.num_eos_tokens]
 
     if args.wait is not None:
         job_id = args.wait
