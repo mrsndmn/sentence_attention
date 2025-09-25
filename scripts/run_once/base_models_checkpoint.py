@@ -11,7 +11,7 @@ if __name__ == "__main__":
         "unsloth/Llama-3.2-3B",
         "Qwen/Qwen2.5-3B",
         "Qwen/Qwen2.5-1.5B",
-        "unsloth/llama-3-8b",
+        "unsloth/Meta-Llama-3.1-8B",
     ]
 
     for model_name in models_names:
