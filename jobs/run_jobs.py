@@ -289,16 +289,16 @@ def _models_for_eos_only() -> List[str]:
             "model_checkpoint": "unsloth/Llama-3.2-3B",
         },
         {
-            "model_checkpoint": "Qwen/Qwen2.5-1.5B",
-        },
-        {"model_checkpoint": "Qwen/Qwen2.5-3B", "per_device_train_batch_size": 1},
-        {
-            # "model_checkpoint": "unsloth/Meta-Llama-3.1-8B",
-            "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments_in_progress/sentence_Meta-Llama-3.1-8B_ft_only_eos_embedding_num_eos_tokens_4_CZO3YUYH/checkpoint-100/",
+            "model_checkpoint": "unsloth/Meta-Llama-3.1-8B",
+            # "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments_in_progress/sentence_Meta-Llama-3.1-8B_ft_only_eos_embedding_num_eos_tokens_4_CZO3YUYH/checkpoint-100/",
             "gradient_checkpointing": "0",
             "torch_compile": "1",
             "per_device_train_batch_size": 1,
         },
+        {
+            "model_checkpoint": "Qwen/Qwen2.5-1.5B",
+        },
+        {"model_checkpoint": "Qwen/Qwen2.5-3B", "per_device_train_batch_size": 1},
     ]
 
 
@@ -418,12 +418,12 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
     ngpus = 8
-    n_nodes = 6
+    n_nodes = 2
     num_train_epochs = 1
-    per_device_train_batch_size = 4
-    save_steps = 100
+    per_device_train_batch_size = 1
+    save_steps = 1000
     optimized_params = "only_eos_embedding"
-    limit_dataset_shards = 2
+    limit_dataset_shards = 1
     # lr_scheduler_type = "constant"
 
     max_steps = -1
@@ -449,7 +449,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             # TODO check sucessful experiment has already been processed
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
-            gradient_accumulation_steps = math.ceil(1024 / ngpus / n_nodes / local_per_device_train_batch_size)
+            gradient_accumulation_steps = math.ceil(64 / ngpus / n_nodes / local_per_device_train_batch_size)
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
@@ -486,7 +486,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 model_checkpoint=model_checkpoint,
                 select_train_dataset_items=0,
                 adam_epsilon="1e-8",
-                warmup_steps=10,
+                warmup_steps=100,
                 dry=dry,
                 bf16="0",
                 add_end_of_sentence_token=1,
@@ -505,8 +505,8 @@ def run_group_full_4k(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
 ) -> None:
-    ngpus = 4
-    num_nodes = 14
+    ngpus = 8
+    num_nodes = 2
 
     num_train_epochs = 1
     save_steps = 200
@@ -577,7 +577,7 @@ def run_group_full_4k(
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
             limit_dataset_shards=local_limit_shards,
-            offset_dataset_shards=4,
+            offset_dataset_shards=2,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
             weight_decay="0.01",

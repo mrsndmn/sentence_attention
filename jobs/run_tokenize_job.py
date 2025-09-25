@@ -19,9 +19,7 @@ if __name__ == "__main__":
     num_processing_shards = 50
 
     for seq_length in [4096]:
-        # for num_eos_tokens in [1, 2, 4]:
-        # for num_eos_tokens in [1]:
-        for num_eos_tokens in [1, 2, 4, 16]:
+        for num_eos_tokens in [1, 2, 4, 8, 16]:
 
             for shard_index in range(15):
                 # for pretrained_model_name in ["unsloth/llama-3-8b", "Qwen/Qwen2.5-1.5B"]:
@@ -38,7 +36,7 @@ if __name__ == "__main__":
                     result = client.run_job(
                         payload={
                             "script": script,
-                            "job_desc": f"Tokenize fineweb EOS model={pretrained_model_name} num_eos_tokens={num_eos_tokens} seq_length={seq_length} #{author_name} #rnd #multimodal #notify_completed @mrsndmn",
+                            "job_desc": f"Tokenize fineweb EOS model={pretrained_model_name} num_eos_tokens={num_eos_tokens} seq_length={seq_length} shard_index={shard_index} #{author_name} #rnd #multimodal #notify_completed @mrsndmn",
                             "instance_type": "a100.1gpu",
                             "region": extra_options["region"],
                             "env_variables": {

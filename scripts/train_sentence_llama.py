@@ -58,7 +58,6 @@ if __name__ == "__main__":
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
                 elif "qwen2" in training_args.model_checkpoint.lower():
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
-                    dataset_shards_limit *= 2
                     print("Increase dataset shards for Qwen2.5-1.5B to", dataset_shards_limit)
                 elif "smollm2" in training_args.model_checkpoint.lower():
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
@@ -71,7 +70,7 @@ if __name__ == "__main__":
             print("Loading dataset from", dataset_path)
             fineweb_dataset = Dataset.load_from_disk(dataset_path)
 
-            TOTAL_SHARDS = 14  # CONSTANT
+            TOTAL_SHARDS = 50  # CONSTANT
             dataset_shards = []
 
             for i in range(TOTAL_SHARDS):
@@ -82,6 +81,8 @@ if __name__ == "__main__":
 
             print(f"loaded {len(dataset_shards)} shards")
             fineweb_dataset = datasets.concatenate_datasets(dataset_shards)
+
+            print("dataset len", len(fineweb_dataset))
 
         else:
             data_files = []
