@@ -16,14 +16,14 @@ if __name__ == "__main__":
     # for num_eos_tokens in [ 1, 4, 8, 16 ]:
     # for seq_length in [1024, 4096]:
 
-    num_processing_shards = 40
+    num_processing_shards = 50
 
     for seq_length in [4096]:
         # for num_eos_tokens in [1, 2, 4]:
         # for num_eos_tokens in [1]:
-        for num_eos_tokens in [16]:
+        for num_eos_tokens in [1, 2, 4, 16]:
 
-            for shard_index in range(num_processing_shards // 4):
+            for shard_index in range(15):
                 # for pretrained_model_name in ["unsloth/llama-3-8b", "Qwen/Qwen2.5-1.5B"]:
                 # for pretrained_model_name in ["unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
                 for pretrained_model_name in ["unsloth/Llama-3.2-1B"]:

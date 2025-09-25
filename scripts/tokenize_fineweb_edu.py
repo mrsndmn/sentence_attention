@@ -94,6 +94,8 @@ if __name__ == "__main__":
     # Only half of data!
     dataset = dataset.shard(num_shards=args.num_shards, index=args.shard_index)
 
+    print("shard len", len(dataset))
+
     dataset = dataset.map(process_dataset_item, num_proc=num_proc, remove_columns=columns_to_remove)
 
     dataset.save_to_disk(target_dir)
