@@ -17,13 +17,12 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
-    assert args.checkpoint_directory.endswith(
-        "/pytorch_model_fsdp_0"
-    ), "Checkpoint directory must end with /pytorch_model_fsdp_0"
-
     checkpoint_directory = args.checkpoint_directory
     initial_model_checkpoint = args.initial_model_checkpoint
+
+    checkpoint_directory = checkpoint_directory.removesuffix("/")
+
+    assert checkpoint_directory.endswith("/pytorch_model_fsdp_0"), "Checkpoint directory must end with /pytorch_model_fsdp_0"
 
     # out dir is renamed from pytorch_model_fsdp_0 to pytorch_model_merged
     # so we need to rename the out dir to pytorch_model_fsdp_0
