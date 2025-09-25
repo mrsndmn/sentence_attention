@@ -8,10 +8,9 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
-from tabulate import tabulate
-
 from sentence_attention.artifacts.experiments import get_all_checkpoints, get_all_last_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks, long_benchmarks, short_benchmarks
+from tabulate import tabulate
 
 
 def infer_model_family(experiment_name: str) -> str:
@@ -175,6 +174,7 @@ def prettify_experiment_name(experiment_name: str) -> str:
         .replace("ft_flexible_eos_tokens_full_", "")
         .replace("sentence_", "")
         .replace("_5V455ZHK", "")
+        .replace("_62XMQ139", "")
     )
 
     if normalized_name[-9] == "_":

@@ -11,10 +11,9 @@ from typing import Any, Dict, List
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
-from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
-
 from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.integration.job import get_in_progress_jobs
+from transformers.models.llama.extra_types import AVAILABLE_OPTIMIZED_PARAMS
 
 # Defaults and constants
 REGION = "SR004"
@@ -155,6 +154,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
             f"--flexible_eos_tokens {flexible_eos_tokens} "
             f"--ft_with_bos_token {ft_with_bos_token} "
             f"--max_steps {max_steps} "
+            f"--dataloader_num_workers 4 "
         )
 
         print(f"\n\n{script_str}\n\n")
@@ -397,7 +397,7 @@ def check_checkpoint_model_exists(experiment_prefix_base_name: str, number_of_eo
 
     matches = glob.glob(experiment_prefix_base_name_full + "*")
 
-    matches = [match for match in matches if ".old1.3ksteps" not in match]
+    matches = [match for match in matches if ".old" not in match]
 
     if len(matches) == 1:
         if matches[0].startswith(experiment_prefix_base_name_full):
@@ -513,11 +513,11 @@ def run_group_full_4k(
     num_nodes = 4
 
     num_train_epochs = 1
-    save_steps = 200
+    save_steps = 1000
     optimized_params = "full"
     max_grad_norm = "2.0"
 
-    default_limit_shards = 4
+    default_limit_shards = 20
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -567,7 +567,7 @@ def run_group_full_4k(
             continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(512 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -577,7 +577,7 @@ def run_group_full_4k(
             continue
 
         run_training_experiments(
-            learning_rate=0.00005,
+            learning_rate=0.0001,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
             limit_dataset_shards=local_limit_shards,
@@ -599,7 +599,7 @@ def run_group_full_4k(
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=100,
+            warmup_steps=1000,
             dry=dry,
             bf16="0",
             add_end_of_sentence_token=1,
