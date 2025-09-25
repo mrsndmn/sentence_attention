@@ -36,7 +36,9 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
 
         output_dir = exp.pop("output_dir")
 
-        output_dir += f"_{''.join(random.choices(string.ascii_uppercase + string.digits, k=8))}"
+        random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+        output_dir += f"_{random_suffix}"
 
         output_dir_full_path = os.path.join(workdir_prefix, "artifacts", "experiments_in_progress", output_dir)
 
@@ -165,7 +167,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
             instance_type=instance_type,
             n_workers=num_nodes,
             processes_per_worker=1,
-            job_desc=f"{job_description} #rnd #multimodality #tarasov #notify_completed @mrsndmn",
+            job_desc=f"{job_description} {random_suffix} #rnd #multimodality #tarasov #notify_completed @mrsndmn",
             # stop_timer=600, # в минутах, = 10 часов
             env_variables={
                 "PATH": "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin:/home/user/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin",
@@ -311,7 +313,7 @@ def _eos_tuned_checkpoints() -> List[Dict[str, Any]]:
     """
     all_experiments: List[Dict[str, Any]] = []
 
-    for number_of_eos_tokens in [1, 2, 4]:
+    for number_of_eos_tokens in [1, 2, 4, 8]:
         eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
 
         if not os.path.exists(eos_dir):
@@ -417,8 +419,8 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 
 def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
-    ngpus = 8
-    n_nodes = 2
+    ngpus = 4
+    n_nodes = 4
     num_train_epochs = 1
     per_device_train_batch_size = 1
     save_steps = 1000
@@ -505,15 +507,15 @@ def run_group_full_4k(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
 ) -> None:
-    ngpus = 8
-    num_nodes = 2
+    ngpus = 4
+    num_nodes = 4
 
     num_train_epochs = 1
     save_steps = 200
     optimized_params = "full"
     max_grad_norm = "2.0"
 
-    default_limit_shards = 2
+    default_limit_shards = 4
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -563,7 +565,7 @@ def run_group_full_4k(
             continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(512 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -577,7 +579,7 @@ def run_group_full_4k(
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
             limit_dataset_shards=local_limit_shards,
-            offset_dataset_shards=2,
+            offset_dataset_shards=1,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
             weight_decay="0.01",
@@ -595,7 +597,7 @@ def run_group_full_4k(
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=200,
+            warmup_steps=100,
             dry=dry,
             bf16="0",
             add_end_of_sentence_token=1,
