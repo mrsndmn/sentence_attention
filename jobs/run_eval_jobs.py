@@ -23,7 +23,7 @@ N_WORKERS = 1
 BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 # BASE_IMAGE = "cr.ai.cloud.ru/f51af5b1-d43b-4db4-938d-569d7cfffb7a/cuda12.1-torch2-py310-adaptive_attention:0.0.3"
 
-JOB_DESCRIPTION_SUFFIX = "#rnd #multimodality @mrsndmn"
+JOB_DESCRIPTION_SUFFIX = "#rnd #multimodality #tarasov @mrsndmn"
 
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
