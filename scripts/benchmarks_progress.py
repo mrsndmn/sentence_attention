@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
+from sentence_attention.evaluation.benchmarks import long_benchmarks
 
 
 def extract_checkpoint_step(checkpoint_dir_name: str) -> int:
@@ -15,7 +16,41 @@ def extract_checkpoint_step(checkpoint_dir_name: str) -> int:
         return -1
 
 
+def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
+    eval_file = os.path.join(checkpoint_path, "helmet_eval", task_name, "*.score")
+
+    score_files = glob.glob(eval_file)
+
+    # if 'Llama-3.2-3B' in checkpoint_path:
+    #     print("Llama-3.2-3B", checkpoint_path, task_name)
+    #     print("score_files", score_files)
+    #     breakpoint()
+
+    if len(score_files) == 0:
+        return ""
+
+    assert len(score_files) == 1, f"Multiple score files found for {checkpoint_path} {task_name}"
+    score_file = score_files[0]
+
+    task_metric = {
+        "recall": "ruler_recall",
+        "rerank": "NDCG@10",
+        "cite": "rougeLsum",
+        "longqa": "rougeL_recall",
+        "summ": "rougeL_recall",
+        "icl": "exact_match",
+    }[task_name]
+
+    with open(score_file) as f:
+        data = json.load(f)
+    return data[task_metric]
+
+
 def read_benchmark_metric(checkpoint_path: str, task_name: str, preferred_order: Sequence[str]) -> Optional[float]:
+
+    if task_name in long_benchmarks:
+        return read_long_benchmark_metric(checkpoint_path, task_name)
+
     eval_file = os.path.join(checkpoint_path, "evaluation", f"{task_name}.json")
     if not os.path.exists(eval_file):
         return None
@@ -161,6 +196,7 @@ def main() -> None:
     args = parse_args()
 
     short_benchmarks = ["mmlu_cloze", "hellaswag", "arc", "winogrande"]
+    long_benchmarks = ["recall", "rerank", "cite", "longqa", "summ", "icl"]
 
     metric_preference = [k.strip() for k in args.metric_keys.split(",") if k.strip()]
 
@@ -168,6 +204,8 @@ def main() -> None:
         benchmarks: List[str] = []
     elif args.benchmarks == "short":
         benchmarks = short_benchmarks
+    elif args.benchmarks == "long":
+        benchmarks = long_benchmarks
     else:
         benchmarks = [b.strip() for b in args.benchmarks.split(",") if b.strip()]
 

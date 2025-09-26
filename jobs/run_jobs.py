@@ -125,6 +125,10 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
         else:
             script_prefix = f"bash {workdir_prefix}/jobs/prepare_multinode_accelerate.sh"
 
+        lr_scheduler_kwargs = ""
+        if lr_scheduler_type == "cosine_with_min_lr":
+            lr_scheduler_kwargs = ' --lr_scheduler_kwargs {\\"min_lr\\":0.00002} '
+
         script_str = (
             f"{script_prefix} "
             f"{workdir_prefix}/scripts/train_sentence_llama.py "
@@ -136,7 +140,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
             f"--model_type {model_type} --model_checkpoint {model_checkpoint} "
             f"--adam_beta1 {adam_beta1} --adam_beta2 {adam_beta2} {adam_epsilon} "
             f"--lr_scheduler_type {lr_scheduler_type} "
-            '--lr_scheduler_kwargs {\\"min_lr\\":0.00002} '
+            f" {lr_scheduler_kwargs} "
             f"--optimized_params {optimized_params} "
             f"--warmup_steps {warmup_steps} "
             f"--output_dir {output_dir_full_path} "
@@ -509,15 +513,16 @@ def run_group_full_4k(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
 ) -> None:
-    ngpus = 4
-    num_nodes = 4
+    ngpus = 8
+    num_nodes = 1
 
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "full"
     max_grad_norm = "2.0"
+    lr_scheduler_type = "constant_with_warmup"
 
-    default_limit_shards = 20
+    default_limit_shards = 30
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -562,9 +567,9 @@ def run_group_full_4k(
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
 
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
-            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
-            continue
+        # if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+        #     print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
+        #     continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
         gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
@@ -572,12 +577,13 @@ def run_group_full_4k(
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
 
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-            print(f"Experiment {experiment_prefix_base_name} is already in progress")
-            continue
+        # if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+        #     print(f"Experiment {experiment_prefix_base_name} is already in progress")
+        #     continue
 
         run_training_experiments(
-            learning_rate=0.0001,
+            learning_rate=0.00003,
+            lr_scheduler_type=lr_scheduler_type,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
             limit_dataset_shards=local_limit_shards,
@@ -599,7 +605,7 @@ def run_group_full_4k(
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=1000,
+            warmup_steps=500,
             dry=dry,
             bf16="0",
             add_end_of_sentence_token=1,
