@@ -405,7 +405,7 @@ if __name__ == "__main__":
     if args.run_for_in_progress_jobs:
         experiments_dirs = os.listdir(experiments_dir)
 
-        evaluate_benchmarks(
+        result = evaluate_benchmarks(
             base_path=experiments_dir,
             experiments_dirs=experiments_dirs,
             benchmarks=benchmarks,
@@ -419,6 +419,7 @@ if __name__ == "__main__":
             in_progress_jobs_descriptions=in_progress_jobs_descriptions,
         )
 
+        processed_models += result["processed_models"]
     else:
         for eos_num in os.listdir(experiments_dir):
             if stop:
