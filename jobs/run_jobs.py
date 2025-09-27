@@ -426,12 +426,12 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
     ngpus = 4
-    n_nodes = 10
+    n_nodes = 4
     num_train_epochs = 1
     per_device_train_batch_size = 1
     save_steps = 1000
     optimized_params = "only_eos_embedding"
-    limit_dataset_shards = 10
+    limit_dataset_shards = 1
     # lr_scheduler_type = "constant"
 
     max_steps = -1
@@ -457,7 +457,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
             # TODO check sucessful experiment has already been processed
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
-            gradient_accumulation_steps = math.ceil(64 / ngpus / n_nodes / local_per_device_train_batch_size)
+            gradient_accumulation_steps = math.ceil(128 / ngpus / n_nodes / local_per_device_train_batch_size)
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
