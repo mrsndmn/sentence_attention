@@ -43,7 +43,7 @@ def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 
     with open(score_file) as f:
         data = json.load(f)
-    return data[task_metric]
+    return round(data[task_metric], 2)
 
 
 def read_benchmark_metric(checkpoint_path: str, task_name: str, preferred_order: Sequence[str]) -> Optional[float]:
