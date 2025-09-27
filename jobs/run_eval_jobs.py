@@ -6,7 +6,6 @@ import time
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
-
 from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.evaluation.benchmarks import (
     all_benchmarks,
@@ -26,8 +25,6 @@ BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 JOB_DESCRIPTION_SUFFIX = "#rnd #multimodality #tarasov @mrsndmn"
 
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
-
-experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments")
 
 
 def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
@@ -247,6 +244,111 @@ def get_in_progress_jobs_descriptions(client):
     return in_progress_jobs_descriptions
 
 
+def evaluate_benchmarks(
+    base_path: str,
+    experiments_dirs: list[str],
+    benchmarks: list[str],
+    num_checkpoints: int,
+    force: bool,
+    dry: bool,
+    local: bool,
+    max_jobs_queue_size: int,
+    model: str,
+    limit_jobs: int,
+    in_progress_jobs_descriptions=None,
+):
+
+    stop = False
+    processed_models = 0
+    check_queue_processed_models = -1
+
+    for benchmark in benchmarks:
+        if benchmark == "gsm8k":
+            continue
+
+        for experiment_dir in experiments_dirs:
+            if stop:
+                break
+
+            if model is not None and model.lower() not in experiment_dir.lower():
+                print(f"Skipping {experiment_dir} because it does not contain {model}")
+                continue
+
+            experiment_eval_dir = os.listdir(os.path.join(base_path, experiment_dir))
+            experiment_eval_dir = [
+                x for x in experiment_eval_dir if x != "sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_X745XTCC"
+            ]
+
+            checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
+
+            for checkpoint in checkpoints:
+
+                if max_jobs_queue_size is not None and check_queue_processed_models < processed_models:
+                    while True:
+                        in_queue_jobs = get_in_progress_jobs(client, statuses=["Pending"])
+                        queue_size = len(in_queue_jobs)
+
+                        if queue_size >= max_jobs_queue_size:
+                            sleep_time = 10
+                            print(
+                                f"Max jobs queue size {queue_size} / {max_jobs_queue_size} reached, waiting for {sleep_time} seconds"
+                            )
+                            time.sleep(sleep_time)
+                        else:
+                            # update in_progress_jobs_descriptions
+                            in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
+                            break
+
+                        check_queue_processed_models = processed_models
+
+                full_experiment_dir = os.path.join(base_path, experiment_dir, checkpoint)
+
+                evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
+
+                if os.path.exists(evaluation_file) and os.stat(evaluation_file).st_size > 0:
+                    if force:
+                        if not dry:
+                            os.remove(evaluation_file)
+                        print(f"Force remove metrics {evaluation_file}")
+
+                    else:
+                        print(f"Evaluation file {evaluation_file} already exists")
+                        continue
+
+                experiment = {
+                    "pretrained_model": full_experiment_dir,
+                    "benchmark": benchmark,
+                }
+
+                job_description = f"Eval {benchmark}: {experiment_dir}/{checkpoint} {JOB_DESCRIPTION_SUFFIX}"
+
+                if job_description in in_progress_jobs_descriptions:
+                    print(f"Job {job_description} already in progress, skipping")
+                    continue
+
+                run_eval_experiments(
+                    experiment,
+                    dry=dry,
+                    job_description=job_description,
+                    local=local,
+                )
+
+                processed_models += 1
+                if not dry:
+                    pass
+                    # time.sleep(5)  # to avoid race conditions and brusting max queue size
+
+                if limit_jobs is not None and processed_models >= limit_jobs:
+                    print(f"Processed {processed_models} models, stopping")
+                    stop = True
+                    break
+
+    return {
+        "stop": stop,
+        "processed_models": processed_models,
+    }
+
+
 if __name__ == "__main__":
 
     import argparse
@@ -263,6 +365,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_jobs_queue_size", type=int, default=None)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--local", action="store_true")
+    parser.add_argument("--run_for_in_progress_jobs", action="store_true")
     args = parser.parse_args()
 
     num_checkpoints = args.num_checkpoints
@@ -290,99 +393,59 @@ if __name__ == "__main__":
 
     print(f"Evaluating {num_checkpoints} checkpoints for {benchmarks} benchmarks")
 
-    check_queue_processed_models = -1
     processed_models = 0
 
     stop = False
 
-    for eos_num in os.listdir(experiments_dir):
-        if stop:
-            break
+    experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments")
+    if args.run_for_in_progress_jobs:
+        assert args.eos_num == "all", "eos_num is not supported for in_progress_jobs"
+        experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments_in_progress")
 
-        if args.eos_num != "all":
-            if eos_num != args.eos_num:
-                continue
+    if args.run_for_in_progress_jobs:
+        experiments_dirs = os.listdir(experiments_dir)
 
-        experiments_dirs = os.listdir(os.path.join(experiments_dir, eos_num))
+        evaluate_benchmarks(
+            base_path=experiments_dir,
+            experiments_dirs=experiments_dirs,
+            benchmarks=benchmarks,
+            num_checkpoints=num_checkpoints,
+            force=args.force,
+            dry=args.dry,
+            local=args.local,
+            model=args.model,
+            limit_jobs=args.limit_jobs,
+            max_jobs_queue_size=args.max_jobs_queue_size,
+            in_progress_jobs_descriptions=in_progress_jobs_descriptions,
+        )
 
-        for benchmark in benchmarks:
-            if benchmark == "gsm8k":
-                continue
+    else:
+        for eos_num in os.listdir(experiments_dir):
+            if stop:
+                break
 
-            for experiment_dir in experiments_dirs:
-                if stop:
-                    break
-
-                if args.model is not None and args.model.lower() not in experiment_dir.lower():
-                    print(f"Skipping {experiment_dir} because it does not contain {args.model}")
+            if args.eos_num != "all":
+                if eos_num != args.eos_num:
                     continue
 
-                # if experiment_dir not in ['sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_8H2VTT04', 'sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR']:
-                #     continue
+            base_path = os.path.join(experiments_dir, eos_num)
+            experiments_dirs = os.listdir(base_path)
 
-                experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
-                checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
+            result = evaluate_benchmarks(
+                base_path=base_path,
+                experiments_dirs=experiments_dirs,
+                benchmarks=benchmarks,
+                num_checkpoints=num_checkpoints,
+                force=args.force,
+                dry=args.dry,
+                local=args.local,
+                model=args.model,
+                limit_jobs=args.limit_jobs,
+                max_jobs_queue_size=args.max_jobs_queue_size,
+                in_progress_jobs_descriptions=in_progress_jobs_descriptions,
+            )
 
-                for checkpoint in checkpoints:
-
-                    if args.max_jobs_queue_size is not None and check_queue_processed_models < processed_models:
-                        while True:
-                            in_queue_jobs = get_in_progress_jobs(client, statuses=["Pending"])
-                            queue_size = len(in_queue_jobs)
-
-                            if queue_size >= args.max_jobs_queue_size:
-                                sleep_time = 10
-                                print(
-                                    f"Max jobs queue size {queue_size} / {args.max_jobs_queue_size} reached, waiting for {sleep_time} seconds"
-                                )
-                                time.sleep(sleep_time)
-                            else:
-                                # update in_progress_jobs_descriptions
-                                in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
-                                break
-
-                            check_queue_processed_models = processed_models
-
-                    full_experiment_dir = os.path.join(experiments_dir, eos_num, experiment_dir, checkpoint)
-
-                    evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
-
-                    if os.path.exists(evaluation_file) and os.stat(evaluation_file).st_size > 0:
-                        if args.force:
-                            if not args.dry:
-                                os.remove(evaluation_file)
-                            print(f"Force remove metrics {evaluation_file}")
-
-                        else:
-                            print(f"Evaluation file {evaluation_file} already exists")
-                            continue
-
-                    experiment = {
-                        "pretrained_model": full_experiment_dir,
-                        "benchmark": benchmark,
-                    }
-
-                    job_description = f"Eval {benchmark}: {eos_num}/{experiment_dir}/{checkpoint} {JOB_DESCRIPTION_SUFFIX}"
-
-                    if job_description in in_progress_jobs_descriptions:
-                        print(f"Job {job_description} already in progress, skipping")
-                        continue
-
-                    run_eval_experiments(
-                        experiment,
-                        dry=args.dry,
-                        job_description=job_description,
-                        local=args.local,
-                    )
-
-                    processed_models += 1
-                    if not args.dry:
-                        pass
-                        # time.sleep(5)  # to avoid race conditions and brusting max queue size
-
-                    if args.limit_jobs is not None and processed_models >= args.limit_jobs:
-                        print(f"Processed {processed_models} models, stopping")
-                        stop = True
-                        break
+            stop = result["stop"]
+            processed_models += result["processed_models"]
 
     print(f"Runned {processed_models} jobs")
