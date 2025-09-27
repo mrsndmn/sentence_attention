@@ -27,7 +27,7 @@ def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
     #     breakpoint()
 
     if len(score_files) == 0:
-        return 0.0
+        return None
 
     assert len(score_files) == 1, f"Multiple score files found for {checkpoint_path} {task_name}"
     score_file = score_files[0]
