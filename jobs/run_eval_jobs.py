@@ -402,51 +402,55 @@ if __name__ == "__main__":
         assert args.eos_num == "all", "eos_num is not supported for in_progress_jobs"
         experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments_in_progress")
 
+    all_models = args.model.split(",")
+
     if args.run_for_in_progress_jobs:
         experiments_dirs = os.listdir(experiments_dir)
 
-        result = evaluate_benchmarks(
-            base_path=experiments_dir,
-            experiments_dirs=experiments_dirs,
-            benchmarks=benchmarks,
-            num_checkpoints=num_checkpoints,
-            force=args.force,
-            dry=args.dry,
-            local=args.local,
-            model=args.model,
-            limit_jobs=args.limit_jobs,
-            max_jobs_queue_size=args.max_jobs_queue_size,
-            in_progress_jobs_descriptions=in_progress_jobs_descriptions,
-        )
-
-        processed_models += result["processed_models"]
-    else:
-        for eos_num in os.listdir(experiments_dir):
-            if stop:
-                break
-
-            if args.eos_num != "all":
-                if eos_num != args.eos_num:
-                    continue
-
-            base_path = os.path.join(experiments_dir, eos_num)
-            experiments_dirs = os.listdir(base_path)
-
+        for current_model in all_models:
             result = evaluate_benchmarks(
-                base_path=base_path,
+                base_path=experiments_dir,
                 experiments_dirs=experiments_dirs,
                 benchmarks=benchmarks,
                 num_checkpoints=num_checkpoints,
                 force=args.force,
                 dry=args.dry,
                 local=args.local,
-                model=args.model,
+                model=current_model,
                 limit_jobs=args.limit_jobs,
                 max_jobs_queue_size=args.max_jobs_queue_size,
                 in_progress_jobs_descriptions=in_progress_jobs_descriptions,
             )
-
-            stop = result["stop"]
             processed_models += result["processed_models"]
+
+    else:
+        for current_model in all_models:
+            for eos_num in os.listdir(experiments_dir):
+                if stop:
+                    break
+
+                if args.eos_num != "all":
+                    if eos_num != args.eos_num:
+                        continue
+
+                base_path = os.path.join(experiments_dir, eos_num)
+                experiments_dirs = os.listdir(base_path)
+
+                result = evaluate_benchmarks(
+                    base_path=base_path,
+                    experiments_dirs=experiments_dirs,
+                    benchmarks=benchmarks,
+                    num_checkpoints=num_checkpoints,
+                    force=args.force,
+                    dry=args.dry,
+                    local=args.local,
+                    model=current_model,
+                    limit_jobs=args.limit_jobs,
+                    max_jobs_queue_size=args.max_jobs_queue_size,
+                    in_progress_jobs_descriptions=in_progress_jobs_descriptions,
+                )
+
+                stop = result["stop"]
+                processed_models += result["processed_models"]
 
     print(f"Runned {processed_models} jobs")
