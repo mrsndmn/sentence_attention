@@ -102,49 +102,74 @@ def discover_benchmarks(experiment_dir: str, checkpoints: List[Tuple[int, str]])
 
 
 def plot_benchmark_over_checkpoints(
-    experiment_dir: str,
+    experiment_dirs: List[str],
     benchmarks: List[str],
     metric_preference: Sequence[str],
     output_dir: Optional[str] = None,
 ) -> None:
     matplotlib.style.use("seaborn-v0_8-darkgrid")
 
-    checkpoints = find_all_checkpoints(experiment_dir)
-    if not checkpoints:
-        print(f"No checkpoints with evaluations found under: {experiment_dir}")
+    # Collect data from all experiments
+    experiment_data = {}
+    all_benchmarks = set()
+
+    for experiment_dir in experiment_dirs:
+        checkpoints = find_all_checkpoints(experiment_dir)
+        if not checkpoints:
+            print(f"No checkpoints with evaluations found under: {experiment_dir}")
+            continue
+
+        # Discover benchmarks for this experiment
+        exp_benchmarks = discover_benchmarks(experiment_dir, checkpoints)
+        all_benchmarks.update(exp_benchmarks)
+
+        # Store experiment data
+        experiment_data[experiment_dir] = {"checkpoints": checkpoints, "benchmarks": exp_benchmarks}
+
+    if not experiment_data:
+        print("No valid experiments found.")
         return
 
     if not benchmarks:
-        benchmarks = discover_benchmarks(experiment_dir, checkpoints)
+        benchmarks = sorted(all_benchmarks)
 
     if not benchmarks:
         print("No benchmark JSON files discovered. Nothing to plot.")
         return
 
     if output_dir is None:
-        output_dir = os.path.join(experiment_dir, "evaluation_plots")
+        if len(experiment_dirs) == 1:
+            output_dir = os.path.join(experiment_dirs[0], "evaluation_plots")
+        else:
+            raise ValueError("Output directory must be specified when plotting multiple experiments")
     os.makedirs(output_dir, exist_ok=True)
 
     for benchmark in benchmarks:
-        steps: List[int] = []
-        values: List[float] = []
-
-        for step, ckpt_path in checkpoints:
-            val = read_benchmark_metric(ckpt_path, benchmark, metric_preference)
-            if val is None:
-                continue
-            steps.append(step)
-            values.append(val)
-
-        if not steps:
-            print(f"Skipping '{benchmark}': no numeric metrics found across checkpoints.")
-            continue
-
         plt.figure()
-        plt.plot(steps, values, marker="o")
+
+        for experiment_dir, data in experiment_data.items():
+            steps: List[int] = []
+            values: List[float] = []
+
+            for step, ckpt_path in data["checkpoints"]:
+                val = read_benchmark_metric(ckpt_path, benchmark, metric_preference)
+                if val is None:
+                    continue
+                steps.append(step)
+                values.append(val)
+
+            if not steps:
+                print(f"Skipping '{benchmark}' for experiment '{experiment_dir}': no numeric metrics found across checkpoints.")
+                continue
+
+            # Create experiment label from directory name
+            exp_label = os.path.basename(experiment_dir.rstrip("/"))
+            plt.plot(steps, values, marker="o", label=exp_label)
+
         plt.xlabel("Checkpoint step")
         plt.ylabel("Metric value")
         plt.title(f"{benchmark}")
+        plt.legend()
         plt.tight_layout()
 
         out_path = os.path.join(output_dir, f"{benchmark}_over_checkpoints.png")
@@ -156,16 +181,19 @@ def plot_benchmark_over_checkpoints(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Plot how benchmark metrics change across checkpoints for a given experiment. "
-            "X-axis is checkpoint step, Y-axis is the metric value."
+            "Plot how benchmark metrics change across checkpoints for given experiment(s). "
+            "X-axis is checkpoint step, Y-axis is the metric value. "
+            "When multiple experiments are specified, all experiments are plotted together with legends."
         )
     )
     parser.add_argument(
-        "experiment_dir",
+        "experiment_dirs",
+        nargs="+",
         type=str,
         help=(
-            "Path to the experiment directory containing checkpoint-*/evaluation/*.json.\n"
-            "Example: artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR"
+            "Path(s) to experiment directory(ies) containing checkpoint-*/evaluation/*.json.\n"
+            "Example: artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR\n"
+            "For multiple experiments: exp1 exp2 exp3"
         ),
     )
     parser.add_argument(
@@ -187,7 +215,7 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=str,
         default=None,
-        help="Optional custom output directory for plots (defaults to <experiment_dir>/evaluation_plots).",
+        help="Output directory for plots. Required when plotting multiple experiments. Defaults to <experiment_dir>/evaluation_plots for single experiment.",
     )
     return parser.parse_args()
 
@@ -210,7 +238,7 @@ def main() -> None:
         benchmarks = [b.strip() for b in args.benchmarks.split(",") if b.strip()]
 
     plot_benchmark_over_checkpoints(
-        experiment_dir=args.experiment_dir,
+        experiment_dirs=args.experiment_dirs,
         benchmarks=benchmarks,
         metric_preference=metric_preference,
         output_dir=args.output_dir,
