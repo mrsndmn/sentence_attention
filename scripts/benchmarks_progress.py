@@ -164,6 +164,7 @@ def plot_benchmark_over_checkpoints(
 
             # Create experiment label from directory name
             exp_label = os.path.basename(experiment_dir.rstrip("/"))
+            exp_label = exp_label.split("_")[-1]
             plt.plot(steps, values, marker="o", label=exp_label)
 
         plt.xlabel("Checkpoint step")
