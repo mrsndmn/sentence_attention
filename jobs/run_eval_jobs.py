@@ -27,7 +27,7 @@ JOB_DESCRIPTION_SUFFIX = "#rnd #multimodality #tarasov @mrsndmn"
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 
-def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
+def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, local=False, ruler_mode="tiny"):
 
     experiment = copy.deepcopy(experiment)
 
@@ -41,12 +41,20 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     helmet_workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/HELMET"
 
-    output_dir = os.path.join(pretrained_model, "helmet_eval", benchmark)
+    if ruler_mode == "tiny":
+        output_dir = os.path.join(pretrained_model, "helmet_eval", benchmark)  # tiny eval
+    elif ruler_mode == "short":
+        output_dir = os.path.join(pretrained_model, "helmet_eval_short", benchmark)  # short eval
+    else:
+        raise ValueError(f"Invalid ruler_mode: {ruler_mode}")
+
     os.makedirs(output_dir, exist_ok=True)
 
     assert benchmark in long_benchmarks, f"Invalid benchmark: {benchmark}"
 
-    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config configs/{benchmark}_tiny.yaml --model_name_or_path {pretrained_model} --use_chat_template False --no_torch_compile --output_dir {output_dir} '"
+    bench_config = f"configs/{benchmark}_{ruler_mode}.yaml"
+
+    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template False --no_torch_compile --output_dir {output_dir} '"
 
     print(f"\n\n{script_str}\n")
 
@@ -138,10 +146,11 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
     return
 
 
-def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
+def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False, ruler_mode="none"):
 
     if experiment["benchmark"] in ["recall", "rag", "rerank", "cite", "longqa", "summ", "icl"]:
-        return run_helmet_eval_experiments(experiment, job_description, dry, local)
+        assert ruler_mode in ["tiny", "short"], f"Invalid mode: {ruler_mode}"
+        return run_helmet_eval_experiments(experiment, job_description, dry, local, ruler_mode=ruler_mode)
 
     return run_lighteval_eval_experiments(experiment, job_description, dry, local)
 
@@ -256,6 +265,7 @@ def evaluate_benchmarks(
     model: str,
     limit_jobs: int,
     in_progress_jobs_descriptions=None,
+    ruler_mode="none",
 ):
 
     stop = False
@@ -303,7 +313,7 @@ def evaluate_benchmarks(
 
                 full_experiment_dir = os.path.join(base_path, experiment_dir, checkpoint)
 
-                evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
+                evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark, ruler_mode=ruler_mode)
 
                 if os.path.exists(evaluation_file) and os.stat(evaluation_file).st_size > 0:
                     if force:
@@ -320,7 +330,10 @@ def evaluate_benchmarks(
                     "benchmark": benchmark,
                 }
 
-                job_description = f"Eval {benchmark}: {experiment_dir}/{checkpoint} {JOB_DESCRIPTION_SUFFIX}"
+                bench_desc_suffix = ""
+                if ruler_mode != "none":
+                    bench_desc_suffix = f" ({ruler_mode})"
+                job_description = f"Eval {benchmark}{bench_desc_suffix}: {experiment_dir}/{checkpoint} {JOB_DESCRIPTION_SUFFIX}"
 
                 if job_description in in_progress_jobs_descriptions:
                     print(f"Job {job_description} already in progress, skipping")
@@ -331,6 +344,7 @@ def evaluate_benchmarks(
                     dry=dry,
                     job_description=job_description,
                     local=local,
+                    ruler_mode=ruler_mode,
                 )
 
                 processed_models += 1
@@ -365,6 +379,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_jobs_queue_size", type=int, default=None)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--local", action="store_true")
+    parser.add_argument("--ruler_mode", type=str, default="none", choices=["none", "tiny", "short"])
     parser.add_argument("--run_for_in_progress_jobs", action="store_true")
     args = parser.parse_args()
 
@@ -420,6 +435,7 @@ if __name__ == "__main__":
                 limit_jobs=args.limit_jobs,
                 max_jobs_queue_size=args.max_jobs_queue_size,
                 in_progress_jobs_descriptions=in_progress_jobs_descriptions,
+                ruler_mode=args.ruler_mode,
             )
             processed_models += result["processed_models"]
 
@@ -448,6 +464,7 @@ if __name__ == "__main__":
                     limit_jobs=args.limit_jobs,
                     max_jobs_queue_size=args.max_jobs_queue_size,
                     in_progress_jobs_descriptions=in_progress_jobs_descriptions,
+                    ruler_mode=args.ruler_mode,
                 )
 
                 stop = result["stop"]

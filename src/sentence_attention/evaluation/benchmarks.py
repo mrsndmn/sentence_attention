@@ -34,10 +34,17 @@ long_benchmarks = [
 ]
 
 
-def checkpoint_evaluation_file(model_checkpoint, task_name):
+def checkpoint_evaluation_file(model_checkpoint, task_name, ruler_mode="tiny"):
 
     if task_name in long_benchmarks:
-        score_glob = os.path.join(model_checkpoint, "helmet_eval", task_name, "*.score")
+        if ruler_mode == "tiny":
+            eval_dir = "helmet_eval"
+        elif ruler_mode == "short":
+            eval_dir = "helmet_eval_short"
+        else:
+            raise ValueError(f"Invalid ruler_mode: {ruler_mode}")
+
+        score_glob = os.path.join(model_checkpoint, eval_dir, task_name, "*.score")
         score_files = glob.glob(score_glob)
         if len(score_files) == 0:
             return score_glob
