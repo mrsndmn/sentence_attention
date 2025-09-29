@@ -31,6 +31,10 @@ def read_score_file_metric(score_file: str, task_name: str) -> str:
 
     with open(score_file) as f:
         data = json.load(f)
+
+    if task_name == "recall" and task_metric not in data:
+        task_metric = "rougeL_recall"
+
     return round(data[task_metric], 2)
 
 
@@ -55,7 +59,7 @@ def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 
 def parse_bench_length(bench_name: str, score_file: str) -> int:
     # find regexp in(\d+)
-    score_file_tmp = re.findall(r"__in(\d+)", score_file)
+    score_file_tmp = re.findall(r"_in(\d+)", score_file)
 
     return int(score_file_tmp[0])
 
@@ -71,6 +75,10 @@ def read_long_short_benchmark_metric(checkpoint_path: str, task_name: str) -> st
         "narrativeqa",
         "infbench_qa_eng",
         "icl_trec_coarse",
+        "ruler_niah_mk_2",
+        "ruler_niah_mk_3",
+        "ruler_niah_mv",
+        "json_kv",
     ]
 
     # assert len(score_files) == 1, f"Multiple score files found for {checkpoint_path} {task_name}"
