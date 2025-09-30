@@ -13,6 +13,8 @@ if __name__ == "__main__":
         "Qwen/Qwen2.5-1.5B",
         "unsloth/Meta-Llama-3.1-8B",
         "Qwen/Qwen2-7B-Instruct",
+        "namespace-Pt/beacon-qwen-2-7b-instruct",
+        "unsloth/Meta-Llama-3.1-8B-Instruct",
     ]
 
     for model_name in models_names:
@@ -24,8 +26,14 @@ if __name__ == "__main__":
             print(f"Model {model_name} already exists in {target_path_for_model}")
             continue
 
-        model = AutoModelForCausalLM.from_pretrained(model_name)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if "beacon" in model_name.lower():
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name, trust_remote_code=True, attn_implementation="flash_attention_2"
+            )
+            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         print(f"Saving {model_name} to {target_path_for_model}")
 

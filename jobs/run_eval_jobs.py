@@ -64,14 +64,22 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     bench_config = f"configs/{benchmark}_{ruler_mode}.yaml"
 
-    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template False --no_torch_compile --output_dir {output_dir} '"
+    current_env_bin_path = env_bin_path
+    python_path_prefix_dirs = f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src"
+    if "sepcache" in pretrained_model.lower():
+        current_env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/sepcache/bin"
+        python_path_prefix_dirs = f"{helmet_workdir_prefix}/src"
+
+    use_chat_template = "instruct" in pretrained_model.lower()
+    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {current_env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template {use_chat_template} --no_torch_compile --output_dir {output_dir} '"
 
     print(f"\n\n{script_str}\n")
 
     env_variables = {
-        "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
-        "PYTHONPATH": f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
+        "PATH": f"{current_env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
+        "PYTHONPATH": f"{python_path_prefix_dirs}:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
         "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
+        # "LD_LIBRARY_PATH": "/usr/local/nvidia/lib:/usr/local/nvidia/lib64",
     }
 
     job_w_args = client_lib.Job(
@@ -424,7 +432,9 @@ if __name__ == "__main__":
         assert args.eos_num == "all", "eos_num is not supported for in_progress_jobs"
         experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments_in_progress")
 
-    all_models = args.model.split(",")
+    all_models = [""]
+    if args.model is not None:
+        all_models = args.model.split(",")
 
     if args.run_for_in_progress_jobs:
         experiments_dirs = os.listdir(experiments_dir)
