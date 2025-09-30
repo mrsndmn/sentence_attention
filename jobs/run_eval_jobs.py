@@ -27,6 +27,16 @@ JOB_DESCRIPTION_SUFFIX = "#rnd #multimodality #tarasov @mrsndmn"
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 
+def run_local_process(script_str, env_variables):
+    import subprocess
+
+    envs_variables_backup = {k: os.environ[k] for k in env_variables.keys()}  # noqa: SIM118
+    os.environ.update(env_variables)
+    result = subprocess.run(script_str, shell=True)
+    os.environ.update(envs_variables_backup)
+    return result
+
+
 def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, local=False, ruler_mode="tiny"):
 
     experiment = copy.deepcopy(experiment)
@@ -58,6 +68,12 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     print(f"\n\n{script_str}\n")
 
+    env_variables = {
+        "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
+        "PYTHONPATH": f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
+        "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
+    }
+
     job_w_args = client_lib.Job(
         base_image=BASE_IMAGE,
         script=script_str,
@@ -69,11 +85,7 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
         processes_per_worker=1,
         job_desc=job_description,
         # stop_timer=600, # в минутах, = 10 часов
-        env_variables={
-            "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
-            "PYTHONPATH": f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
-            "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
-        },
+        env_variables=env_variables,
     )
 
     if dry:
@@ -81,10 +93,7 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
     else:
         if local:
             print("Running local process")
-            import subprocess
-
-            # Example: Running a simple command
-            result = subprocess.run(script_str, shell=True)
+            result = run_local_process(script_str, env_variables)
             if result.returncode != 0:
                 print("Failed to run job:", job_description)
 
@@ -110,6 +119,12 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
 
     print(f"\n\n{script_str}\n")
 
+    env_variables = {
+        "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
+        "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
+        "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
+    }
+
     job_w_args = client_lib.Job(
         base_image=BASE_IMAGE,
         script=script_str,
@@ -121,11 +136,7 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
         processes_per_worker=1,
         job_desc=job_description,
         # stop_timer=600, # в минутах, = 10 часов
-        env_variables={
-            "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
-            "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
-            "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
-        },
+        env_variables=env_variables,
     )
 
     if dry:
@@ -133,13 +144,9 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
     else:
         if local:
             print("Running local process")
-            import subprocess
-
-            # Example: Running a simple command
-            result = subprocess.run(script_str, shell=True)
+            result = run_local_process(script_str, env_variables)
             if result.returncode != 0:
                 print("Failed to run job:", job_description)
-
         else:
             print(job_description, "\n", job_w_args.submit())
 

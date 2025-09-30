@@ -24,10 +24,10 @@ mkdir -p $JOBS_TMP_PROC
 
 # Сохраняем в переменные окружения,
 # с которыми работает DDP
-export MASTER_ADDR=$MASTER_HOST_FULL
+export MASTER_ADDR=${MASTER_HOST_FULL:-"127.0.0.1"}
 export MASTER_PORT=12345
-export WORLD_SIZE=$OMPI_COMM_WORLD_SIZE
-export RANK=$OMPI_COMM_WORLD_RANK
+export WORLD_SIZE=${OMPI_COMM_WORLD_SIZE:-"1"}
+export RANK=${OMPI_COMM_WORLD_RANK:-"0"}
 
 NUM_GPUS=$(nvidia-smi -L | nvidia-smi -L | grep -c "GPU")
 

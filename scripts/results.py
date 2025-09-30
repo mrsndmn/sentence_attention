@@ -325,10 +325,17 @@ def main() -> None:
         help="Plot per checkpoint short results",
         default=False,
     )
+    parser.add_argument(
+        "--in_progress",
+        action="store_true",
+        help="Use in progress experiments",
+        default=False,
+    )
     args = parser.parse_args()
 
     # last_checkpoints = get_all_last_checkpoints(poor_mask=args.poor_mask)
-    last_checkpoints = get_all_last_checkpoints()
+    model_filter = args.model.split(",") if args.model else None
+    last_checkpoints = get_all_last_checkpoints(in_progress=args.in_progress, model=model_filter)
     rows = build_rows(last_checkpoints)
 
     training_mapping = {
