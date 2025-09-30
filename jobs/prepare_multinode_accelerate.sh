@@ -24,7 +24,13 @@ mkdir -p $JOBS_TMP_PROC
 
 # Сохраняем в переменные окружения,
 # с которыми работает DDP
-export MASTER_ADDR=${MASTER_HOST_FULL:-"127.0.0.1"}
+
+if [ -z "$LOCAL_MASTER_ADDR" ]; then
+    export MASTER_ADDR=${MASTER_HOST_FULL:-"127.0.0.1"}
+else
+    export MASTER_ADDR=${LOCAL_MASTER_ADDR}
+fi
+
 export MASTER_PORT=12345
 export WORLD_SIZE=${OMPI_COMM_WORLD_SIZE:-"1"}
 export RANK=${OMPI_COMM_WORLD_RANK:-"0"}

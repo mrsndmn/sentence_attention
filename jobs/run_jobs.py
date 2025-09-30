@@ -28,7 +28,7 @@ workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 ENV_BIN = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin"
 
 
-def run_experiments(experiments: List[Dict], job_description: str = "", dry: bool = False) -> None:
+def run_experiments(experiments: List[Dict], job_description: str = "", test: bool = False, dry: bool = False) -> None:
 
     for exp in experiments:
         exp = deepcopy(exp)
@@ -38,6 +38,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
         random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
         output_dir += f"_{random_suffix}"
+        if test:
+            output_dir = "test_test_" + output_dir
 
         output_dir_full_path = os.path.join(workdir_prefix, "artifacts", "experiments_in_progress", output_dir)
 
@@ -119,6 +121,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
         gradient_checkpointing_flag = "1" if str(gradient_checkpointing).lower() in {"1", "true", "yes"} else "0"
 
         # Use required full Python interpreter path and launch accelerate as a module
+        disable_tqdm = "1" if not test else "0"
 
         if fsdp:
             script_prefix = f"bash {workdir_prefix}/jobs/prepare_multinode_accelerate_fsdp.sh"
@@ -127,7 +130,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
 
         lr_scheduler_kwargs = ""
         if lr_scheduler_type == "cosine_with_min_lr":
-            lr_scheduler_kwargs = ' --lr_scheduler_kwargs {\\"min_lr\\":0.00003} '
+            lr_scheduler_kwargs = ' --lr_scheduler_kwargs {\\"min_lr\\":0.00005} '
 
         script_str = (
             f"{script_prefix} "
@@ -152,7 +155,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", dry: boo
             f"--eval_strategy {eval_strategy} "
             f" --eval_steps {eval_steps} "
             f"--gradient_checkpointing {gradient_checkpointing_flag} {save_total_limit} {optim} {save_only_model} {logging_steps} "
-            f"--add_end_of_sentence_token {add_end_of_sentence_token} --disable_tqdm 1 "
+            f"--add_end_of_sentence_token {add_end_of_sentence_token} "
+            f"--disable_tqdm {disable_tqdm} "
             f"--limit_dataset_shards {limit_dataset_shards} --offset_dataset_shards {offset_dataset_shards} "
             f"--number_of_eos_tokens {number_of_eos_tokens} "
             f"--flexible_eos_tokens {flexible_eos_tokens} "
@@ -228,6 +232,7 @@ def run_training_experiments(
     flexible_eos_tokens: str = "0",
     ft_with_bos_token: str = "0",
     fsdp: bool = False,
+    test: bool = False,
     **kwargs: Dict,
 ) -> None:
 
@@ -281,7 +286,7 @@ def run_training_experiments(
 
     experiments.append(exp_config)
 
-    run_experiments(experiments, job_description=job_description, **kwargs)
+    run_experiments(experiments, job_description=job_description, test=test, **kwargs)
 
     return
 
@@ -449,7 +454,9 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
     return experiment_in_progress
 
 
-def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
+def run_group_eos_only(
+    *, dry: bool, num_eos_tokens: List[int], test: bool = False, in_progress_jobs: List[Dict], model: str
+) -> None:
     ngpus = 4
     n_nodes = 1
     num_train_epochs = 1
@@ -525,6 +532,7 @@ def run_group_eos_only(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs
                 add_end_of_sentence_token=1,
                 experiment_prefix_base_name=experiment_prefix_base_name,
                 job_description=job_description,
+                test=test,
                 **extra_kwargs,
             )
 
@@ -535,20 +543,21 @@ def run_group_full_4k(
     num_eos_tokens: List[int],
     in_progress_jobs: List[Dict],
     model: str,
+    test: bool = False,
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
 ) -> None:
-    ngpus = 8
-    num_nodes = 1
+    ngpus = 4
+    num_nodes = 2
 
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "full"
     max_grad_norm = "2.0"
-    lr_scheduler_type = "constant_with_warmup"
-    # lr_scheduler_type = "cosine_with_min_lr"
+    # lr_scheduler_type = "constant_with_warmup"
+    lr_scheduler_type = "cosine_with_min_lr"
 
-    default_limit_shards = 30
+    default_limit_shards = 20
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -598,7 +607,7 @@ def run_group_full_4k(
             continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(256 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -631,7 +640,7 @@ def run_group_full_4k(
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=500,
+            warmup_steps=1000,
             dry=dry,
             bf16="0",
             add_end_of_sentence_token=1,
@@ -639,6 +648,7 @@ def run_group_full_4k(
             job_description=job_description,
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
             ft_with_bos_token="1" if ft_with_bos_token else "0",
+            test=test,
             **extra_kwargs,
         )
 
@@ -651,6 +661,7 @@ def run_group_full_4k_colddown(
     model: str,
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
+    test: bool = False,
 ) -> None:
     ngpus = 8
     num_nodes = 1
@@ -754,6 +765,7 @@ def run_group_full_4k_colddown(
             job_description=job_description,
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
             ft_with_bos_token="1" if ft_with_bos_token else "0",
+            test=test,
             **extra_kwargs,
         )
 
@@ -766,6 +778,7 @@ def run_group_full_4k_distill_from_4eos_tokens(
     model: str,
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
+    test: bool = False,
 ) -> None:
 
     ngpus = 8
@@ -864,10 +877,13 @@ def run_group_full_4k_distill_from_4eos_tokens(
             job_description=job_description,
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
             ft_with_bos_token="1" if ft_with_bos_token else "0",
+            test=test,
         )
 
 
-def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: List[Dict], model: str) -> None:
+def run_group_lora(
+    *, dry: bool, num_eos_tokens: List[int], test: bool = False, in_progress_jobs: List[Dict], model: str
+) -> None:
     ngpus = 8
     num_train_epochs = 1
     save_steps = 250
@@ -932,6 +948,7 @@ def run_group_lora(*, dry: bool, num_eos_tokens: List[int], in_progress_jobs: Li
             add_end_of_sentence_token=1,
             experiment_prefix_base_name=experiment_prefix_base_name,
             job_description=job_description,
+            test=test,
         )
 
 
@@ -960,6 +977,7 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--dry", action="store_true")
 
     parser.add_argument("--wait", type=str, help="Job ID to wait for")
+    parser.add_argument("--test", action="store_true")
     parser.add_argument("--model", type=str, help="Model checkpoint filter")
 
     return parser
@@ -1000,6 +1018,7 @@ def main() -> None:
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
             model=args.model,
+            test=args.test,
         )
     elif args.group == "full_4k":
         run_group_full_4k(
@@ -1007,6 +1026,7 @@ def main() -> None:
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
             model=args.model,
+            test=args.test,
         )
     elif args.group == "full_4k_colddown":
         run_group_full_4k_colddown(
@@ -1014,6 +1034,7 @@ def main() -> None:
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
             model=args.model,
+            test=args.test,
         )
     elif args.group == "full_4k_distill_from_4eos_tokens":
         run_group_full_4k_distill_from_4eos_tokens(
@@ -1021,6 +1042,7 @@ def main() -> None:
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
             model=args.model,
+            test=args.test,
         )
     elif args.group == "lora":
         run_group_lora(
@@ -1028,6 +1050,7 @@ def main() -> None:
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
             model=args.model,
+            test=args.test,
         )
     elif args.group == "full-flexible-eos-tokens":
         run_group_full_4k(
@@ -1036,6 +1059,7 @@ def main() -> None:
             in_progress_jobs=in_progress_jobs,
             model=args.model,
             flexible_eos_tokens=True,
+            test=args.test,
         )
     elif args.group == "ft-with-bos-token":
         run_group_full_4k(
@@ -1044,6 +1068,7 @@ def main() -> None:
             in_progress_jobs=in_progress_jobs,
             model=args.model,
             ft_with_bos_token=True,
+            test=args.test,
         )
 
     return
