@@ -12,6 +12,7 @@ if __name__ == "__main__":
         "Qwen/Qwen2.5-3B",
         "Qwen/Qwen2.5-1.5B",
         "unsloth/Meta-Llama-3.1-8B",
+        "Qwen/Qwen2-7B-Instruct",
     ]
 
     for model_name in models_names:
