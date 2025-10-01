@@ -22,6 +22,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_proc", type=int, default=16)
     parser.add_argument("--num_shards", type=int, default=10)
     parser.add_argument("--shard_index", type=int, default=0)
+    parser.add_argument("--local_shard_index", type=int, default=0)
     parser.add_argument("--timeout_minutes", type=int, default=-1)
     args = parser.parse_args()
 
@@ -78,56 +79,61 @@ if __name__ == "__main__":
 
     dataset = load_dataset(dataset_name, num_proc=16, split="train", data_files=dataset_files)
 
-    input_ids_lengths = []
-
-    bins_counts = [0] * 100
-    total_dataset_size = 25000
-    max_bin_size = total_dataset_size / len(bins_counts)
-
     dclm_only_texts = []
 
-    pbar = tqdm(total=total_dataset_size)
+    if args.local_shard_index == 0:
+        input_ids_lengths = []
 
-    for item in dataset.shuffle(seed=42):
-        # for item in tqdm(dataset.select(range(samples_count))):
-        tokenized = tokenizer(item["text"])
-        cur_len = len(tokenized["input_ids"])
+        bins_counts = [0] * 100
+        total_dataset_size = 2500
+        max_bin_size = total_dataset_size / len(bins_counts)
 
-        if cur_len > 16384:
-            continue
+        pbar = tqdm(total=total_dataset_size)
 
-        if pbar.n > total_dataset_size:
-            break
+        for item in dataset.shuffle(seed=42):
+            # for item in tqdm(dataset.select(range(samples_count))):
+            tokenized = tokenizer(item["text"])
+            cur_len = len(tokenized["input_ids"])
 
-        if pbar.n % 10 == 0:
-            if args.timeout_minutes > 0:
-                if time.time() - start_time > args.timeout_minutes * 60:
-                    print("Timeout reached")
-                    break
-
-        current_bin = -1
-        for i in range(len(bins_counts)):
-            max_value = 16384 / len(bins_counts) * (i + 1)
-            min_value = 16384 / len(bins_counts) * i
-            if cur_len <= max_value and cur_len >= min_value:
-                current_bin = i
-                break
-
-        assert current_bin != -1
-        if bins_counts[current_bin] > max_bin_size:
-            if cur_len > (8192 * (0.5 + random.random())):
-                pass
-            else:
+            if cur_len > 16384:
                 continue
 
-        bins_counts[current_bin] += 1
+            if pbar.n > total_dataset_size:
+                break
 
-        input_ids_lengths.append(cur_len)
-        dclm_only_texts.append(item["text"])
+            if pbar.n % 10 == 0:
+                if args.timeout_minutes > 0:
+                    if time.time() - start_time > args.timeout_minutes * 60:
+                        print("Timeout reached")
+                        break
 
-        pbar.update(1)
+            current_bin = -1
+            for i in range(len(bins_counts)):
+                max_value = 16384 / len(bins_counts) * (i + 1)
+                min_value = 16384 / len(bins_counts) * i
+                if cur_len <= max_value and cur_len >= min_value:
+                    current_bin = i
+                    break
 
-    dataset = Dataset.from_dict({"text": dclm_only_texts})
+            assert current_bin != -1
+            if bins_counts[current_bin] > max_bin_size:
+                if cur_len > (8192 * (0.5 + random.random())):
+                    pass
+                else:
+                    continue
+
+            bins_counts[current_bin] += 1
+
+            input_ids_lengths.append(cur_len)
+            dclm_only_texts.append(item["text"])
+
+            pbar.update(1)
+
+        dataset = Dataset.from_dict({"text": dclm_only_texts})
+    elif args.local_shard_index == 1:
+        dataset = dataset.shuffle(seed=41)
+        total_dataset_size = 25000 - 2500
+        dataset = dataset.select(range(total_dataset_size))
 
     def process_dataset_item(dataset_item):
         text = dataset_item["text"]
@@ -154,10 +160,6 @@ if __name__ == "__main__":
 
     columns_to_keep = ["input_ids", "attention_mask", "special_embeddings_mask", "clothest_end_of_sentence_token_idx"]
     columns_to_remove = list(set(dataset.column_names) - set(columns_to_keep))
-
-    dataset = dataset.shard(num_shards=args.num_shards, index=args.shard_index)
-
-    print("shard len", len(dataset))
 
     dataset = dataset.map(process_dataset_item, num_proc=num_proc, remove_columns=columns_to_remove)
 

@@ -10,6 +10,7 @@ if __name__ == "__main__":
     dataset = Dataset.load_from_disk(
         "./artifacts/data/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token_num_4_merged"
     )
+    print(f"Dataset length: {len(dataset)}")
 
     tokenizer = AutoTokenizer.from_pretrained("unsloth/Llama-3.2-1B")
 

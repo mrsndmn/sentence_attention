@@ -820,8 +820,8 @@ def run_group_full_16k_colddown(
     ngpus = 4
     num_nodes = 3
 
-    ngpus = 6
-    num_nodes = 1
+    # ngpus = 6
+    # num_nodes = 1
 
     num_train_epochs = 1
     save_steps = 250
