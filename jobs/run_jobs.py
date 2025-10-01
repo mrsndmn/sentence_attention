@@ -108,6 +108,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         num_nodes = exp.pop("num_nodes", 1)
         fsdp = exp.pop("fsdp", False)
 
+        resume_from_checkpoint = exp.pop("resume_from_checkpoint", None)
+
         if len(exp.keys()) > 0:
             raise ValueError(f"unknown parsms:{exp}")
 
@@ -131,6 +133,10 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         lr_scheduler_kwargs = ""
         if lr_scheduler_type == "cosine_with_min_lr":
             lr_scheduler_kwargs = ' --lr_scheduler_kwargs {\\"min_lr\\":0.00005} '
+
+        resume_from_checkpoint_s = ""
+        if resume_from_checkpoint is not None:
+            resume_from_checkpoint_s = f"--resume_from_checkpoint {resume_from_checkpoint}"
 
         script_str = (
             f"{script_prefix} "
@@ -163,6 +169,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--ft_with_bos_token {ft_with_bos_token} "
             f"--max_steps {max_steps} "
             f"--dataloader_num_workers 4 "
+            f"{resume_from_checkpoint_s} "
         )
 
         print(f"\n\n{script_str}\n\n")
@@ -233,6 +240,7 @@ def run_training_experiments(
     ft_with_bos_token: str = "0",
     fsdp: bool = False,
     test: bool = False,
+    resume_from_checkpoint: str = None,
     **kwargs: Dict,
 ) -> None:
 
@@ -274,6 +282,7 @@ def run_training_experiments(
         "flexible_eos_tokens": flexible_eos_tokens,
         "ft_with_bos_token": ft_with_bos_token,
         "fsdp": fsdp,
+        "resume_from_checkpoint": resume_from_checkpoint,
     }
 
     experiments = []
@@ -546,9 +555,10 @@ def run_group_full_4k(
     test: bool = False,
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
+    resume_from_checkpoint: bool = False,
 ) -> None:
-    ngpus = 4
-    num_nodes = 2
+    ngpus = 8
+    num_nodes = 4
 
     num_train_epochs = 1
     save_steps = 1000
@@ -649,6 +659,7 @@ def run_group_full_4k(
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
             ft_with_bos_token="1" if ft_with_bos_token else "0",
             test=test,
+            resume_from_checkpoint=resume_from_checkpoint,
             **extra_kwargs,
         )
 
@@ -662,6 +673,7 @@ def run_group_full_4k_colddown(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
     test: bool = False,
+    resume_from_checkpoint: bool = False,
 ) -> None:
     ngpus = 8
     num_nodes = 1
@@ -766,6 +778,7 @@ def run_group_full_4k_colddown(
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
             ft_with_bos_token="1" if ft_with_bos_token else "0",
             test=test,
+            resume_from_checkpoint=resume_from_checkpoint,
             **extra_kwargs,
         )
 
@@ -779,6 +792,7 @@ def run_group_full_4k_distill_from_4eos_tokens(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
     test: bool = False,
+    resume_from_checkpoint: bool = False,
 ) -> None:
 
     ngpus = 8
@@ -878,11 +892,18 @@ def run_group_full_4k_distill_from_4eos_tokens(
             flexible_eos_tokens="1" if flexible_eos_tokens else "0",
             ft_with_bos_token="1" if ft_with_bos_token else "0",
             test=test,
+            resume_from_checkpoint=resume_from_checkpoint,
         )
 
 
 def run_group_lora(
-    *, dry: bool, num_eos_tokens: List[int], test: bool = False, in_progress_jobs: List[Dict], model: str
+    *,
+    dry: bool,
+    num_eos_tokens: List[int],
+    test: bool = False,
+    in_progress_jobs: List[Dict],
+    model: str,
+    resume_from_checkpoint: bool = False,
 ) -> None:
     ngpus = 8
     num_train_epochs = 1
@@ -949,6 +970,7 @@ def run_group_lora(
             experiment_prefix_base_name=experiment_prefix_base_name,
             job_description=job_description,
             test=test,
+            resume_from_checkpoint=resume_from_checkpoint,
         )
 
 
@@ -979,6 +1001,7 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--wait", type=str, help="Job ID to wait for")
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--model", type=str, help="Model checkpoint filter")
+    parser.add_argument("--resume_from_checkpoint", type=str, help="Resume from checkpoint", default=None)
 
     return parser
 
@@ -1027,6 +1050,7 @@ def main() -> None:
             in_progress_jobs=in_progress_jobs,
             model=args.model,
             test=args.test,
+            resume_from_checkpoint=args.resume_from_checkpoint,
         )
     elif args.group == "full_4k_colddown":
         run_group_full_4k_colddown(
@@ -1035,6 +1059,7 @@ def main() -> None:
             in_progress_jobs=in_progress_jobs,
             model=args.model,
             test=args.test,
+            resume_from_checkpoint=args.resume_from_checkpoint,
         )
     elif args.group == "full_4k_distill_from_4eos_tokens":
         run_group_full_4k_distill_from_4eos_tokens(
@@ -1043,6 +1068,7 @@ def main() -> None:
             in_progress_jobs=in_progress_jobs,
             model=args.model,
             test=args.test,
+            resume_from_checkpoint=args.resume_from_checkpoint,
         )
     elif args.group == "lora":
         run_group_lora(
@@ -1051,6 +1077,7 @@ def main() -> None:
             in_progress_jobs=in_progress_jobs,
             model=args.model,
             test=args.test,
+            resume_from_checkpoint=args.resume_from_checkpoint,
         )
     elif args.group == "full-flexible-eos-tokens":
         run_group_full_4k(
@@ -1060,6 +1087,7 @@ def main() -> None:
             model=args.model,
             flexible_eos_tokens=True,
             test=args.test,
+            resume_from_checkpoint=args.resume_from_checkpoint,
         )
     elif args.group == "ft-with-bos-token":
         run_group_full_4k(
@@ -1069,6 +1097,7 @@ def main() -> None:
             model=args.model,
             ft_with_bos_token=True,
             test=args.test,
+            resume_from_checkpoint=args.resume_from_checkpoint,
         )
 
     return

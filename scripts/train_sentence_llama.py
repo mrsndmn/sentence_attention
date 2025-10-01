@@ -8,12 +8,11 @@ import torch.profiler
 import transformers
 from accelerate import PartialState
 from datasets import Dataset, load_dataset
-from transformers import DataCollatorForLanguageModeling, TrainerCallback
-from transformers.loss.loss_utils import ForCausalLMLoss
-
 from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 from sentence_attention.trainer.trainer import SentenceTrainer
+from transformers import DataCollatorForLanguageModeling, TrainerCallback
+from transformers.loss.loss_utils import ForCausalLMLoss
 
 # print("Setting inductor config for flex sentence attention")
 # inductor_config.max_autotune = True
@@ -184,6 +183,8 @@ if __name__ == "__main__":
 
         callbacks.append(ZeroOutGradientsForAllExceptEosEmbedding(model))
 
+    transformers.logging.set_verbosity_info()
+
     trainer = SentenceTrainer(
         model,
         callbacks=callbacks,
@@ -200,7 +201,7 @@ if __name__ == "__main__":
         project_name=trackers_project_name,
     )
 
-    trainer.train()
+    trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
     out_dir_path = Path(training_args.output_dir)
 
     if state.is_main_process:

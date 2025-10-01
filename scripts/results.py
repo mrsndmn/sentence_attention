@@ -336,6 +336,8 @@ def main() -> None:
     # last_checkpoints = get_all_last_checkpoints(poor_mask=args.poor_mask)
     model_filter = args.model.split(",") if args.model else None
     last_checkpoints = get_all_last_checkpoints(in_progress=args.in_progress, model=model_filter)
+    # print(f"Found {len(last_checkpoints)} last checkpoints", last_checkpoints)
+
     rows = build_rows(last_checkpoints)
 
     training_mapping = {
@@ -404,13 +406,14 @@ def main() -> None:
 
     print("\n\nMain Long results:")
     # 1) Main results: base models (0 EOS) and fully finetuned models
+    # breakpoint()
     main_long_rows = build_table(
         rows=rows,
         benchmarks=long_benchmarks,
         training_mapping=training_mapping,
         row_predicate=lambda r: int(
             ("Llama-3.2-3B" in r["experiment"] or "Llama-3.2-1B" in r["experiment"])
-            and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k distill"))
+            and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k distill", "unknown"))
         ),
     )
     print(
