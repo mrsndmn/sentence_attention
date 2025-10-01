@@ -1,4 +1,5 @@
 import random
+import time
 
 import torch
 from datasets import Dataset, load_dataset
@@ -21,7 +22,10 @@ if __name__ == "__main__":
     parser.add_argument("--num_proc", type=int, default=16)
     parser.add_argument("--num_shards", type=int, default=10)
     parser.add_argument("--shard_index", type=int, default=0)
+    parser.add_argument("--timeout_minutes", type=int, default=-1)
     args = parser.parse_args()
+
+    start_time = time.time()
 
     pretrained_model_name = args.pretrained_model_name  # HuggingFaceTB/SmolLM2-1.7B / unsloth/Llama-3.2-1B
     num_eos_tokens = args.num_eos_tokens
@@ -94,6 +98,12 @@ if __name__ == "__main__":
 
         if pbar.n > total_dataset_size:
             break
+
+        if pbar.n % 10 == 0:
+            if args.timeout_minutes > 0:
+                if time.time() - start_time > args.timeout_minutes * 60:
+                    print("Timeout reached")
+                    break
 
         current_bin = -1
         for i in range(len(bins_counts)):
