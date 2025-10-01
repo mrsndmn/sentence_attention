@@ -66,6 +66,9 @@ if __name__ == "__main__":
             else:
                 dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos"
 
+            # dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_max_length_8196_with_eos_token_num_4_merged_shard_0_of_1000/"
+            # dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token_num_4_merged_shard_0_of_1000/"
+
             print("Loading dataset from", dataset_path)
             fineweb_dataset = Dataset.load_from_disk(dataset_path)
 

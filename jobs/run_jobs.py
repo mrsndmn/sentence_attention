@@ -558,7 +558,7 @@ def run_group_full_4k(
     resume_from_checkpoint: bool = False,
 ) -> None:
     ngpus = 8
-    num_nodes = 4
+    num_nodes = 2
 
     num_train_epochs = 1
     save_steps = 1000
@@ -783,119 +783,6 @@ def run_group_full_4k_colddown(
         )
 
 
-def run_group_full_4k_distill_from_4eos_tokens(
-    *,
-    dry: bool,
-    num_eos_tokens: List[int],
-    in_progress_jobs: List[Dict],
-    model: str,
-    flexible_eos_tokens: bool = False,
-    ft_with_bos_token: bool = False,
-    test: bool = False,
-    resume_from_checkpoint: bool = False,
-) -> None:
-
-    ngpus = 8
-    num_nodes = 4
-    num_train_epochs = 1
-    save_steps = 1000
-    optimized_params = "full"
-    max_grad_norm = "2.0"
-
-    all_experiments = []
-    all_experiments.extend(
-        [
-            {
-                "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/",
-                "model_slug": "Llama-3.2-3B",
-                "number_of_eos_tokens": 2,
-                "per_device_train_batch_size": 4,
-            },
-            {
-                "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/",
-                "model_slug": "Llama-3.2-3B",
-                "number_of_eos_tokens": 1,
-                "per_device_train_batch_size": 4,
-            },
-        ]
-    )
-
-    for exp_config in all_experiments:
-        # TODO check sucessful experiment has already been processed
-        model_checkpoint = exp_config["model_checkpoint"]
-        model_slug = exp_config["model_slug"]
-        per_device_train_batch_size = exp_config["per_device_train_batch_size"]
-        if per_device_train_batch_size != 1:
-            print("Force per_device_train_batch_size to 1")
-            per_device_train_batch_size = 1
-
-        number_of_eos_tokens = exp_config["number_of_eos_tokens"]
-
-        if model is not None and model.lower() not in model_checkpoint.lower():
-            continue
-
-        if int(number_of_eos_tokens) not in num_eos_tokens:
-            continue
-
-        model_dir_prefix_mid = "_ft_4k_distill_"
-        if flexible_eos_tokens:
-            model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
-
-        if ft_with_bos_token:
-            model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
-
-        model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
-
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
-            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
-            continue
-
-        # gradient_accumulation_steps = math.ceil(4096 / ngpus / num_nodes / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(512 / ngpus / num_nodes / per_device_train_batch_size)
-
-        experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
-        job_description = f"ST: {experiment_prefix_base_name}"
-
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-            print(f"Experiment {experiment_prefix_base_name} is already in progress")
-            continue
-
-        run_training_experiments(
-            learning_rate=0.00005,
-            model_type="sentence_pretrained_checkpoint",
-            # Rertain on EOSo data
-            limit_dataset_shards=10,
-            offset_dataset_shards=0,
-            number_of_eos_tokens=number_of_eos_tokens,
-            optimized_params=optimized_params,
-            weight_decay="0.01",
-            per_device_train_batch_size=per_device_train_batch_size,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            adam_beta1="0.9",
-            adam_beta2="0.95",
-            optim="adamw_torch_fused",
-            num_train_epochs=num_train_epochs,
-            max_grad_norm=max_grad_norm,
-            save_total_limit=100,
-            save_steps=save_steps,
-            instance_type=f"a100.{ngpus}gpu",
-            num_nodes=num_nodes,
-            model_checkpoint=model_checkpoint,
-            select_train_dataset_items=0,
-            adam_epsilon="1e-8",
-            warmup_steps=1000,
-            dry=dry,
-            bf16="0",
-            add_end_of_sentence_token=1,
-            experiment_prefix_base_name=experiment_prefix_base_name,
-            job_description=job_description,
-            flexible_eos_tokens="1" if flexible_eos_tokens else "0",
-            ft_with_bos_token="1" if ft_with_bos_token else "0",
-            test=test,
-            resume_from_checkpoint=resume_from_checkpoint,
-        )
-
-
 def run_group_lora(
     *,
     dry: bool,
@@ -905,15 +792,17 @@ def run_group_lora(
     model: str,
     resume_from_checkpoint: bool = False,
 ) -> None:
-    ngpus = 8
+    ngpus = 4
+    num_nodes = 1
     num_train_epochs = 1
-    save_steps = 250
+    save_steps = 1000
     optimized_params = "lora"
+    lr_scheduler_type = "cosine_with_min_lr"
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
-        if "llama-3-8b" not in exp_config["model_checkpoint"]:
-            continue
+        # if "llama-3-8b" not in exp_config["model_checkpoint"]:
+        #     continue
 
         model_checkpoint = exp_config["model_checkpoint"]
         model_slug = exp_config["model_slug"]
@@ -933,7 +822,7 @@ def run_group_lora(
 
         per_device_train_batch_size = max(per_device_train_batch_size, 8)
 
-        gradient_accumulation_steps = math.ceil(4096 / ngpus / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(64 / ngpus / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -944,9 +833,10 @@ def run_group_lora(
 
         run_training_experiments(
             learning_rate=0.0001,
+            lr_scheduler_type=lr_scheduler_type,
             model_type="sentence_pretrained_checkpoint",
-            limit_dataset_shards=8,
-            offset_dataset_shards=4,
+            limit_dataset_shards=15,
+            offset_dataset_shards=0,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
             weight_decay="0.01",
@@ -960,6 +850,7 @@ def run_group_lora(
             save_total_limit=100,
             save_steps=save_steps,
             instance_type=f"a100.{ngpus}gpu",
+            num_nodes=num_nodes,
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
@@ -1054,15 +945,6 @@ def main() -> None:
         )
     elif args.group == "full_4k_colddown":
         run_group_full_4k_colddown(
-            dry=args.dry,
-            num_eos_tokens=num_eos_tokens,
-            in_progress_jobs=in_progress_jobs,
-            model=args.model,
-            test=args.test,
-            resume_from_checkpoint=args.resume_from_checkpoint,
-        )
-    elif args.group == "full_4k_distill_from_4eos_tokens":
-        run_group_full_4k_distill_from_4eos_tokens(
             dry=args.dry,
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
