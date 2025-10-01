@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
         # smollm_corpus = smollm_corpus.train_test_split(test_size=100, seed=1)
         train_dataset = fineweb_dataset
-        eval_dataset = fineweb_dataset.select(range(100))
+        eval_dataset = fineweb_dataset.select(range(min(10, len(fineweb_dataset))))
 
     nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
