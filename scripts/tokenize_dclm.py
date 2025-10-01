@@ -1,8 +1,11 @@
+import random
+
 import torch
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
+from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 
@@ -16,7 +19,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_eos_tokens", type=int, default=1)
     parser.add_argument("--max_length", type=int, default=16384)
     parser.add_argument("--num_proc", type=int, default=16)
-    parser.add_argument("--num_shards", type=int, default=1)
+    parser.add_argument("--num_shards", type=int, default=10)
     parser.add_argument("--shard_index", type=int, default=0)
     args = parser.parse_args()
 
@@ -39,14 +42,6 @@ if __name__ == "__main__":
 
     print("Will be saved to target_dir:", target_dir)
 
-    dataset_name = "mlfoundations/dclm-baseline-1.0"
-    dataset_files = []
-    for j in range(10):
-        for i in range(50):
-            dataset_files.append(f"global-shard_{j:02}_of_10/local-shard_0_of_10/shard_{i:08d}_processed.jsonl.zst")
-
-    dataset = load_dataset(dataset_name, num_proc=16, split="train", data_files=dataset_files)
-
     tokenizer_class = type(AutoTokenizer.from_pretrained(pretrained_model_name)).__name__
 
     if args.with_eos_token:
@@ -66,6 +61,63 @@ if __name__ == "__main__":
     tokenizer.pad_token = tokenizer.eos_token
 
     special_token_ids = tokenizer.end_of_sentence_token_ids
+
+    dataset_name = "mlfoundations/dclm-baseline-1.0"
+    dataset_files = []
+
+    assert args.num_shards == 10, "num_shards must be 1 for dclm"
+    shard_index_dataset = args.shard_index + 1
+    for i in range(50):
+        dataset_files.append(
+            f"global-shard_{shard_index_dataset:02}_of_10/local-shard_0_of_10/shard_{i:08d}_processed.jsonl.zst"
+        )
+
+    dataset = load_dataset(dataset_name, num_proc=16, split="train", data_files=dataset_files)
+
+    input_ids_lengths = []
+
+    bins_counts = [0] * 100
+    total_dataset_size = 25000
+    max_bin_size = total_dataset_size / len(bins_counts)
+
+    dclm_only_texts = []
+
+    pbar = tqdm(total=total_dataset_size)
+
+    for item in dataset.shuffle(seed=42):
+        # for item in tqdm(dataset.select(range(samples_count))):
+        tokenized = tokenizer(item["text"])
+        cur_len = len(tokenized["input_ids"])
+
+        if cur_len > 16384:
+            continue
+
+        if pbar.n > total_dataset_size:
+            break
+
+        current_bin = -1
+        for i in range(len(bins_counts)):
+            max_value = 16384 / len(bins_counts) * (i + 1)
+            min_value = 16384 / len(bins_counts) * i
+            if cur_len <= max_value and cur_len >= min_value:
+                current_bin = i
+                break
+
+        assert current_bin != -1
+        if bins_counts[current_bin] > max_bin_size:
+            if cur_len > (8192 * (0.5 + random.random())):
+                pass
+            else:
+                continue
+
+        bins_counts[current_bin] += 1
+
+        input_ids_lengths.append(cur_len)
+        dclm_only_texts.append(item["text"])
+
+        pbar.update(1)
+
+    dataset = Dataset.from_dict({"text": dclm_only_texts})
 
     def process_dataset_item(dataset_item):
         text = dataset_item["text"]
@@ -93,7 +145,6 @@ if __name__ == "__main__":
     columns_to_keep = ["input_ids", "attention_mask", "special_embeddings_mask", "clothest_end_of_sentence_token_idx"]
     columns_to_remove = list(set(dataset.column_names) - set(columns_to_keep))
 
-    # Only half of data!
     dataset = dataset.shard(num_shards=args.num_shards, index=args.shard_index)
 
     print("shard len", len(dataset))

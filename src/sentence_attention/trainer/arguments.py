@@ -52,6 +52,8 @@ class SentenceTrainingArguments(TrainingArguments):
     dataloader_drop_last: bool = field(default=True)
     dataloader_num_workers: int = field(default=0)
 
+    dataset: str = field(default="fineweb_edu")  # fineweb_edu | dclm
+
     bf16: bool = field(default=False)
 
     optimized_params: str = field(default="full")  # checkout AVAILABLE_OPTIMIZED_PARAMS

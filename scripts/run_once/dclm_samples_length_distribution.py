@@ -1,3 +1,5 @@
+import random
+
 import matplotlib.pyplot as plt
 from datasets import Dataset, load_dataset
 from tqdm import tqdm
@@ -50,7 +52,11 @@ if __name__ == "__main__":
 
         assert current_bin != -1
         if bins_counts[current_bin] > max_bin_size:
-            continue
+            if cur_len > (8192 * (0.5 + random.random())):
+                pass
+            else:
+                continue
+
         bins_counts[current_bin] += 1
 
         total_tokens += cur_len

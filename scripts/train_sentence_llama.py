@@ -54,7 +54,13 @@ if __name__ == "__main__":
             if training_args.model_type == "sentence_pretrained_checkpoint":
                 # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
                 if "llama" in training_args.model_checkpoint.lower():
-                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+                    if training_args.dataset == "fineweb_edu":
+                        dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+                    elif training_args.dataset == "dclm":
+                        # dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-3B_max_length_16384_with_eos_token{dataset_suffix}_merged"
+                        dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-3B_max_length_16384_with_eos_token_num_4_merged_shard_0_of_10_temp"
+                    else:
+                        raise ValueError(f"Unknown dataset: {training_args.dataset}")
                 elif "qwen2" in training_args.model_checkpoint.lower():
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
                     print("Increase dataset shards for Qwen2.5-1.5B to", dataset_shards_limit)
