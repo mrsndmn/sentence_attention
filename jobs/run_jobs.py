@@ -139,6 +139,9 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         if resume_from_checkpoint is not None:
             resume_from_checkpoint_s = f"--resume_from_checkpoint {resume_from_checkpoint}"
 
+        if fsdp:
+            assert torch_compile == "0", "torch_compile must be 0 when fsdp is enabled"
+
         script_str = (
             f"{script_prefix} "
             f"{workdir_prefix}/scripts/train_sentence_llama.py "
@@ -817,21 +820,21 @@ def run_group_full_16k_colddown(
     test: bool = False,
     resume_from_checkpoint: bool = False,
 ) -> None:
-    ngpus = 4
-    num_nodes = 3
+    ngpus = 8
+    num_nodes = 1
 
     # ngpus = 6
     # num_nodes = 1
 
     num_train_epochs = 1
-    save_steps = 250
+    save_steps = 100
     optimized_params = "full"
     max_grad_norm = "2.0"
     # lr_scheduler_type = "constant_with_warmup"
     # lr_scheduler_type = "cosine_with_min_lr"
     lr_scheduler_type = "linear"
 
-    default_limit_shards = 20
+    default_limit_shards = 2
 
     for exp_config in _ft_16k_colddown_checkpoints():
         model_checkpoint = exp_config["model_checkpoint"]
@@ -875,19 +878,19 @@ def run_group_full_16k_colddown(
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
 
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
-            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
-            continue
+        # if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+        #     print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
+        #     continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(64 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
 
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-            print(f"Experiment {experiment_prefix_base_name} is already in progress")
-            continue
+        # if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+        #     print(f"Experiment {experiment_prefix_base_name} is already in progress")
+        #     continue
 
         run_training_experiments(
             learning_rate=0.00005,
@@ -897,6 +900,7 @@ def run_group_full_16k_colddown(
             # Rertain on EOSo data
             limit_dataset_shards=local_limit_shards,
             offset_dataset_shards=0,
+            torch_compile="0",
             dataset="dclm",
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
@@ -915,7 +919,7 @@ def run_group_full_16k_colddown(
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=100,
+            warmup_steps=1,
             dry=dry,
             bf16="0",
             add_end_of_sentence_token=1,

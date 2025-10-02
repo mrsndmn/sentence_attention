@@ -22,7 +22,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_proc", type=int, default=16)
     parser.add_argument("--num_shards", type=int, default=10)
     parser.add_argument("--shard_index", type=int, default=0)
-    parser.add_argument("--local_shard_index", type=int, default=0)
     parser.add_argument("--timeout_minutes", type=int, default=-1)
     args = parser.parse_args()
 
@@ -81,59 +80,54 @@ if __name__ == "__main__":
 
     dclm_only_texts = []
 
-    if args.local_shard_index == 0:
-        input_ids_lengths = []
+    input_ids_lengths = []
 
-        bins_counts = [0] * 100
-        total_dataset_size = 2500
-        max_bin_size = total_dataset_size / len(bins_counts)
+    bins_counts = [0] * 100
+    total_dataset_size = 25000
+    max_bin_size = total_dataset_size / len(bins_counts)
 
-        pbar = tqdm(total=total_dataset_size)
+    pbar = tqdm(total=total_dataset_size)
 
-        for item in dataset.shuffle(seed=42):
-            # for item in tqdm(dataset.select(range(samples_count))):
-            tokenized = tokenizer(item["text"])
-            cur_len = len(tokenized["input_ids"])
+    for item in dataset.shuffle(seed=42):
+        # for item in tqdm(dataset.select(range(samples_count))):
+        tokenized = tokenizer(item["text"])
+        cur_len = len(tokenized["input_ids"])
 
-            if cur_len > 16384:
-                continue
+        if cur_len > 16384:
+            continue
 
-            if pbar.n > total_dataset_size:
-                break
+        if pbar.n > total_dataset_size:
+            break
 
-            if pbar.n % 10 == 0:
-                if args.timeout_minutes > 0:
-                    if time.time() - start_time > args.timeout_minutes * 60:
-                        print("Timeout reached")
-                        break
-
-            current_bin = -1
-            for i in range(len(bins_counts)):
-                max_value = 16384 / len(bins_counts) * (i + 1)
-                min_value = 16384 / len(bins_counts) * i
-                if cur_len <= max_value and cur_len >= min_value:
-                    current_bin = i
+        if pbar.n % 10 == 0:
+            if args.timeout_minutes > 0:
+                if time.time() - start_time > args.timeout_minutes * 60:
+                    print("Timeout reached")
                     break
 
-            assert current_bin != -1
-            if bins_counts[current_bin] > max_bin_size:
-                if cur_len > (8192 * (0.5 + random.random())):
-                    pass
-                else:
-                    continue
+        current_bin = -1
+        for i in range(len(bins_counts)):
+            max_value = 16384 / len(bins_counts) * (i + 1)
+            min_value = 16384 / len(bins_counts) * i
+            if cur_len <= max_value and cur_len >= min_value:
+                current_bin = i
+                break
 
-            bins_counts[current_bin] += 1
+        assert current_bin != -1
+        if bins_counts[current_bin] > max_bin_size:
+            if cur_len > (8192 * (0.5 + random.random())):
+                pass
+            else:
+                continue
 
-            input_ids_lengths.append(cur_len)
-            dclm_only_texts.append(item["text"])
+        bins_counts[current_bin] += 1
 
-            pbar.update(1)
+        input_ids_lengths.append(cur_len)
+        dclm_only_texts.append(item["text"])
 
-        dataset = Dataset.from_dict({"text": dclm_only_texts})
-    elif args.local_shard_index == 1:
-        dataset = dataset.shuffle(seed=41)
-        total_dataset_size = 25000 - 2500
-        dataset = dataset.select(range(total_dataset_size))
+        pbar.update(1)
+
+    dataset = Dataset.from_dict({"text": dclm_only_texts})
 
     def process_dataset_item(dataset_item):
         text = dataset_item["text"]

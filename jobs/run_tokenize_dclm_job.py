@@ -25,7 +25,7 @@ if __name__ == "__main__":
                 for pretrained_model_name in ["unsloth/Llama-3.2-1B"]:
                     # for pretrained_model_name in ["Qwen/Qwen2.5-1.5B"]:
 
-                    script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python scripts/tokenize_dclm.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --shard_index {shard_index} --local_shard_index 1'"
+                    script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin/python scripts/tokenize_dclm.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --shard_index {shard_index} '"
                     print("\n\n", script)
                     if dry:
                         print("Skip running job")
