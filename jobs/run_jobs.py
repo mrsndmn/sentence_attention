@@ -378,20 +378,37 @@ def _ft_4k_colddown_checkpoints() -> List[Dict[str, Any]]:
     returns a dict with the latest checkpoint path and metadata. This does not
     filter by training success; callers may implement additional checks.
     """
-    all_experiments: List[Dict[str, Any]] = [
-        {
-            "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067/",
-            "model_slug": "Llama-3.2-3B_lr1e-4",
-            "number_of_eos_tokens": 4,
-            "per_device_train_batch_size": 1,
-        },
-        {
-            "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments_in_progress/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_X745XTCC/checkpoint-13000",
-            "model_slug": "Llama-3.2-3B_lr3e-5",
-            "number_of_eos_tokens": 4,
-            "per_device_train_batch_size": 1,
-        },
-    ]
+    all_experiments: List[Dict[str, Any]] = []
+
+    for number_of_eos_tokens in [1, 2, 4, 8]:
+        eos_dir = f"{workdir_prefix}/artifacts/experiments/eos_{number_of_eos_tokens}"
+
+        if not os.path.exists(eos_dir):
+            continue
+
+        for experiment in os.listdir(eos_dir):
+            if "_ft_4k_full_" not in experiment:
+                continue
+            if not experiment.startswith("sentence_"):
+                continue
+
+            experiment_path = f"{eos_dir}/{experiment}"
+
+            last_checkpoint = sort_checkpoints(os.listdir(experiment_path))[0]
+
+            model_slug = experiment.replace("sentence_", "")
+            model_slug = re.sub(r"_ft_.*", "", model_slug)
+
+            current_checkpoint = os.path.join(eos_dir, experiment, last_checkpoint)
+
+            all_experiments.append(
+                {
+                    "model_checkpoint": current_checkpoint,
+                    "model_slug": model_slug,
+                    "number_of_eos_tokens": number_of_eos_tokens,
+                    "per_device_train_batch_size": 1,
+                }
+            )
 
     return all_experiments
 

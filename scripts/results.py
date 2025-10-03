@@ -44,6 +44,8 @@ def infer_training_type(experiment_name: str) -> str:
         return "full finetune 4k"
     if "ft_4k_distill" in name_lower:
         return "full finetune 4k distill"
+    if "ft_4k_colddown_full" in name_lower:
+        return "full finetune 4k colddown"
 
     return "unknown"
 
@@ -160,6 +162,7 @@ def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 def prettify_experiment_name(experiment_name: str) -> str:
     normalized_name = (
         experiment_name.replace("ft_full_", "")
+        .replace("_ft_4k_colddown_full", "")
         .replace("_ft_4k_distill_full", "")
         .replace("_ft_4k_full", "")
         .replace("_base_model", "")
@@ -202,7 +205,8 @@ def build_table(
 ) -> List[List[str]]:
     table_rows: List[List[str]] = []
     for row in rows:
-        if model_filter is not None and row["family"].lower() != model_filter.lower():
+        # print(row["experiment"])
+        if model_filter is not None and model_filter.lower() not in row["experiment"].lower():
             continue
         if eos_tokens_filter is not None and int(row["eos_tokens"]) != eos_tokens_filter:
             continue
