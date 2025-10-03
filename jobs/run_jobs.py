@@ -834,7 +834,8 @@ def run_group_full_16k_colddown(
     # lr_scheduler_type = "cosine_with_min_lr"
     lr_scheduler_type = "linear"
 
-    default_limit_shards = 2
+    default_limit_shards = 50
+    # default_limit_shards = 2
 
     for exp_config in _ft_16k_colddown_checkpoints():
         model_checkpoint = exp_config["model_checkpoint"]

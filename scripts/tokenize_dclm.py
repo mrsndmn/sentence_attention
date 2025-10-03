@@ -83,7 +83,7 @@ if __name__ == "__main__":
     input_ids_lengths = []
 
     bins_counts = [0] * 100
-    total_dataset_size = 25000
+    total_dataset_size = 2500
     max_bin_size = total_dataset_size / len(bins_counts)
 
     pbar = tqdm(total=total_dataset_size)

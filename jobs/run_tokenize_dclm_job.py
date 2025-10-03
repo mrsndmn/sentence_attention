@@ -16,7 +16,8 @@ if __name__ == "__main__":
     # for num_eos_tokens in [ 1, 4, 8, 16 ]:
     # for seq_length in [1024, 4096]:
 
-    for seq_length in [16384]:
+    # for seq_length in [16384]:
+    for seq_length in [8192]:
         for num_eos_tokens in [4]:
 
             for shard_index in range(10):

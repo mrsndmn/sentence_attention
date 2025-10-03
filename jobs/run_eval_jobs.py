@@ -408,7 +408,7 @@ if __name__ == "__main__":
         assert args.limit_jobs > 0
 
     if args.benchmark == "all":
-        benchmarks = copy.deepcopy(all_benchmarks)
+        benchmarks = copy.deepcopy(long_benchmarks + short_benchmarks)
     elif args.benchmark == "long":
         benchmarks = copy.deepcopy(long_benchmarks)
     elif args.benchmark == "short":
