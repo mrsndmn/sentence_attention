@@ -429,14 +429,15 @@ def plot_helmet_short_heatmap(
 
     # Figure size scales with matrix size
     n_rows, n_cols = wide.shape
-    fig_width = max(12, 0.6 * n_cols)
-    fig_height = max(4, 0.4 * n_rows)
+    fig_width = max(12, 1.2 * n_cols)
+    fig_height = max(4, 0.8 * n_rows)
+    print("fig_width", fig_width, "fig_height", fig_height)
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     sns.heatmap(
         wide.values,
         annot=True,
-        fmt=".3f",
+        fmt=".1f",
         cmap="viridis",
         linewidths=0.5,
         linecolor="white",
