@@ -9,6 +9,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from sentence_attention.artifacts.experiments import get_all_checkpoints, get_all_last_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks, long_benchmarks, short_benchmarks
 from tabulate import tabulate
@@ -100,7 +101,15 @@ def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         return read_short_benchmark_metric(checkpoint_path, task_name)
 
 
-def get_score_metric_for_helmet_task(task_name: str) -> str:
+def get_score_metric_for_helmet_task(task_name: str, score_file: Optional[str] = None) -> str:
+    if score_file is not None and task_name == "recall":
+        if "json_kv_eval_" in score_file:
+            return "substring_exact_match"
+
+    if score_file is not None and task_name == "cite":
+        if "qampari_eval_" in score_file:
+            return "qampari_rec_top5"
+
     return {
         "recall": "ruler_recall",
         "rerank": "NDCG@10",
@@ -302,34 +311,34 @@ def plot_helmet_short_heatmap(
 
     expected_count_checkpoints = {
         "recall": {
-            8192: 12,
-            16384: 12,
-            32768: 12,
+            8192: 4,
+            16384: 4,
+            32768: 4,
         },
         "rerank": {
+            8192: 1,
+            16384: 1,
+            32768: 1,
+        },
+        "cite": {
+            8192: 2,
+            16384: 2,
+            32768: 2,
+        },
+        "longqa": {
             8192: 3,
             16384: 3,
             32768: 3,
         },
-        "cite": {
-            8192: 6,
-            16384: 6,
-            32768: 6,
-        },
-        "longqa": {
-            8192: 9,
-            16384: 9,
-            32768: 9,
-        },
         "summ": {
-            8192: 6,
-            16384: 6,
-            32768: 6,
+            8192: 2,
+            16384: 2,
+            32768: 2,
         },
         "icl": {
-            8192: 15,
-            16384: 15,
-            32768: 15,
+            8192: 2,
+            16384: 2,
+            32768: 2,
         },
     }
 
@@ -339,6 +348,14 @@ def plot_helmet_short_heatmap(
     for benchmark in benchmarks:
         for checkpoint_info in checkpoint_infos:
             checkpoint_path = checkpoint_info["full_path"]
+
+            skip_checkpoint = False
+            for model_name in model.split(","):
+                if model_name not in checkpoint_path:
+                    skip_checkpoint = True
+                    break
+            if skip_checkpoint:
+                continue
 
             benchmark_dir = os.path.join(checkpoint_path, "helmet_eval_short", benchmark)
 
@@ -358,7 +375,7 @@ def plot_helmet_short_heatmap(
                         with open(score_file) as f:
                             score_data = json.load(f)
 
-                        task_metric = get_score_metric_for_helmet_task(benchmark)
+                        task_metric = get_score_metric_for_helmet_task(benchmark, score_file=score_file)
                         all_scores.append(score_data[task_metric])
 
                     mean_bench_sequence_length_score = np.mean(all_scores)
@@ -372,7 +389,56 @@ def plot_helmet_short_heatmap(
                     }
                 )
 
-    # TODO plot benchmarks heatmap with seaborn heatmap for each checkpoint and sequence length
+    # Plot per-checkpoint heatmaps: rows=benchmarks, cols=sequence lengths
+    if len(checkpoints_bench_infos) == 0:
+        return
+
+    df = pd.DataFrame(checkpoints_bench_infos)
+
+    # Ensure consistent ordering
+    df["benchmark"] = pd.Categorical(df["benchmark"], categories=benchmarks, ordered=True)
+    df["sequence_length"] = pd.Categorical(df["sequence_length"], categories=sequence_lengths, ordered=True)
+
+    # Prepare output base dir
+    base_plot_dir = os.path.join("artifacts", "plots", "helmet_short_heatmap")
+    os.makedirs(base_plot_dir, exist_ok=True)
+
+    for checkpoint_path, df_ckpt in df.groupby("checkpoint_path"):
+        pivot = df_ckpt.pivot(index="benchmark", columns="sequence_length", values="mean_score").reindex(
+            index=benchmarks, columns=sequence_lengths
+        )
+
+        # Derive nice names and directories from path
+        checkpoint_dir_name = os.path.basename(checkpoint_path)  # checkpoint-XXXXX
+        experiment_dir = os.path.basename(os.path.dirname(checkpoint_path))
+        # Try to extract eos_N from path segments
+        path_parts = checkpoint_path.split(os.sep)
+        eos_dir = next((p for p in path_parts if p.startswith("eos_")), "eos_unknown")
+
+        pretty_experiment = prettify_experiment_name(experiment_dir)
+
+        fig, ax = plt.subplots(figsize=(6, 3.8))
+        sns.heatmap(
+            pivot,
+            annot=True,
+            fmt=".3f",
+            cmap="viridis",
+            linewidths=0.5,
+            linecolor="white",
+            cbar=True,
+            ax=ax,
+        )
+        ax.set_xlabel("Sequence length")
+        ax.set_ylabel("Benchmark")
+        ax.set_title(f"{pretty_experiment} | {checkpoint_dir_name}")
+        plt.tight_layout()
+
+        plot_dir = os.path.join(base_plot_dir, eos_dir, pretty_experiment)
+        os.makedirs(plot_dir, exist_ok=True)
+        out_path = os.path.join(plot_dir, f"{checkpoint_dir_name}.png")
+        plt.savefig(out_path, dpi=200)
+        print(f"Saved heatmap to {out_path}")
+        plt.close(fig)
 
 
 def main() -> None:
