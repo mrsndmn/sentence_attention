@@ -7,6 +7,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from sentence_attention.artifacts.experiments import get_all_checkpoints, get_all_last_checkpoints
 from sentence_attention.evaluation.benchmarks import all_benchmarks, long_benchmarks, short_benchmarks
@@ -99,6 +100,17 @@ def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         return read_short_benchmark_metric(checkpoint_path, task_name)
 
 
+def get_score_metric_for_helmet_task(task_name: str) -> str:
+    return {
+        "recall": "ruler_recall",
+        "rerank": "NDCG@10",
+        "cite": "rougeLsum",
+        "longqa": "rougeL_recall",
+        "summ": "rougeL_recall",
+        "icl": "exact_match",
+    }[task_name]
+
+
 def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
     eval_file = os.path.join(checkpoint_path, "helmet_eval", task_name, "*.score")
 
@@ -115,14 +127,7 @@ def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
     assert len(score_files) == 1, f"Multiple score files found for {checkpoint_path} {task_name}"
     score_file = score_files[0]
 
-    task_metric = {
-        "recall": "ruler_recall",
-        "rerank": "NDCG@10",
-        "cite": "rougeLsum",
-        "longqa": "rougeL_recall",
-        "summ": "rougeL_recall",
-        "icl": "exact_match",
-    }[task_name]
+    task_metric = get_score_metric_for_helmet_task(task_name)
 
     with open(score_file) as f:
         data = json.load(f)
@@ -285,6 +290,89 @@ def plot_per_checkpoint_short_results():
                 print(f"Saved plot to {plot_file_name}")
                 plt.tight_layout()
                 plt.close()
+
+
+def plot_helmet_short_heatmap(
+    model: str,
+) -> None:
+    matplotlib.style.use("seaborn-v0_8-darkgrid")
+
+    benchmarks = ["recall", "rerank", "cite", "longqa", "summ", "icl"]
+    sequence_lengths = [8192, 16384, 32768]
+
+    expected_count_checkpoints = {
+        "recall": {
+            8192: 12,
+            16384: 12,
+            32768: 12,
+        },
+        "rerank": {
+            8192: 3,
+            16384: 3,
+            32768: 3,
+        },
+        "cite": {
+            8192: 6,
+            16384: 6,
+            32768: 6,
+        },
+        "longqa": {
+            8192: 9,
+            16384: 9,
+            32768: 9,
+        },
+        "summ": {
+            8192: 6,
+            16384: 6,
+            32768: 6,
+        },
+        "icl": {
+            8192: 15,
+            16384: 15,
+            32768: 15,
+        },
+    }
+
+    checkpoint_infos = get_all_last_checkpoints(model=model)
+    checkpoints_bench_infos = []
+
+    for benchmark in benchmarks:
+        for checkpoint_info in checkpoint_infos:
+            checkpoint_path = checkpoint_info["full_path"]
+
+            benchmark_dir = os.path.join(checkpoint_path, "helmet_eval_short", benchmark)
+
+            for sequence_length in sequence_lengths:
+
+                all_scores = []
+                score_files = glob.glob(os.path.join(benchmark_dir, f"*_in{sequence_length}_*.score"))
+
+                expected_count_checkpoints[benchmark][sequence_length]
+                if len(score_files) != expected_count_checkpoints[benchmark][sequence_length]:
+                    print(
+                        f"Expected {expected_count_checkpoints[benchmark][sequence_length]} score files for {benchmark} {sequence_length}, but got {len(score_files)}"
+                    )
+                    mean_bench_sequence_length_score = np.nan
+                else:
+                    for score_file in score_files:
+                        with open(score_file) as f:
+                            score_data = json.load(f)
+
+                        task_metric = get_score_metric_for_helmet_task(benchmark)
+                        all_scores.append(score_data[task_metric])
+
+                    mean_bench_sequence_length_score = np.mean(all_scores)
+
+                checkpoints_bench_infos.append(
+                    {
+                        "checkpoint_path": checkpoint_path,
+                        "benchmark": benchmark,
+                        "sequence_length": sequence_length,
+                        "mean_score": mean_bench_sequence_length_score,
+                    }
+                )
+
+    # TODO plot benchmarks heatmap with seaborn heatmap for each checkpoint and sequence length
 
 
 def main() -> None:
@@ -453,6 +541,11 @@ def main() -> None:
             tablefmt=args.tablefmt,
             disable_numparse=True,
         )
+    )
+
+    # HELMET Short heatmap
+    plot_helmet_short_heatmap(
+        model=args.model,
     )
 
     print_lora = False
