@@ -76,7 +76,7 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
         python_path_prefix_dirs = f"{helmet_workdir_prefix}/src"
 
     use_chat_template = "instruct" in pretrained_model.lower()
-    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {current_env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template {use_chat_template} --no_torch_compile --output_dir {output_dir} '"
+    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {current_env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template {use_chat_template} --no_torch_compile --output_dir {output_dir} --limit_max_length 33000 '"
 
     print(f"\n\n{script_str}\n")
 
