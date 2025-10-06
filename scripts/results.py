@@ -342,20 +342,12 @@ def plot_helmet_short_heatmap(
         },
     }
 
-    checkpoint_infos = get_all_last_checkpoints(model=model)
+    checkpoint_infos = get_all_last_checkpoints(model=model.split(","))
     checkpoints_bench_infos = []
 
     for benchmark in benchmarks:
         for checkpoint_info in checkpoint_infos:
             checkpoint_path = checkpoint_info["full_path"]
-
-            skip_checkpoint = False
-            for model_name in model.split(","):
-                if model_name not in checkpoint_path:
-                    skip_checkpoint = True
-                    break
-            if skip_checkpoint:
-                continue
 
             benchmark_dir = os.path.join(checkpoint_path, "helmet_eval_short", benchmark)
 
@@ -367,7 +359,7 @@ def plot_helmet_short_heatmap(
                 expected_count_checkpoints[benchmark][sequence_length]
                 if len(score_files) != expected_count_checkpoints[benchmark][sequence_length]:
                     print(
-                        f"Expected {expected_count_checkpoints[benchmark][sequence_length]} score files for {benchmark} {sequence_length}, but got {len(score_files)}"
+                        f"Expected {expected_count_checkpoints[benchmark][sequence_length]} score files for {benchmark} {sequence_length}, but got {len(score_files)}: {benchmark_dir}"
                     )
                     mean_bench_sequence_length_score = np.nan
                 else:
@@ -389,7 +381,7 @@ def plot_helmet_short_heatmap(
                     }
                 )
 
-    # Plot per-checkpoint heatmaps: rows=benchmarks, cols=sequence lengths
+    # Build a single combined heatmap: rows=checkpoints, columns grouped by task (sequence lengths)
     if len(checkpoints_bench_infos) == 0:
         return
 
@@ -399,46 +391,76 @@ def plot_helmet_short_heatmap(
     df["benchmark"] = pd.Categorical(df["benchmark"], categories=benchmarks, ordered=True)
     df["sequence_length"] = pd.Categorical(df["sequence_length"], categories=sequence_lengths, ordered=True)
 
-    # Prepare output base dir
+    # Derive human-friendly row labels and sorting keys per checkpoint
+    rows_meta = []
+    for checkpoint_path in sorted(df["checkpoint_path"].unique()):
+        checkpoint_dir_name = os.path.basename(checkpoint_path)
+        experiment_dir = os.path.basename(os.path.dirname(checkpoint_path))
+        pretty_experiment = prettify_experiment_name(experiment_dir)
+        step = extract_checkpoint_step(checkpoint_dir_name)
+        row_label = f"{pretty_experiment} | {checkpoint_dir_name}"
+        rows_meta.append((checkpoint_path, row_label, pretty_experiment, step))
+
+    # Sort by experiment then step
+    rows_meta = sorted(rows_meta, key=lambda t: (t[2], t[3]))
+    ordered_paths = [t[0] for t in rows_meta]
+    ordered_labels = [t[1] for t in rows_meta]
+
+    # Pivot to wide with MultiIndex columns (benchmark, sequence_length)
+    wide = df.pivot_table(
+        index="checkpoint_path",
+        columns=["benchmark", "sequence_length"],
+        values="mean_score",
+        aggfunc="mean",
+    )
+
+    # Reindex rows and columns to desired order
+    wide = wide.reindex(index=ordered_paths)
+    # Ensure full columns order exists
+    full_columns = []
+    for b in benchmarks:
+        for sl in sequence_lengths:
+            full_columns.append((b, sl))
+    # Align columns order and include any missing ones
+    wide = wide.reindex(columns=pd.MultiIndex.from_tuples(full_columns, names=["benchmark", "sequence_length"]))
+
+    # Prepare labels for x-axis
+    x_labels = [f"{b}\n{int(sl/1024)}k" for (b, sl) in full_columns]
+
+    # Figure size scales with matrix size
+    n_rows, n_cols = wide.shape
+    fig_width = max(12, 0.6 * n_cols)
+    fig_height = max(4, 0.4 * n_rows)
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    sns.heatmap(
+        wide.values,
+        annot=True,
+        fmt=".3f",
+        cmap="viridis",
+        linewidths=0.5,
+        linecolor="white",
+        cbar=True,
+        ax=ax,
+        mask=np.isnan(wide.values),
+    )
+    ax.set_xticks(np.arange(n_cols) + 0.5)
+    ax.set_xticklabels(x_labels, rotation=45, ha="right")
+    ax.set_yticks(np.arange(n_rows) + 0.5)
+    ax.set_yticklabels(ordered_labels, rotation=0)
+    ax.set_xlabel("Task (sequence length)")
+    ax.set_ylabel("Checkpoint")
+    ax.set_title("HELMET short benchmarks heatmap")
+    plt.tight_layout()
+
+    # Output
     base_plot_dir = os.path.join("artifacts", "plots", "helmet_short_heatmap")
     os.makedirs(base_plot_dir, exist_ok=True)
-
-    for checkpoint_path, df_ckpt in df.groupby("checkpoint_path"):
-        pivot = df_ckpt.pivot(index="benchmark", columns="sequence_length", values="mean_score").reindex(
-            index=benchmarks, columns=sequence_lengths
-        )
-
-        # Derive nice names and directories from path
-        checkpoint_dir_name = os.path.basename(checkpoint_path)  # checkpoint-XXXXX
-        experiment_dir = os.path.basename(os.path.dirname(checkpoint_path))
-        # Try to extract eos_N from path segments
-        path_parts = checkpoint_path.split(os.sep)
-        eos_dir = next((p for p in path_parts if p.startswith("eos_")), "eos_unknown")
-
-        pretty_experiment = prettify_experiment_name(experiment_dir)
-
-        fig, ax = plt.subplots(figsize=(6, 3.8))
-        sns.heatmap(
-            pivot,
-            annot=True,
-            fmt=".3f",
-            cmap="viridis",
-            linewidths=0.5,
-            linecolor="white",
-            cbar=True,
-            ax=ax,
-        )
-        ax.set_xlabel("Sequence length")
-        ax.set_ylabel("Benchmark")
-        ax.set_title(f"{pretty_experiment} | {checkpoint_dir_name}")
-        plt.tight_layout()
-
-        plot_dir = os.path.join(base_plot_dir, eos_dir, pretty_experiment)
-        os.makedirs(plot_dir, exist_ok=True)
-        out_path = os.path.join(plot_dir, f"{checkpoint_dir_name}.png")
-        plt.savefig(out_path, dpi=200)
-        print(f"Saved heatmap to {out_path}")
-        plt.close(fig)
+    model_slug = "all" if not model else str(model).replace(",", "_")
+    out_path = os.path.join(base_plot_dir, f"combined_{model_slug}.png")
+    plt.savefig(out_path, dpi=200)
+    print(f"Saved combined heatmap to {out_path}")
+    plt.close(fig)
 
 
 def main() -> None:
