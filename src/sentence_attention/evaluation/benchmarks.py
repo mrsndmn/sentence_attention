@@ -41,6 +41,8 @@ def checkpoint_evaluation_file(model_checkpoint, task_name, ruler_mode="tiny"):
             eval_dir = "helmet_eval"
         elif ruler_mode == "short":
             eval_dir = "helmet_eval_short"
+        elif ruler_mode == "long":
+            eval_dir = "helmet_eval_long"
         else:
             raise ValueError(f"Invalid ruler_mode: {ruler_mode}")
 

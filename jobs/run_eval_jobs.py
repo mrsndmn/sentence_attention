@@ -55,6 +55,8 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
         output_dir = os.path.join(pretrained_model, "helmet_eval", benchmark)  # tiny eval
     elif ruler_mode == "short":
         output_dir = os.path.join(pretrained_model, "helmet_eval_short", benchmark)  # short eval
+    elif ruler_mode == "long":
+        output_dir = os.path.join(pretrained_model, "helmet_eval_long", benchmark)  # long eval
     else:
         raise ValueError(f"Invalid ruler_mode: {ruler_mode}")
 
@@ -62,7 +64,10 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     assert benchmark in long_benchmarks, f"Invalid benchmark: {benchmark}"
 
-    bench_config = f"configs/{benchmark}_{ruler_mode}.yaml"
+    if ruler_mode == "long":
+        bench_config = f"configs/{benchmark}.yaml"
+    else:
+        bench_config = f"configs/{benchmark}_{ruler_mode}.yaml"
 
     current_env_bin_path = env_bin_path
     python_path_prefix_dirs = f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src"
@@ -164,7 +169,7 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
 def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False, ruler_mode="none"):
 
     if experiment["benchmark"] in ["recall", "rag", "rerank", "cite", "longqa", "summ", "icl"]:
-        assert ruler_mode in ["tiny", "short"], f"Invalid mode: {ruler_mode}"
+        assert ruler_mode in ["tiny", "short", "long"], f"Invalid mode: {ruler_mode}"
         return run_helmet_eval_experiments(experiment, job_description, dry, local, ruler_mode=ruler_mode)
 
     return run_lighteval_eval_experiments(experiment, job_description, dry, local)
@@ -394,7 +399,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_jobs_queue_size", type=int, default=None)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--local", action="store_true")
-    parser.add_argument("--ruler_mode", type=str, default="none", choices=["none", "tiny", "short"])
+    parser.add_argument("--ruler_mode", type=str, default="none", choices=["none", "tiny", "short", "long"])
     parser.add_argument("--run_for_in_progress_jobs", action="store_true")
     args = parser.parse_args()
 

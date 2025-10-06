@@ -153,6 +153,9 @@ def read_short_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         if value is None:
             return ""
         if isinstance(value, (int, float)):
+            if task_name in ["hellaswag", "arc", "winogrande", "mmlu_cloze"]:
+                value = value * 100
+
             return f"{value:.2f}"
         return str(value)
     except Exception:
@@ -393,7 +396,7 @@ def main() -> None:
         training_mapping=training_mapping,
         row_predicate=lambda r: int(
             ("Llama-3.2-3B" in r["experiment"] or "Llama-3.2-1B" in r["experiment"])
-            and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k distill"))
+            and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k colddown"))
         ),
     )
     print(
@@ -417,7 +420,30 @@ def main() -> None:
         training_mapping=training_mapping,
         row_predicate=lambda r: int(
             ("Llama-3.2-3B" in r["experiment"] or "Llama-3.2-1B" in r["experiment"])
-            and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k distill", "unknown"))
+            and (r["training"] in ("base model", "full finetune 4k", "full finetune 4k colddown", "unknown"))
+        ),
+    )
+    print(
+        tabulate(
+            main_long_rows,
+            headers=long_headers,
+            tablefmt=args.tablefmt,
+            disable_numparse=True,
+        )
+    )
+
+    print("\nSep cache / Beacon / Sentence Attention:")
+    # 1) Main results: base models (0 EOS) and fully finetuned models
+    # breakpoint()
+    main_long_rows = build_table(
+        rows=rows,
+        # benchmarks=[ 'recall', 'longqa', 'icl' ],
+        benchmarks=long_benchmarks,
+        training_mapping=training_mapping,
+        row_predicate=lambda r: int(
+            #     # ("Llama-3.2-3B" in r["experiment"] or "beacon" in r["experiment"].lower() or "qwen" in r["experiment"].lower())
+            r["training"]
+            in ("base model", "full finetune 4k colddown")
         ),
     )
     print(
