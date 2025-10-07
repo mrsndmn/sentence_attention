@@ -708,6 +708,7 @@ def main() -> None:
     main_long_rows = build_table(
         rows=rows,
         benchmarks=long_benchmarks,
+        # benchmarks=["recall", "longqa", "icl", "cite"],
         training_mapping=training_mapping,
         row_predicate=lambda r: int(
             ("Llama-3.2-3B" in r["experiment"] or "Llama-3.2-1B" in r["experiment"])
