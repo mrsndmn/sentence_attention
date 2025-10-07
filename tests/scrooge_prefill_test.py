@@ -2,17 +2,15 @@ import os
 
 import pytest
 import torch
-from transformers import AutoTokenizer, DynamicCache
-
+from sentence_attention.artifacts.experiments import ARTIFACTS_PREFIX
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
     special_token_mask_to_clothest_token_idx_slow,
 )
 from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache, scrooge_prefill
+from transformers import AutoTokenizer, DynamicCache
 
 # from transformers import LlamaForCausalLM
-
-ARTIFACTS_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/"
 
 
 @pytest.mark.skip(reason="Skipping test_generate_country")

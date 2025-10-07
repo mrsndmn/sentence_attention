@@ -2,8 +2,9 @@ import os
 import re
 
 WORKDIR_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
-EXPERIMENTS_DIR = os.path.join(WORKDIR_PREFIX, "artifacts", "experiments")
-EXPERIMENTS_IN_PROGRESS_DIR = os.path.join(WORKDIR_PREFIX, "artifacts", "experiments_in_progress")
+ARTIFACTS_PREFIX = os.path.join(WORKDIR_PREFIX, "artifacts")
+EXPERIMENTS_DIR = os.path.join(ARTIFACTS_PREFIX, "experiments")
+EXPERIMENTS_IN_PROGRESS_DIR = os.path.join(ARTIFACTS_PREFIX, "experiments_in_progress")
 
 
 def sort_checkpoints(checkpoints: list[str]):

@@ -1,16 +1,14 @@
 import os
 
 import torch
-from transformers import AutoTokenizer
-
+from sentence_attention.artifacts.experiments import ARTIFACTS_PREFIX
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
     SentenceLlamaModel,
     special_token_mask_to_clothest_token_idx_slow,
 )
-
-ARTIFACTS_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/"
+from transformers import AutoTokenizer
 
 
 def test_sentence_attention_4d_mask():
