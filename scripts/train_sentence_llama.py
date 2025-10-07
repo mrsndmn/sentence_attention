@@ -8,6 +8,7 @@ import torch.profiler
 import transformers
 from accelerate import PartialState
 from datasets import Dataset, load_dataset
+from sentence_attention.artifacts.experiments import WORKDIR_PREFIX
 from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 from sentence_attention.trainer.trainer import SentenceTrainer
@@ -45,7 +46,7 @@ if __name__ == "__main__":
 
         if training_args.add_end_of_sentence_token:
             print("Loading fineweb edu tokenized with eos tokenizer")
-            datasets_path_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data"
+            datasets_path_prefix = WORKDIR_PREFIX + "/artifacts/data"
 
             max_length_dataset_suffix = "_max_length_4096"
 

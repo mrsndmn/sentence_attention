@@ -9,6 +9,9 @@ cd ./supplemetnary/source_code/
 # Восстанавливаем только закоммиченные файлы
 git checkout .
 
+# Crutch single file with hardcoded path to workdir
+sed -i "s|/workspace-SR004.nfs2/d.tarasov/sentence_attention|.|g" src/sentence_attention/artifacts/experiments.py
+
 # Удаляем все файлы, которые могут задеанонить (джобы, гит, скрипты c полными путями)
 # Скрипты джобов для воспроизводимости не нужны и из них нельзя просто выкинуть полные пути (хотя можно, но костыльно это будет и неудобно)
 rm -rf .git/ prepare_submission.sh

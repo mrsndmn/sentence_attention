@@ -4,10 +4,10 @@ import os
 import torch
 from lighteval.logging.evaluation_tracker import EnhancedJSONEncoder, EvaluationTracker
 from lighteval.pipeline import EnvConfig, ParallelismManager, Pipeline, PipelineParameters
-
+from sentence_attention.artifacts.experiments import WORKDIR_PREFIX
 from sentence_attention.evaluation.benchmarks import checkpoint_evaluation_file
 
-workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
+workdir_prefix = WORKDIR_PREFIX
 
 task_to_default_batch_size = {
     "arc": 64,
