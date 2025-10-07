@@ -57,7 +57,7 @@ FILE_SIZE_MB=$(stat -c %s supplemetnary.zip | awk '{printf "%.2f MB\n", $1 / 102
 if [ "$FILE_SIZE" -lt "$MAX_SIZE" ]; then
     echo "✅ Archive size ($FILE_SIZE_MB) is less than 50MB."
 else
-    echo "❌ Archive size is greater than or equal to 50MB."
+    echo "❌ Archive size ($FILE_SIZE_MB) is greater than or equal to 50MB."
     du -sh supplemetnary.zip
     exit 1  # or handle the error as needed
 fi
