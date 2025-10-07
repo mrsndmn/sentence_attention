@@ -14,7 +14,7 @@ sed -i "s|/workspace-SR004.nfs2/d.tarasov/sentence_attention|.|g" src/sentence_a
 
 # Удаляем все файлы, которые могут задеанонить (джобы, гит, скрипты c полными путями)
 # Скрипты джобов для воспроизводимости не нужны и из них нельзя просто выкинуть полные пути (хотя можно, но костыльно это будет и неудобно)
-rm -rf .git/ prepare_submission.sh
+rm -rf .git/ prepare_submission.sh .github LICENSE jobs
 
 echo "Following files will be deleted:"
 grep -Rl tarasov .
