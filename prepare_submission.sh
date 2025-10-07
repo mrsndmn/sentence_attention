@@ -52,8 +52,10 @@ FILE_SIZE=$(stat -c%s "supplemetnary.zip")  # GNU stat (Linux)
 
 MAX_SIZE=$((45 * 1024 * 1024))  # 45MB in bytes
 
+FILE_SIZE_MB=$(stat -c %s supplemetnary.zip | awk '{printf "%.2f MB\n", $1 / 1024 / 1024}')
+
 if [ "$FILE_SIZE" -lt "$MAX_SIZE" ]; then
-    echo "✅ Archive size is less than 50MB."
+    echo "✅ Archive size ($FILE_SIZE_MB) is less than 50MB."
 else
     echo "❌ Archive size is greater than or equal to 50MB."
     du -sh supplemetnary.zip
