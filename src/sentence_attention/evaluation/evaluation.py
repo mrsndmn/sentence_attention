@@ -21,9 +21,11 @@ task_to_default_batch_size = {
 }
 
 
-def evaluate_lighteval_task_save_results(model, model_checkpoint, task_name, override_batch_size=None, num_fewshot_seeds=None):
+def evaluate_lighteval_task_save_results(
+    model, model_checkpoint, task_name, override_batch_size=None, num_fewshot_seeds=None, max_samples=None
+):
 
-    results = evaluate_lighteval_task(model, task_name, override_batch_size, num_fewshot_seeds)
+    results = evaluate_lighteval_task(model, task_name, override_batch_size, num_fewshot_seeds, max_samples=max_samples)
 
     results_file = checkpoint_evaluation_file(model_checkpoint, task_name)
 
@@ -35,7 +37,7 @@ def evaluate_lighteval_task_save_results(model, model_checkpoint, task_name, ove
     return results
 
 
-def build_evaluation_pipeline(model, task_name, override_batch_size=None, num_fewshot_seeds=None):
+def build_evaluation_pipeline(model, task_name, override_batch_size=None, num_fewshot_seeds=None, max_samples=None):
 
     evaluation_output_dir = os.path.join(workdir_prefix, "artifacts", "evaluation")
     os.makedirs(evaluation_output_dir, exist_ok=True)
@@ -61,7 +63,7 @@ def build_evaluation_pipeline(model, task_name, override_batch_size=None, num_fe
         use_chat_template=False,
         system_prompt=None,
         load_responses_from_details_date_id=None,
-        max_samples=None,
+        max_samples=max_samples,
     )
 
     tasks = f"custom|{task_name}|{num_fewshot_seeds}|1"
@@ -76,107 +78,13 @@ def build_evaluation_pipeline(model, task_name, override_batch_size=None, num_fe
     return pipeline
 
 
-def evaluate_lighteval_task(model, task_name, override_batch_size=None, num_fewshot_seeds=None):
+def evaluate_lighteval_task(model, task_name, override_batch_size=None, num_fewshot_seeds=None, max_samples=None):
 
     with torch.no_grad():
-        pipeline = build_evaluation_pipeline(model, task_name, override_batch_size, num_fewshot_seeds)
+        pipeline = build_evaluation_pipeline(model, task_name, override_batch_size, num_fewshot_seeds, max_samples=max_samples)
         pipeline.evaluate()
 
         pipeline.show_results()
         results = pipeline.get_results()
-
-    return results
-
-
-def evaluate_ppl_wikitext_103(model):
-
-    results = evaluate_lighteval_task(
-        model,
-        "wikitext_103",
-        override_batch_size=2,
-        num_fewshot_seeds=0,
-    )
-
-    print('results[results]["custom:wikitext_103:0"]', results["results"]["custom:wikitext_103:0"])
-
-    return results
-
-
-def evaluate_acc_hellaswag(model):
-
-    results = evaluate_lighteval_task(
-        model,
-        "hellaswag",
-        override_batch_size=32,
-        num_fewshot_seeds=0,
-    )
-
-    return results
-
-
-def evaluate_acc_mmlu_0_shot(model):
-
-    results = evaluate_lighteval_task(
-        model,
-        "mmlu_cloze",
-        override_batch_size=16,
-        num_fewshot_seeds=0,
-    )
-
-    return results
-
-
-def evaluate_acc_mmlu_5_shot(model):
-
-    results = evaluate_lighteval_task(
-        model,
-        "mmlu_cloze",
-        override_batch_size=16,
-        num_fewshot_seeds=5,
-    )
-
-    return results
-
-
-def evaluate_acc_winogrande(model):
-    results = evaluate_lighteval_task(
-        model,
-        "winogrande",
-        override_batch_size=512,
-        num_fewshot_seeds=0,
-    )
-
-    return results
-
-
-def evaluate_acc_piqa(model):
-    results = evaluate_lighteval_task(
-        model,
-        "piqa",
-        override_batch_size=128,
-        num_fewshot_seeds=0,
-    )
-
-    return results
-
-
-def evaluate_acc_siqa(model):
-    results = evaluate_lighteval_task(
-        model,
-        "siqa",
-        override_batch_size=256,
-        num_fewshot_seeds=0,
-    )
-
-    return results
-
-
-def evaluate_acc_openbookqa(model):
-    results = evaluate_lighteval_task(
-        model,
-        "openbookqa",
-        override_batch_size=256,
-        num_fewshot_seeds=0,
-    )
 
     return results

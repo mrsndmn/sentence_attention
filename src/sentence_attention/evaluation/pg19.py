@@ -7,13 +7,12 @@ import datasets
 import numpy as np
 import torch
 import torch.nn.functional as F
-from tqdm import tqdm
-from transformers import AutoTokenizer
-
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     special_token_mask_to_clothest_token_idx_slow,
 )
 from sentence_attention.models.sentence_llama.scrooge_prefill import scrooge_prefill
+from tqdm import tqdm
+from transformers import AutoTokenizer
 
 
 def _str_to_dtype(dtype_str: str) -> torch.dtype:
@@ -45,7 +44,7 @@ def evaluate_pg19_ppl(
     model.to(device)
 
     dataset = datasets.Dataset.load_from_disk(dataset_path)
-    if max_samples != -1:
+    if max_samples is not None:
         dataset = dataset.select(range(max_samples))
 
     print(

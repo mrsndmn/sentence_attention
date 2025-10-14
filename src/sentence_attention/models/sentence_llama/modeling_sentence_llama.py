@@ -167,6 +167,7 @@ def sentence_attention_forward_flex(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 
     if hasattr(module, "num_key_value_groups"):
+        # print("module.num_key_value_groups", module.num_key_value_groups)
         key = repeat_kv(key, module.num_key_value_groups)
         value = repeat_kv(value, module.num_key_value_groups)
 
@@ -1154,10 +1155,17 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             assert past_key_values.get_seq_length() == 0, "cache_position must be provided if past_key_values is provided"
             cache_position = torch.arange(0, input_ids.shape[1], device=input_ids.device)
 
+        prev_attention_implementation = self.config._attn_implementation
+
+        initial_input_ids = input_ids.clone()
+
         if input_ids.shape[1] > 1 and past_key_values.get_seq_length() == 0:
             # Prefill
 
             from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache
+
+            PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+            self.config._attn_implementation = PREFILL_DEFAULT_ATTN_IMPLEMENTATION
 
             scrooge_prefill_outputs = full_prefill_small_kv_cache(
                 self,
@@ -1186,6 +1194,10 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         current_input_ids = input_ids.clone()
 
         device = input_ids.device
+
+        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
+        # Forse eager attention for decoding
+        self.config._attn_implementation = DECODE_DEFAULT_ATTN_IMPLEMENTATION
 
         for _new_token_id in range(max_new_tokens):
 
@@ -1247,13 +1259,27 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             #     # Decode tokens: [430, 1364, 374, 264, 1695, 1732, 13, 220, 128256, 128257, 128258, 128259, 8100, 374, 264, 1695, 6691, 323, 264, 1695, 7555]
             #     print("generated_tokens", generated_tokens)
 
+        if prev_attention_implementation is not None:
+            self.config._attn_implementation = prev_attention_implementation
+            print(
+                "Restore attention implementation for decoding",
+                "self.config._attn_implementation",
+                self.config._attn_implementation,
+            )
+
         generated_tokens_t = torch.tensor([generated_tokens], device=input_ids.device, dtype=torch.long)
+
+        # print("initial_input_ids", initial_input_ids.shape)
+        # print("generated_tokens_t", generated_tokens_t.shape)
+        concatenated_tokens = torch.cat([initial_input_ids, generated_tokens_t], dim=-1)
+        # print("concatenated_tokens", concatenated_tokens.shape)
+        # breakpoint()
         if kwargs.get("return_dict_in_generate", False):
             return {
-                "sequences": generated_tokens_t,
+                "sequences": concatenated_tokens,
             }
 
-        return generated_tokens_t
+        return concatenated_tokens
 
     def prepare_inputs_for_generation(
         self,
