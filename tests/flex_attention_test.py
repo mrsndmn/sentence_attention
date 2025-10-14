@@ -1,4 +1,3 @@
-import pytest
 import torch
 import torch.nn.functional as F
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
@@ -195,7 +194,6 @@ def test_sentence_attention_forward():
     assert torch.allclose(out_sdpa, out_flex), "out_sdpa and out_flex are not close"
 
 
-@pytest.mark.skip(reason="TODO: check this test one more time")
 def test_sentence_attention_impl_equivalence():
 
     torch.set_default_device("cuda")

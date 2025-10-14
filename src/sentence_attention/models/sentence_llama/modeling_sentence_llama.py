@@ -918,7 +918,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             BLOCK_SIZE=128,
         )
 
-        print("block_mask", block_mask)
+        # print("block_mask", block_mask)
 
         return block_mask
 
