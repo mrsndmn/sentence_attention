@@ -166,10 +166,10 @@ def sentence_attention_forward_flex(
     **kwargs,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 
-    if hasattr(module, "num_key_value_groups"):
-        # print("module.num_key_value_groups", module.num_key_value_groups)
-        key = repeat_kv(key, module.num_key_value_groups)
-        value = repeat_kv(value, module.num_key_value_groups)
+    # if hasattr(module, "num_key_value_groups"):
+    #     # print("module.num_key_value_groups", module.num_key_value_groups)
+    #     key = repeat_kv(key, module.num_key_value_groups)
+    #     value = repeat_kv(value, module.num_key_value_groups)
 
     assert isinstance(attention_mask, torch.nn.attention.flex_attention.BlockMask), "attention_mask must be a BlockMask"
 
@@ -185,7 +185,8 @@ def sentence_attention_forward_flex(
         value,
         score_mod=None,
         block_mask=attention_mask,
-        enable_gqa=False,  # explicit repeat kv is already done above
+        # enable_gqa=False,  # explicit repeat kv is already done above
+        enable_gqa=True,
         scale=scaling,
         # Last time checked on PyTorch == 2.5.1: Flex Attention always computes the lse regardless.
         # For simplification, we thus always return it as no additional computations are introduced.
@@ -915,7 +916,9 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             q_idx,
             kv_idx,
             device=attention_mask.device,
-            BLOCK_SIZE=128,
+            # BLOCK_SIZE=128,
+            BLOCK_SIZE=64,
+            # BLOCK_SIZE=32,
         )
 
         # print("block_mask", block_mask)
