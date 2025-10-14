@@ -1,13 +1,12 @@
 import torch
 import torch.nn.functional as F
-from torch.nn.attention.flex_attention import create_block_mask, create_mask, flex_attention
-
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaModel,
     sentence_attention_forward,
     sentence_attention_forward_flex,
     special_token_mask_to_clothest_token_idx_slow,
 )
+from torch.nn.attention.flex_attention import create_block_mask, create_mask, flex_attention
 
 
 def test_flex_attention_full():
@@ -47,7 +46,7 @@ def test_flex_attention_causal():
     query, key, value = tensor, tensor, tensor
 
     # Forward pass
-    output = flex_attention(query, key, value, score_mod=causal_mask)
+    output_score_mod = flex_attention(query, key, value, score_mod=causal_mask)
 
     def block_causal(b, h, q_idx, kv_idx):
         return q_idx >= kv_idx
@@ -56,12 +55,12 @@ def test_flex_attention_causal():
     block_mask = create_block_mask(block_causal, B=None, H=None, Q_LEN=seq_len, KV_LEN=seq_len)
     block_mask = block_mask.to("cpu")
 
-    output_2 = flex_attention(query, key, value, block_mask=block_mask)
+    output_block_mask = flex_attention(query, key, value, block_mask=block_mask)
 
-    output_3 = F.scaled_dot_product_attention(query, key, value, is_causal=True)
+    output_sdpa = F.scaled_dot_product_attention(query, key, value, is_causal=True)
 
-    assert torch.allclose(output, output_2)
-    assert torch.allclose(output, output_3)
+    assert torch.allclose(output_score_mod, output_block_mask)
+    assert torch.allclose(output_score_mod, output_sdpa)
 
 
 def test_flex_attention_mask():
