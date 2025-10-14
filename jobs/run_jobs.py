@@ -507,7 +507,7 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 
 def run_group_eos_only(
-    *, dry: bool, num_eos_tokens: List[int], test: bool = False, in_progress_jobs: List[Dict], model: str
+    *, dry: bool, num_eos_tokens: List[int], test: bool = False, force: bool = False, in_progress_jobs: List[Dict], model: str
 ) -> None:
     ngpus = 4
     n_nodes = 1
@@ -545,14 +545,14 @@ def run_group_eos_only(
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
 
-            if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+            if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
                 print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
                 continue
 
             experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
             job_description = f"ST: {experiment_prefix_base_name}"
 
-            if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+            if not force and check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
                 print(f"Experiment {experiment_prefix_base_name} is already in progress")
                 continue
 
@@ -599,6 +599,7 @@ def run_group_full_4k(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
     resume_from_checkpoint: bool = False,
+    force: bool = False,
 ) -> None:
     ngpus = 8
     num_nodes = 2
@@ -655,7 +656,7 @@ def run_group_full_4k(
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
 
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+        if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
 
@@ -665,7 +666,7 @@ def run_group_full_4k(
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
 
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+        if not force and check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
             print(f"Experiment {experiment_prefix_base_name} is already in progress")
             continue
 
@@ -717,6 +718,7 @@ def run_group_full_4k_colddown(
     ft_with_bos_token: bool = False,
     test: bool = False,
     resume_from_checkpoint: bool = False,
+    force: bool = False,
 ) -> None:
     ngpus = 8
     num_nodes = 1
@@ -774,7 +776,7 @@ def run_group_full_4k_colddown(
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
 
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+        if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
 
@@ -784,7 +786,7 @@ def run_group_full_4k_colddown(
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
 
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+        if not force and check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
             print(f"Experiment {experiment_prefix_base_name} is already in progress")
             continue
 
@@ -836,6 +838,7 @@ def run_group_full_16k_colddown(
     ft_with_bos_token: bool = False,
     test: bool = False,
     resume_from_checkpoint: bool = False,
+    force: bool = False,
 ) -> None:
     ngpus = 8
     num_nodes = 1
@@ -896,9 +899,9 @@ def run_group_full_16k_colddown(
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
 
-        # if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
-        #     print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
-        #     continue
+        if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
+            continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
         gradient_accumulation_steps = math.ceil(64 / ngpus / num_nodes / per_device_train_batch_size)
@@ -906,9 +909,9 @@ def run_group_full_16k_colddown(
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
 
-        # if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
-        #     print(f"Experiment {experiment_prefix_base_name} is already in progress")
-        #     continue
+        if not force and check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+            print(f"Experiment {experiment_prefix_base_name} is already in progress")
+            continue
 
         run_training_experiments(
             learning_rate=0.00005,
@@ -959,6 +962,7 @@ def run_group_lora(
     in_progress_jobs: List[Dict],
     model: str,
     resume_from_checkpoint: bool = False,
+    force: bool = False,
 ) -> None:
     ngpus = 4
     num_nodes = 1
@@ -984,7 +988,7 @@ def run_group_lora(
             continue
 
         model_dir_prefix = f"sentence_{model_slug}_ft_{optimized_params}"
-        if check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+        if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
 
@@ -995,7 +999,7 @@ def run_group_lora(
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
 
-        if check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+        if not force and check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
             print(f"Experiment {experiment_prefix_base_name} is already in progress")
             continue
 
@@ -1060,6 +1064,7 @@ def _cli() -> argparse.ArgumentParser:
 
     parser.add_argument("--wait", type=str, help="Job ID to wait for")
     parser.add_argument("--test", action="store_true")
+    parser.add_argument("--force", action="store_true")
     parser.add_argument("--model", type=str, help="Model checkpoint filter")
     parser.add_argument("--resume_from_checkpoint", type=str, help="Resume from checkpoint", default=None)
 
@@ -1102,6 +1107,7 @@ def main() -> None:
             in_progress_jobs=in_progress_jobs,
             model=args.model,
             test=args.test,
+            force=args.force,
         )
     elif args.group == "full_4k":
         run_group_full_4k(
@@ -1111,6 +1117,7 @@ def main() -> None:
             model=args.model,
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
+            force=args.force,
         )
     elif args.group == "full_4k_colddown":
         run_group_full_4k_colddown(
@@ -1120,6 +1127,7 @@ def main() -> None:
             model=args.model,
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
+            force=args.force,
         )
     elif args.group == "full_16k_colddown":
         run_group_full_16k_colddown(
@@ -1129,6 +1137,7 @@ def main() -> None:
             model=args.model,
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
+            force=args.force,
         )
     elif args.group == "lora":
         run_group_lora(
@@ -1138,6 +1147,7 @@ def main() -> None:
             model=args.model,
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
+            force=args.force,
         )
     elif args.group == "full-flexible-eos-tokens":
         run_group_full_4k(
@@ -1148,6 +1158,7 @@ def main() -> None:
             flexible_eos_tokens=True,
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
+            force=args.force,
         )
     elif args.group == "ft-with-bos-token":
         run_group_full_4k(
@@ -1158,6 +1169,7 @@ def main() -> None:
             ft_with_bos_token=True,
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
+            force=args.force,
         )
 
     return
