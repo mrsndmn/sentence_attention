@@ -10,7 +10,7 @@ from transformers import AutoTokenizer
 from wonderwords import RandomWord
 
 
-def generate_random_sample(num_examples=200, random_word=None, no_answer=False, return_answer=True):
+def generate_random_sample(num_examples=200, random_word=None, no_answer=False, return_answer=False):
 
     if random_word is None:
         random_word = RandomWord()

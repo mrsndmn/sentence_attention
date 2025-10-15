@@ -1,13 +1,33 @@
+import multiprocessing as mp
+import os
+
 import torch
 from datasets import Dataset
-from sentence_attention.evaluation.my_recall import generate_random_sample
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
-from wonderwords import RandomWord
+
+
+def _generate_one_sample(task):
+    # task: Tuple[int, bool] -> (seed, no_answer)
+    seed, no_answer = task
+    import random as _random
+
+    import numpy as _np
+    import torch as _torch
+    from sentence_attention.evaluation.my_recall import generate_random_sample as _gen
+    from wonderwords import RandomWord as _RandomWord
+
+    _random.seed(seed)
+    _np.random.seed(seed % (2**32 - 1))
+    _torch.manual_seed(seed)
+
+    rw = _RandomWord()
+    return _gen(random_word=rw, no_answer=no_answer, return_answer=False)
+
 
 if __name__ == "__main__":
 
@@ -42,17 +62,19 @@ if __name__ == "__main__":
 
     print("Will be saved to target_dir:", target_dir)
 
-    tokenizer_class = type(AutoTokenizer.from_pretrained(pretrained_model_name)).__name__
+    tokenizer_class_name = type(AutoTokenizer.from_pretrained(pretrained_model_name)).__name__
 
-    if args.with_eos_token:
-        if tokenizer_class == "GPT2TokenizerFast":
-            tokenizer_class = GPT2TokenizerFastEOS
-        elif tokenizer_class == "PreTrainedTokenizerFast":
-            tokenizer_class = PreTrainedTokenizerFastEOS
-        elif tokenizer_class == "Qwen2TokenizerFast":
-            tokenizer_class = Qwen2TokenizerFastEOS
-        else:
-            raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
+    if not args.with_eos_token:
+        raise ValueError("--with_eos_token must be provided for this script")
+
+    if tokenizer_class_name == "GPT2TokenizerFast":
+        tokenizer_class = GPT2TokenizerFastEOS
+    elif tokenizer_class_name == "PreTrainedTokenizerFast":
+        tokenizer_class = PreTrainedTokenizerFastEOS
+    elif tokenizer_class_name == "Qwen2TokenizerFast":
+        tokenizer_class = Qwen2TokenizerFastEOS
+    else:
+        raise ValueError(f"Invalid tokenizer class: {tokenizer_class_name}")
 
     tokenizer = tokenizer_class.from_pretrained(pretrained_model_name, num_eos_tokens=num_eos_tokens)
     assert tokenizer.num_eos_tokens == num_eos_tokens, "tokenizer num eos tokens set correctly"
@@ -62,12 +84,28 @@ if __name__ == "__main__":
 
     special_token_ids = tokenizer.end_of_sentence_token_ids
 
-    random_word = RandomWord()
-    s = generate_random_sample(random_word=random_word)
+    # Parallel sample generation with multiprocessing, progress per sample
+    num_workers = num_proc if num_proc is not None else (os.cpu_count() or 1)
+    base_seed = int.from_bytes(os.urandom(8), "little")
+    tasks = [(base_seed + 10007 * (i + 1), False) for i in range(args.num_samples)]
 
     generated_samples = []
-    for _ in tqdm(range(args.num_samples)):
-        generated_samples.append(generate_random_sample(random_word=random_word))
+    with mp.get_context("spawn").Pool(processes=num_workers) as pool:
+        for sample in tqdm(
+            pool.imap_unordered(_generate_one_sample, tasks, chunksize=64),
+            total=len(tasks),
+            desc="Generating samples",
+        ):
+            generated_samples.append(sample)
+
+    # Validate counts and absence of duplicates
+    assert (
+        len(generated_samples) == args.num_samples
+    ), f"Generated {len(generated_samples)} samples, expected {args.num_samples}"
+    unique_count = len(set(generated_samples))
+    if unique_count != len(generated_samples):
+        dup_count = len(generated_samples) - unique_count
+        raise RuntimeError(f"Duplicate samples detected after pooling: {dup_count}")
 
     dataset = Dataset.from_dict({"text": generated_samples})
 
