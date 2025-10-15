@@ -1,11 +1,10 @@
 import torch
 from datasets import load_dataset
-from transformers import AutoTokenizer
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
-
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
+from transformers import AutoTokenizer
+from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 
 if __name__ == "__main__":
 

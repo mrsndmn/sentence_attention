@@ -519,8 +519,8 @@ def run_group_eos_only_my_recall(
         dataset="my_recall",
         limit_dataset_shards=50,
         extra_exp_suffix="_my_recall",
-        global_batch_size=16,
-        ngpus=1,
+        global_batch_size=4,
+        ngpus=4,
     )
 
 
