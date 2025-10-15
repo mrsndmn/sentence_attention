@@ -4,6 +4,7 @@ from sentence_attention.evaluation.my_recall import generate_random_sample
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
+from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 from wonderwords import RandomWord
@@ -65,7 +66,7 @@ if __name__ == "__main__":
     s = generate_random_sample(random_word=random_word)
 
     generated_samples = []
-    for _ in range(args.num_samples):
+    for _ in tqdm(range(args.num_samples)):
         generated_samples.append(generate_random_sample(random_word=random_word))
 
     dataset = Dataset.from_dict({"text": generated_samples})

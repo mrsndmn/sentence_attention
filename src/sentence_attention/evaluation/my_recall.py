@@ -49,6 +49,7 @@ The special magic number for {query_key} mentioned in the provided text is {temp
     return full_sample
 
 
+@torch.no_grad()
 def evaluate_synthetic_my_recall(
     model: torch.nn.Module,
     tokenizer: AutoTokenizer,
