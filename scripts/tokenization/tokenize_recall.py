@@ -2,6 +2,7 @@ import multiprocessing as mp
 import os
 
 import torch
+import torch.nn as nn
 from datasets import Dataset
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
@@ -166,12 +167,17 @@ if __name__ == "__main__":
 
             result["labels"] = result_labels[:, 1:]
             result["labels"][:, :-answer_tokens] = -100
+            result["labels"] = nn.functional.pad(result["labels"], (0, 1), value=-100)
 
         return result
 
     columns_to_keep = ["input_ids", "attention_mask", "special_embeddings_mask", "clothest_end_of_sentence_token_idx"]
+    if args.with_labels_on_answer:
+        columns_to_keep.append("labels")
     columns_to_remove = list(set(dataset.column_names) - set(columns_to_keep))
 
     dataset = dataset.map(process_dataset_item, num_proc=num_proc, remove_columns=columns_to_remove)
 
     dataset.save_to_disk(target_dir)
+
+    print("dataset", dataset)

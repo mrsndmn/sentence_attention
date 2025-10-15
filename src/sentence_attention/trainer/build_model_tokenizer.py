@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-from transformers import AutoTokenizer
-
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import (
     GPT2TokenizerFastEOS,
 )
@@ -17,6 +15,7 @@ from sentence_attention.trainer.arguments import (
     AVAILABLE_OPTIMIZED_PARAMS,
     SentenceTrainingArguments,
 )
+from transformers import AutoTokenizer
 
 
 def freeze_model(model: nn.Module):
@@ -89,34 +88,35 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
         optimized_params = training_args.optimized_params
         print("optimized_params", optimized_params)
 
-        assert (
-            optimized_params in AVAILABLE_OPTIMIZED_PARAMS
+        assert any(
+            param in AVAILABLE_OPTIMIZED_PARAMS for param in optimized_params.split(",")
         ), f"unknown optimized_params value: {optimized_params}. available ones: {AVAILABLE_OPTIMIZED_PARAMS}"
 
         if optimized_params == "full":
             pass
-        elif optimized_params == "only_eos_embedding":
+
+        if "only_eos_embedding" in optimized_params:
             freeze_model(model)
             for p in model.model.embed_tokens.parameters():
                 p.requires_grad = True
 
             for p in model.lm_head.parameters():
                 p.requires_grad = True
-        elif optimized_params == "lora":
+
+        if "lora" in optimized_params:
             from peft import LoraConfig, TaskType
 
             # create LoRA configuration object
             lora_config = LoraConfig(
                 task_type=TaskType.CAUSAL_LM,  # type of task to train on
                 inference_mode=False,  # set to False for training
+                exclude_modules=["lm_head", "model.embed_tokens"],
+                modules_to_save=["lm_head", "model.embed_tokens"],
                 r=8,  # dimension of the smaller matrices
                 lora_alpha=32,  # scaling factor
                 lora_dropout=0.1,  # dropout of LoRA layers
             )
             model.add_adapter(lora_config, adapter_name="lora_1")
-
-        else:
-            raise ValueError()
 
     print("model", type(model))
     print("num trainable model parameters:", sum(p.numel() for p in model.parameters() if p.requires_grad))

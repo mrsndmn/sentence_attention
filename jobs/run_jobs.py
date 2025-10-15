@@ -176,6 +176,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--dataloader_num_workers 4 "
             f"{resume_from_checkpoint_s} "
         )
+        # f"--remove_unused_columns 0 "
 
         print(f"\n\n{script_str}\n\n")
 
@@ -520,7 +521,9 @@ def run_group_eos_only_my_recall(
         limit_dataset_shards=50,
         extra_exp_suffix="_my_recall",
         global_batch_size=4,
-        ngpus=4,
+        optimized_params="only_eos_embedding,lora",
+        per_device_train_batch_size=4,
+        ngpus=1,
     )
 
 
@@ -544,13 +547,13 @@ def _run_group_eos_only(
     limit_dataset_shards=1,
     extra_exp_suffix="",
     global_batch_size=64,
+    per_device_train_batch_size=1,
+    optimized_params="only_eos_embedding",
     ngpus=4,
 ) -> None:
     n_nodes = 1
     num_train_epochs = 1
-    per_device_train_batch_size = 1
     save_steps = 1000
-    optimized_params = "only_eos_embedding"
     # lr_scheduler_type = "constant"
 
     max_steps = -1

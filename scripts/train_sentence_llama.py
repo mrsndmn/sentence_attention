@@ -61,9 +61,9 @@ if __name__ == "__main__":
                         # dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token{dataset_suffix}_merged"
                         dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_8192_with_eos_token{dataset_suffix}_merged"
                     elif training_args.dataset == "my_recall":
-                        # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_8192_num_samples_100_with_eos_token{dataset_suffix}_merged"
-                        # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_8192_num_samples_10000_with_eos_token{dataset_suffix}_merged"
-                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_10000_with_eos_token{dataset_suffix}_merged"
+                        # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_10000_with_eos_token{dataset_suffix}_merged"
+                        # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
+                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
                     else:
                         raise ValueError(f"Unknown dataset: {training_args.dataset}")
                 elif "qwen2" in training_args.model_checkpoint.lower():
@@ -82,6 +82,9 @@ if __name__ == "__main__":
 
             print("Loading dataset from", dataset_path)
             fineweb_dataset = Dataset.load_from_disk(dataset_path)
+
+            if "labels" in fineweb_dataset.column_names:
+                fineweb_dataset = fineweb_dataset.rename_column("labels", "labels_hidden")
 
             TOTAL_SHARDS = 50  # CONSTANT
             dataset_shards = []
@@ -134,9 +137,15 @@ if __name__ == "__main__":
         assert "special_embeddings_mask" in collate_dummy
         assert "clothest_end_of_sentence_token_idx" in collate_dummy
 
+        if "labels_hidden" in collate_dummy:
+            collate_dummy["labels"] = collate_dummy["labels_hidden"].squeeze(1)
+            del collate_dummy["labels_hidden"]
+
         return collate_dummy
 
     data_collator = crutch_collator
+
+    # breakpoint()
 
     trackers_project_name = os.path.basename(training_args.output_dir)
     training_args.run_name = trackers_project_name
@@ -179,14 +188,24 @@ if __name__ == "__main__":
 
             def on_pre_optimizer_step(self, args, state, control, **kwargs):
 
-                for p in model.model.embed_tokens.parameters():
+                embed_tokens_params = model.model.embed_tokens
+                if hasattr(embed_tokens_params, "modules_to_save"):
+                    # handle lora case
+                    embed_tokens_params = embed_tokens_params.modules_to_save
+
+                for p in embed_tokens_params.parameters():
                     current_grad = p.grad
                     p.grad = torch.zeros_like(p.grad)
 
                     for unfrozen_idx in unfrozen_idxes:
                         p.grad[unfrozen_idx] = current_grad[unfrozen_idx]
 
-                for p in model.lm_head.parameters():
+                lm_head_params = model.lm_head
+                if hasattr(lm_head_params, "modules_to_save"):
+                    # handle lora case
+                    lm_head_params = lm_head_params.modules_to_save
+
+                for p in lm_head_params.parameters():
                     current_grad = p.grad
                     p.grad = torch.zeros_like(p.grad)
 

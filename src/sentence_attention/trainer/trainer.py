@@ -32,6 +32,7 @@ class SentenceTrainer(Trainer):
         # if (self.label_smoother is not None or self.compute_loss_func is not None) and "labels" in inputs:
 
         labels = inputs.pop("labels")
+        # print("labels", (labels != -100).sum())
 
         unwrapped_model = self.accelerator.unwrap_model(model)
 
