@@ -506,16 +506,51 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
     return experiment_in_progress
 
 
+def run_group_eos_only_my_recall(
+    *, dry: bool, num_eos_tokens: List[int], test: bool = False, force: bool = False, in_progress_jobs: List[Dict], model: str
+):
+    return _run_group_eos_only(
+        dry=dry,
+        num_eos_tokens=num_eos_tokens,
+        test=test,
+        force=force,
+        in_progress_jobs=in_progress_jobs,
+        model=model,
+        dataset="my_recall",
+        limit_dataset_shards=50,
+        extra_exp_suffix="_my_recall",
+        global_batch_size=16,
+        ngpus=1,
+    )
+
+
 def run_group_eos_only(
     *, dry: bool, num_eos_tokens: List[int], test: bool = False, force: bool = False, in_progress_jobs: List[Dict], model: str
 ) -> None:
-    ngpus = 4
+    return _run_group_eos_only(
+        dry=dry, num_eos_tokens=num_eos_tokens, test=test, force=force, in_progress_jobs=in_progress_jobs, model=model
+    )
+
+
+def _run_group_eos_only(
+    *,
+    dry: bool,
+    num_eos_tokens: List[int],
+    test: bool = False,
+    force: bool = False,
+    in_progress_jobs: List[Dict],
+    model: str,
+    dataset: str,
+    limit_dataset_shards=1,
+    extra_exp_suffix="",
+    global_batch_size=64,
+    ngpus=4,
+) -> None:
     n_nodes = 1
     num_train_epochs = 1
     per_device_train_batch_size = 1
     save_steps = 1000
     optimized_params = "only_eos_embedding"
-    limit_dataset_shards = 1
     # lr_scheduler_type = "constant"
 
     max_steps = -1
@@ -529,6 +564,9 @@ def run_group_eos_only(
             local_per_device_train_batch_size = exp_config.get("per_device_train_batch_size", per_device_train_batch_size)
 
             extra_kwargs = {}
+            if dataset is not None:
+                extra_kwargs["dataset"] = dataset
+
             if gradient_checkpointing is not None:
                 extra_kwargs["gradient_checkpointing"] = gradient_checkpointing
 
@@ -541,9 +579,9 @@ def run_group_eos_only(
             # TODO check sucessful experiment has already been processed
 
             model_checkpoint_slug = model_checkpoint.split("/")[-1]
-            gradient_accumulation_steps = math.ceil(64 / ngpus / n_nodes / local_per_device_train_batch_size)
+            gradient_accumulation_steps = math.ceil(global_batch_size / ngpus / n_nodes / local_per_device_train_batch_size)
 
-            model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}"
+            model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}{extra_exp_suffix}"
 
             if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
                 print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1044,6 +1082,7 @@ def _cli() -> argparse.ArgumentParser:
         "--group",
         choices=[
             "eos-only",
+            "eos-only-my-recall",
             "full",
             "full2",
             "full_4k",
@@ -1102,6 +1141,15 @@ def main() -> None:
 
     if args.group == "eos-only":
         run_group_eos_only(
+            dry=args.dry,
+            num_eos_tokens=num_eos_tokens,
+            in_progress_jobs=in_progress_jobs,
+            model=args.model,
+            test=args.test,
+            force=args.force,
+        )
+    elif args.group == "eos-only-my-recall":
+        run_group_eos_only_my_recall(
             dry=args.dry,
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,

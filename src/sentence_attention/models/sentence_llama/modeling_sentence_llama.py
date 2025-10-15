@@ -916,8 +916,8 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             q_idx,
             kv_idx,
             device=attention_mask.device,
-            BLOCK_SIZE=256,
-            # BLOCK_SIZE=128,
+            # BLOCK_SIZE=256,
+            BLOCK_SIZE=128,
             # BLOCK_SIZE=64,
             # BLOCK_SIZE=32,
         )

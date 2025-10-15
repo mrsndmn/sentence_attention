@@ -26,7 +26,7 @@ def _generate_one_sample(task):
     _torch.manual_seed(seed)
 
     rw = _RandomWord()
-    return _gen(random_word=rw, no_answer=no_answer, return_answer=False)
+    return _gen(num_examples=100, random_word=rw, no_answer=no_answer, return_answer=False)
 
 
 if __name__ == "__main__":
