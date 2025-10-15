@@ -5,6 +5,7 @@ import transformers
 from peft import PeftConfig, PeftModel
 from sentence_attention.evaluation.benchmarks import all_benchmarks
 from sentence_attention.evaluation.evaluation import evaluate_lighteval_task, evaluate_lighteval_task_save_results
+from sentence_attention.evaluation.my_recall import evaluate_synthetic_my_recall
 from sentence_attention.evaluation.pg19 import evaluate_pg19_ppl, save_pg19_results_json
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
@@ -54,7 +55,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--sel-llm", action="store_true", default=False)
-    parser.add_argument("--benchmark", type=str, required=True, choices=all_benchmarks)
+    parser.add_argument("--benchmark", type=str, required=True, choices=all_benchmarks + ["synthetic_my_recall"])
     parser.add_argument("--no-save-results", action="store_true", default=False)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--attention-implementation", type=str, default=None)
@@ -97,6 +98,9 @@ if __name__ == "__main__":
             os.makedirs(out_dir, exist_ok=True)
             out_path = save_pg19_results_json(out_dir, results)
             print(f"Results saved to {out_path}")
+    elif args.benchmark == "synthetic_my_recall":
+        results = evaluate_synthetic_my_recall(model, tokenizer, max_samples=args.max_samples)
+        print("results", results)
     else:
         if args.no_save_results:
             print("Evaluating without saving results")

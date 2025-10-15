@@ -1,48 +1,12 @@
-import random
-
 import torch
 from datasets import Dataset
+from sentence_attention.evaluation.my_recall import generate_random_sample
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
 from sentence_attention.models.sentence_qwen2.tokenization_qwen2_fast import Qwen2TokenizerFastEOS
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 from wonderwords import RandomWord
-
-
-def generate_random_sample(num_examples=200, random_word=None):
-
-    if random_word is None:
-        random_word = RandomWord()
-
-    keys_values = {}
-    for _ in range(num_examples):
-        word = "-".join(random_word.random_words(3))
-        while word in keys_values:
-            word = "-".join(random_word.random_words(3))
-        keys_values[word] = random.randint(1, 1000000)
-
-    query_key = random.choice(list(keys_values.keys()))
-    query_answer = keys_values[query_key]
-
-    haystack_samples_list = []
-    keys_values_keys = list(keys_values.keys())
-    random.shuffle(keys_values_keys)
-    for key in keys_values_keys:
-        value = keys_values[key]
-
-        example = f"One of the special magic numbers for {key} is: {value}.\n"
-        haystack_samples_list.append(example)
-
-    haystack_samples = "\n".join(haystack_samples_list)
-    full_sample = f"""
-A special magic number is hidden within the following text. Make sure to memorize it. I will quiz you about the number afterwards.
-{haystack_samples}
-The special magic number for {query_key} mentioned in the provided text is {query_answer}.
-"""
-
-    return full_sample
-
 
 if __name__ == "__main__":
 
