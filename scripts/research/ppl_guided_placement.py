@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import torch
 from sentence_attention.evaluation.my_recall import generate_random_sample
+from sentence_attention.models.checkpoint import load_model_from_checkpoint
 from torch.nn import functional as F
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def visualize_tokens_logits(tokens_logits, tokens, figsize=(18, 6)):
@@ -26,8 +26,7 @@ if __name__ == "__main__":
 
     model_name = args.model_name
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    model, tokenizer = load_model_from_checkpoint(model_name)
 
     with torch.no_grad():
         model.to("cuda")
