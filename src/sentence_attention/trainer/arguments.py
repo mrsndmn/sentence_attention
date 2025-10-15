@@ -54,7 +54,7 @@ class SentenceTrainingArguments(TrainingArguments):
     dataloader_drop_last: bool = field(default=True)
     dataloader_num_workers: int = field(default=0)
 
-    dataset: str = field(default="fineweb_edu")  # fineweb_edu | dclm
+    dataset: str = field(default="fineweb_edu")  # fineweb_edu | dclm | my_recall
 
     bf16: bool = field(default=False)
 
