@@ -18,7 +18,7 @@ def _generate_one_sample(task):
 
     import numpy as _np
     import torch as _torch
-    from sentence_attention.evaluation.my_recall import generate_random_sample as _gen
+    from sentence_attention.evaluation.my_recall import generate_random_sample_full as _gen
     from wonderwords import RandomWord as _RandomWord
 
     _random.seed(seed)
@@ -26,7 +26,7 @@ def _generate_one_sample(task):
     _torch.manual_seed(seed)
 
     rw = _RandomWord()
-    return _gen(num_examples=100, random_word=rw, no_answer=no_answer, return_answer=False)
+    return _gen(num_examples=100, random_word=rw)
 
 
 if __name__ == "__main__":
@@ -40,6 +40,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_length", type=int, default=8192)
     parser.add_argument("--num_proc", type=int, default=16)
     parser.add_argument("--num_samples", type=int, default=10000)
+    parser.add_argument("--with_labels_on_answer", action="store_true")
     args = parser.parse_args()
 
     pretrained_model_name = args.pretrained_model_name  # HuggingFaceTB/SmolLM2-1.7B / unsloth/Llama-3.2-1B
@@ -57,6 +58,9 @@ if __name__ == "__main__":
 
     if args.with_eos_token:
         suffix = f"{suffix}_with_eos_token_num_{num_eos_tokens}_merged"
+
+    if args.with_labels_on_answer:
+        suffix = f"{suffix}_with_labels_on_answer"
 
     target_dir = f"./artifacts/data/synthetic_niah_tokenized_{pretrained_model_name_short}{suffix}"
 
@@ -85,29 +89,45 @@ if __name__ == "__main__":
     special_token_ids = tokenizer.end_of_sentence_token_ids
 
     # Parallel sample generation with multiprocessing, progress per sample
-    num_workers = num_proc if num_proc is not None else (os.cpu_count() or 1)
+    num_workers = num_proc
     base_seed = int.from_bytes(os.urandom(8), "little")
     tasks = [(base_seed + 10007 * (i + 1), False) for i in range(args.num_samples)]
 
-    generated_samples = []
-    with mp.get_context("spawn").Pool(processes=num_workers) as pool:
+    generated_samples_with_answer = []
+    generated_samples_without_answer = []
+
+    print("num_workers", num_workers)
+    if num_workers is not None:
+        with mp.get_context("spawn").Pool(processes=num_workers) as pool:
+            for sample in tqdm(
+                pool.imap_unordered(_generate_one_sample, tasks, chunksize=1),
+                total=len(tasks),
+                desc="Generating samples",
+            ):
+                generated_samples_with_answer.append(sample["sample_with_answer"])
+                generated_samples_without_answer.append(sample["sample_without_answer"])
+    else:
         for sample in tqdm(
-            pool.imap_unordered(_generate_one_sample, tasks, chunksize=64),
+            tasks,
             total=len(tasks),
-            desc="Generating samples",
+            desc="Generating samples sequentially",
         ):
-            generated_samples.append(sample)
+            result = _generate_one_sample(sample)
+            generated_samples_with_answer.append(result["sample_with_answer"])
+            generated_samples_without_answer.append(result["sample_without_answer"])
 
     # Validate counts and absence of duplicates
     assert (
-        len(generated_samples) == args.num_samples
-    ), f"Generated {len(generated_samples)} samples, expected {args.num_samples}"
-    unique_count = len(set(generated_samples))
-    if unique_count != len(generated_samples):
-        dup_count = len(generated_samples) - unique_count
+        len(generated_samples_with_answer) == args.num_samples
+    ), f"Generated {len(generated_samples_with_answer)} samples, expected {args.num_samples}"
+    unique_count = len(set(generated_samples_with_answer))
+    if unique_count != len(generated_samples_with_answer):
+        dup_count = len(generated_samples_with_answer) - unique_count
         raise RuntimeError(f"Duplicate samples detected after pooling: {dup_count}")
 
-    dataset = Dataset.from_dict({"text": generated_samples})
+    dataset = Dataset.from_dict(
+        {"text": generated_samples_with_answer, "text_without_answer": generated_samples_without_answer}
+    )
 
     def process_dataset_item(dataset_item):
         text = dataset_item["text"]
@@ -125,12 +145,29 @@ if __name__ == "__main__":
             special_embeddings_mask, num_special_tokens=num_eos_tokens
         )
 
-        return {
+        attention_mask = tokenized_inputs["attention_mask"]
+        result = {
             "input_ids": input_ids[0].numpy().tolist(),
-            "attention_mask": tokenized_inputs["attention_mask"],
+            "attention_mask": attention_mask,
             "special_embeddings_mask": special_embeddings_mask[0].numpy().tolist(),
             "clothest_end_of_sentence_token_idx": clothest_end_of_sentence_token_idx[0].numpy().tolist(),
         }
+
+        if args.with_labels_on_answer:
+            result_labels = input_ids.clone()
+
+            text_without_answer = dataset_item["text_without_answer"]
+            tokenized_inputs_without_answer = tokenizer(text_without_answer, truncation=False, return_tensors="pt")
+
+            full_sample_tokens = attention_mask.sum().item()
+            no_answer_tokens = tokenized_inputs_without_answer["attention_mask"].sum().item()
+
+            answer_tokens = full_sample_tokens - no_answer_tokens
+
+            result["labels"] = result_labels[:, 1:]
+            result["labels"][:, :-answer_tokens] = -100
+
+        return result
 
     columns_to_keep = ["input_ids", "attention_mask", "special_embeddings_mask", "clothest_end_of_sentence_token_idx"]
     columns_to_remove = list(set(dataset.column_names) - set(columns_to_keep))

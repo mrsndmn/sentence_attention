@@ -10,7 +10,7 @@ from transformers import AutoTokenizer
 from wonderwords import RandomWord
 
 
-def generate_random_sample(num_examples=200, random_word=None, no_answer=False, return_answer=False):
+def generate_random_sample_full(num_examples=200, random_word=None):
 
     if random_word is None:
         random_word = RandomWord()
@@ -34,19 +34,39 @@ def generate_random_sample(num_examples=200, random_word=None, no_answer=False, 
         example = f"One of the special magic numbers for {key} is: {value}.\n"
         haystack_samples_list.append(example)
 
-    template_query_answer = ""
-    if not no_answer:
-        template_query_answer = f"{query_answer}.\n"
     haystack_samples = "\n".join(haystack_samples_list)
-    full_sample = f"""
+    full_sample_template = """
 A special magic number is hidden within the following text. Make sure to memorize it. I will quiz you about the number afterwards.
 {haystack_samples}
 The special magic number for {query_key} mentioned in the provided text is {template_query_answer}"""
 
-    if return_answer:
-        return full_sample, query_answer
+    full_sample_template_no_answer = full_sample_template.format(
+        haystack_samples=haystack_samples, query_key=query_key, template_query_answer=""
+    )
+    full_sample_template_with_answer = full_sample_template.format(
+        haystack_samples=haystack_samples, query_key=query_key, template_query_answer=f"{query_answer}.\n"
+    )
 
-    return full_sample
+    return {
+        "sample_with_answer": full_sample_template_with_answer,
+        "sample_without_answer": full_sample_template_no_answer,
+        "query_answer": query_answer,
+    }
+
+
+def generate_random_sample(num_examples=200, random_word=None, no_answer=False, return_answer=False):
+
+    result = generate_random_sample_full(num_examples=num_examples, random_word=random_word)
+
+    if not return_answer:
+        if no_answer:
+            return result["sample_without_answer"]
+        return result["sample_with_answer"]
+
+    if no_answer:
+        return result["sample_without_answer"], result["query_answer"]
+
+    return result["sample_with_answer"], result["query_answer"]
 
 
 @torch.no_grad()
