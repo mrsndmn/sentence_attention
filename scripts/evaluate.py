@@ -2,7 +2,6 @@ import argparse
 import os
 
 import transformers
-from peft import PeftConfig, PeftModel
 from sentence_attention.evaluation.benchmarks import all_benchmarks
 from sentence_attention.evaluation.evaluation import evaluate_lighteval_task, evaluate_lighteval_task_save_results
 from sentence_attention.evaluation.my_recall import evaluate_synthetic_my_recall
@@ -22,15 +21,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if "lora" in args.checkpoint:
-        peft_config = PeftConfig.from_pretrained(args.checkpoint)
-        base_model, tokenizer = load_model_from_checkpoint(
-            peft_config.base_model_name_or_path, attention_implementation=args.attention_implementation
-        )
-        model = PeftModel.from_pretrained(base_model, args.checkpoint)
-        model = model.merge_and_unload()
-    else:
-        model, tokenizer = load_model_from_checkpoint(args.checkpoint, attention_implementation=args.attention_implementation)
+    model, tokenizer = load_model_from_checkpoint(args.checkpoint, attention_implementation=args.attention_implementation)
 
     if args.sel_llm:
         assert transformers.__version__ == "4.53.0", "transformers version must be 4.53.0"

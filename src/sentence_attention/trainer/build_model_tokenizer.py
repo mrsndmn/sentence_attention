@@ -119,6 +119,7 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
             model.add_adapter(lora_config, adapter_name="lora_1")
 
     print("model", type(model))
+    print("model", model)
     print("num trainable model parameters:", sum(p.numel() for p in model.parameters() if p.requires_grad))
     print("num freezed model parameters:", sum(p.numel() for p in model.parameters() if not p.requires_grad))
 

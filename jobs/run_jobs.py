@@ -109,6 +109,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         num_nodes = exp.pop("num_nodes", 1)
         fsdp = exp.pop("fsdp", False)
 
+        save_safetensors = exp.pop("save_safetensors", "1")
+
         resume_from_checkpoint = exp.pop("resume_from_checkpoint", None)
 
         if len(exp.keys()) > 0:
@@ -173,6 +175,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--flexible_eos_tokens {flexible_eos_tokens} "
             f"--ft_with_bos_token {ft_with_bos_token} "
             f"--max_steps {max_steps} "
+            f"--save_safetensors {save_safetensors} "
             f"--dataloader_num_workers 4 "
             f"{resume_from_checkpoint_s} "
         )
@@ -231,6 +234,7 @@ def run_training_experiments(
     gradient_checkpointing: bool = False,
     adam_beta1: str = "0.9",
     adam_beta2: str = "0.98",
+    save_safetensors: str = "1",
     save_steps: int = 5000,
     save_total_limit: int = 3,
     per_device_train_batch_size: int = 4,
@@ -291,6 +295,7 @@ def run_training_experiments(
         "ft_with_bos_token": ft_with_bos_token,
         "fsdp": fsdp,
         "resume_from_checkpoint": resume_from_checkpoint,
+        "save_safetensors": save_safetensors,
     }
 
     experiments = []
@@ -520,9 +525,10 @@ def run_group_eos_only_my_recall(
         dataset="my_recall",
         limit_dataset_shards=50,
         extra_exp_suffix="_my_recall",
-        global_batch_size=4,
         optimized_params="only_eos_embedding,lora",
-        per_device_train_batch_size=4,
+        global_batch_size=1,
+        per_device_train_batch_size=1,
+        save_safetensors="0",
         ngpus=1,
     )
 
@@ -549,6 +555,7 @@ def _run_group_eos_only(
     global_batch_size=64,
     per_device_train_batch_size=1,
     optimized_params="only_eos_embedding",
+    save_safetensors="1",
     ngpus=4,
 ) -> None:
     n_nodes = 1
@@ -626,6 +633,7 @@ def _run_group_eos_only(
                 experiment_prefix_base_name=experiment_prefix_base_name,
                 job_description=job_description,
                 test=test,
+                save_safetensors=save_safetensors,
                 **extra_kwargs,
             )
 

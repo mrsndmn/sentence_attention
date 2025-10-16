@@ -1,9 +1,24 @@
+from peft import PeftConfig, PeftModel
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
 from transformers import AutoConfig, AutoTokenizer, LlamaForCausalLM, Qwen2ForCausalLM
 
 
 def load_model_from_checkpoint(checkpoint_path, attention_implementation=None):
+    if "lora" in checkpoint_path:
+        peft_config = PeftConfig.from_pretrained(checkpoint_path)
+        base_model, tokenizer = _load_model_from_checkpoint(
+            peft_config.base_model_name_or_path, attention_implementation=attention_implementation
+        )
+        model = PeftModel.from_pretrained(base_model, checkpoint_path)
+        model = model.merge_and_unload()
+    else:
+        model, tokenizer = _load_model_from_checkpoint(checkpoint_path, attention_implementation=attention_implementation)
+
+    return model, tokenizer
+
+
+def _load_model_from_checkpoint(checkpoint_path, attention_implementation=None):
 
     config = AutoConfig.from_pretrained(checkpoint_path)
     model_class_name = config.architectures[0]
