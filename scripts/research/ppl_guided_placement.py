@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 import torch
 from sentence_attention.evaluation.my_recall import generate_random_sample
@@ -5,15 +7,16 @@ from sentence_attention.models.checkpoint import load_model_from_checkpoint
 from torch.nn import functional as F
 
 
-def visualize_tokens_logits(tokens_logits, tokens, figsize=(18, 6)):
+def visualize_tokens_logits(tokens_logits, tokens, figsize=(18, 6), output_path="/tmp/tokens_logits.png"):
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     plt.figure(figsize=figsize)
     positions = list(range(len(tokens)))
     plt.bar(positions, tokens_logits)
     plt.xticks(positions, tokens, rotation=90)
     plt.tight_layout()
-    plt.savefig("/tmp/tokens_logits.png")
+    plt.savefig(output_path)
     plt.close()
-    print("Saved to /tmp/tokens_logits.png")
+    print(f"Saved to {output_path}")
 
 
 if __name__ == "__main__":
@@ -22,6 +25,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, required=True)
+    parser.add_argument("--output_path", type=str, default="/tmp/tokens_logits.png")
     args = parser.parse_args()
 
     model_name = args.model_name
@@ -50,6 +54,6 @@ if __name__ == "__main__":
         token_texts = [t.replace("Ċ", "\\n") for t in token_texts]
 
         # Visualize tokens_logits with proper x-axis positions and labels
-        visualize_tokens_logits(tokens_logits, tokens=token_texts)
+        visualize_tokens_logits(tokens_logits, tokens=token_texts, output_path=args.output_path)
 
         breakpoint()

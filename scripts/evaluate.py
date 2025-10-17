@@ -14,7 +14,9 @@ if __name__ == "__main__":
 
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--sel-llm", action="store_true", default=False)
-    parser.add_argument("--benchmark", type=str, required=True, choices=all_benchmarks + ["synthetic_my_recall"])
+    parser.add_argument(
+        "--benchmark", type=str, required=True, choices=all_benchmarks + ["synthetic_my_recall", "synthetic_my_recall_hint"]
+    )
     parser.add_argument("--no-save-results", action="store_true", default=False)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--attention-implementation", type=str, default=None)
@@ -51,6 +53,9 @@ if __name__ == "__main__":
             print(f"Results saved to {out_path}")
     elif args.benchmark == "synthetic_my_recall":
         results = evaluate_synthetic_my_recall(model, tokenizer, max_samples=args.max_samples)
+        print("results", results)
+    elif args.benchmark == "synthetic_my_recall_hint":
+        results = evaluate_synthetic_my_recall(model, tokenizer, max_samples=args.max_samples, hint_first=True)
         print("results", results)
     else:
         if args.no_save_results:

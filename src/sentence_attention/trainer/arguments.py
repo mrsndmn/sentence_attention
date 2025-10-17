@@ -40,6 +40,7 @@ class SentenceTrainingArguments(TrainingArguments):
 
     sentence_attention_implementation: str = field(
         default="sentence_attention_flex"
+        # default="sentence_attention"
     )  # sentence_attention | sentence_attention_flex
 
     save_strategy: str = field(default="steps")

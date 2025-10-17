@@ -10,7 +10,7 @@ from transformers import AutoTokenizer
 from wonderwords import RandomWord
 
 
-def generate_random_sample_full(num_examples=200, random_word=None):
+def generate_random_sample_full(num_examples=200, random_word=None, hint_first=False):
 
     if random_word is None:
         random_word = RandomWord()
@@ -35,16 +35,24 @@ def generate_random_sample_full(num_examples=200, random_word=None):
         haystack_samples_list.append(example)
 
     haystack_samples = "\n".join(haystack_samples_list)
+
+    template_prefix = "A special magic number is hidden within the following text."
+    if hint_first:
+        template_prefix = f"The special magic number for {key} is hidden within the following text."
+
     full_sample_template = """
-A special magic number is hidden within the following text. Make sure to memorize it. I will quiz you about the number afterwards.
+{template_prefix} Make sure to memorize it. I will quiz you about the number afterwards.
 {haystack_samples}
 The special magic number for {query_key} mentioned in the provided text is {template_query_answer}"""
 
     full_sample_template_no_answer = full_sample_template.format(
-        haystack_samples=haystack_samples, query_key=query_key, template_query_answer=""
+        template_prefix=template_prefix, haystack_samples=haystack_samples, query_key=query_key, template_query_answer=""
     )
     full_sample_template_with_answer = full_sample_template.format(
-        haystack_samples=haystack_samples, query_key=query_key, template_query_answer=f"{query_answer}.\n"
+        template_prefix=template_prefix,
+        haystack_samples=haystack_samples,
+        query_key=query_key,
+        template_query_answer=f"{query_answer}.\n",
     )
 
     return {
@@ -54,9 +62,9 @@ The special magic number for {query_key} mentioned in the provided text is {temp
     }
 
 
-def generate_random_sample(num_examples=200, random_word=None, no_answer=False, return_answer=False):
+def generate_random_sample(num_examples=200, random_word=None, no_answer=False, return_answer=False, hint_first=False):
 
-    result = generate_random_sample_full(num_examples=num_examples, random_word=random_word)
+    result = generate_random_sample_full(num_examples=num_examples, random_word=random_word, hint_first=hint_first)
 
     if not return_answer:
         if no_answer:
@@ -76,6 +84,7 @@ def evaluate_synthetic_my_recall(
     dataset_path=None,
     model_type: Literal["sentence", "vanilla"] = "sentence",
     max_samples: int = 10,
+    hint_first: bool = False,
 ) -> Dict:
     """
     Compute PPL on PG19 for either SentenceLlama or vanilla Llama and return a JSON-serializable dict.
@@ -88,13 +97,34 @@ def evaluate_synthetic_my_recall(
 
     model.to(device)
 
+    random_word = RandomWord()
+
     prediction_scores = []
     for _ in range(max_samples):
-        sample, answer = generate_random_sample(num_examples=200, return_answer=True, no_answer=True)
+        result = generate_random_sample_full(num_examples=200, random_word=random_word, hint_first=hint_first)
 
-        inputs = tokenizer(sample, return_tensors="pt").to(device)
-        outputs = model.generate(**inputs, max_new_tokens=20)
-        inputs_ids = inputs["input_ids"]
+        sample = result["sample_without_answer"]
+        answer = result["query_answer"]
+
+        if "LlamaAutoCompressorModel" in str(type(model)):
+            sample_sentences = sample.split(".")
+            context = ".".join(sample_sentences[:-1])
+            prompt_suffix = sample_sentences[-1]
+
+            inputs = tokenizer(context, return_tensors="pt").to(device)
+            context_tokens = tokenizer(context, add_special_tokens=False, return_tensors="pt").input_ids.cuda()
+            prompt_tokens = tokenizer(prompt_suffix, add_special_tokens=False, return_tensors="pt").input_ids.cuda()
+
+            summary_vectors = model(context_tokens, output_softprompt=True).softprompt
+            print("summary_vectors", summary_vectors.shape)
+            outputs = model.generate(prompt_tokens, do_sample=False, softprompt=summary_vectors, max_new_tokens=20)
+            inputs_ids = prompt_tokens
+        else:
+            inputs = tokenizer(sample, return_tensors="pt").to(device)
+            print("inputs.input_ids.shape", inputs["input_ids"].shape)
+            outputs = model.generate(**inputs, max_new_tokens=20)
+            inputs_ids = inputs["input_ids"]
+
         prediction = tokenizer.decode(outputs[0, inputs_ids.shape[1] :], skip_special_tokens=True)
         predicted_number = re.findall(r"\D*(\d+)", prediction)[0]
 

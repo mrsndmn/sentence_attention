@@ -178,8 +178,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--save_safetensors {save_safetensors} "
             f"--dataloader_num_workers 4 "
             f"{resume_from_checkpoint_s} "
+            # f"--remove_unused_columns 0 "
         )
-        # f"--remove_unused_columns 0 "
 
         print(f"\n\n{script_str}\n\n")
 
@@ -523,13 +523,12 @@ def run_group_eos_only_my_recall(
         in_progress_jobs=in_progress_jobs,
         model=model,
         dataset="my_recall",
-        limit_dataset_shards=50,
+        limit_dataset_shards=10,
         extra_exp_suffix="_my_recall",
-        optimized_params="only_eos_embedding,lora",
-        global_batch_size=1,
+        global_batch_size=4,
         per_device_train_batch_size=1,
         save_safetensors="0",
-        ngpus=1,
+        ngpus=2,
     )
 
 

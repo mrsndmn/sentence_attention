@@ -112,8 +112,8 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
                 inference_mode=False,  # set to False for training
                 exclude_modules=["lm_head", "model.embed_tokens"],
                 modules_to_save=["lm_head", "model.embed_tokens"],
-                r=8,  # dimension of the smaller matrices
-                lora_alpha=32,  # scaling factor
+                r=32,  # dimension of the smaller matrices
+                lora_alpha=64,  # scaling factor
                 lora_dropout=0.1,  # dropout of LoRA layers
             )
             model.add_adapter(lora_config, adapter_name="lora_1")

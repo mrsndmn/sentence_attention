@@ -14,7 +14,7 @@
     },
     {
       "root": "src",
-      "extraPaths": ["../transformers_adaptive_fan_in_fan_out/src"]
+      "extraPaths": ["../transformers_adaptive_fan_in_fan_out/src", "../AutoCompressors"]
     }
   ]
 }

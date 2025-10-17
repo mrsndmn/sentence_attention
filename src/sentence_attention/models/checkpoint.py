@@ -1,3 +1,4 @@
+import torch
 from peft import PeftConfig, PeftModel
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
 from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
@@ -43,13 +44,19 @@ def _load_model_from_checkpoint(checkpoint_path, attention_implementation=None):
         model_class = LlamaForCausalLM
     elif model_class_name == "Qwen2ForCausalLM":
         model_class = Qwen2ForCausalLM
+    elif model_class_name == "LlamaAutoCompressorModel":
+        from auto_compressor import LlamaAutoCompressorModel
+
+        model_class = LlamaAutoCompressorModel
     else:
         raise ValueError(f"Model class {model_class_name} not supported")
 
-    model = model_class.from_pretrained(checkpoint_path)
+    model = model_class.from_pretrained(checkpoint_path, torch_dtype=torch.bfloat16)
     model.eval()
 
     if attention_implementation is not None:
         model.config._attn_implementation = attention_implementation
+
+    print("model", model, "attention_implementation", attention_implementation)
 
     return model, tokenizer
