@@ -690,7 +690,7 @@ def run_group_full_4k(
     test: bool = False,
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
-    resume_from_checkpoint: bool = False,
+    resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
     ngpus = 8
@@ -809,11 +809,11 @@ def run_group_full_4k_my_recall(
     test: bool = False,
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
-    resume_from_checkpoint: bool = False,
+    resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
-    ngpus = 2
-    num_nodes = 1
+    ngpus = 8
+    num_nodes = 2
 
     num_train_epochs = 1
     save_steps = 1000
@@ -871,7 +871,7 @@ def run_group_full_4k_my_recall(
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
 
-        gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(32 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -905,7 +905,7 @@ def run_group_full_4k_my_recall(
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=1000,
+            warmup_steps=100,
             dry=dry,
             bf16="0",
             add_end_of_sentence_token=1,
@@ -928,7 +928,7 @@ def run_group_full_4k_colddown(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
     test: bool = False,
-    resume_from_checkpoint: bool = False,
+    resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
     ngpus = 8
@@ -1048,7 +1048,7 @@ def run_group_full_16k_colddown(
     flexible_eos_tokens: bool = False,
     ft_with_bos_token: bool = False,
     test: bool = False,
-    resume_from_checkpoint: bool = False,
+    resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
     ngpus = 8
@@ -1172,7 +1172,7 @@ def run_group_lora(
     test: bool = False,
     in_progress_jobs: List[Dict],
     model: str,
-    resume_from_checkpoint: bool = False,
+    resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
     ngpus = 4

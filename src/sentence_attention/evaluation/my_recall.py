@@ -101,7 +101,7 @@ def evaluate_synthetic_my_recall(
 
     prediction_scores = []
     for _ in range(max_samples):
-        result = generate_random_sample_full(num_examples=200, random_word=random_word, hint_first=hint_first)
+        result = generate_random_sample_full(num_examples=10, random_word=random_word, hint_first=hint_first)
 
         sample = result["sample_without_answer"]
         answer = result["query_answer"]
