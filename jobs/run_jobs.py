@@ -25,7 +25,7 @@ BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
 # Required interpreter path policy
-ENV_BIN = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin"
+ENV_BIN = "/workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin"
 
 
 def run_experiments(experiments: List[Dict], job_description: str = "", test: bool = False, dry: bool = False) -> None:
@@ -200,7 +200,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
                 # "CLEARML_LOG_MODEL": "FALSE",
                 "WANDB_MODE": "offline",
                 # Always make sure PYTHONPATH and HF_HOME are set
-                "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
+                # "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
+                "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:{workdir_prefix}/../accelerate/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
                 "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
             },
         )
@@ -461,7 +462,7 @@ def _ft_4k_colddown_checkpoints() -> List[Dict[str, Any]]:
     return all_experiments
 
 
-def _ft_16k_colddown_checkpoints() -> List[Dict[str, Any]]:
+def _ft_8k_colddown_checkpoints() -> List[Dict[str, Any]]:
     """Collect latest checkpoints from all EOS-tuned experiments.
 
     Scans `artifacts/experiments/eos_{1,4}` and for each experiment directory
@@ -1039,7 +1040,7 @@ def run_group_full_4k_colddown(
         )
 
 
-def run_group_full_16k_colddown(
+def run_group_full_8k_colddown(
     *,
     dry: bool,
     num_eos_tokens: List[int],
@@ -1052,7 +1053,7 @@ def run_group_full_16k_colddown(
     force: bool = False,
 ) -> None:
     ngpus = 8
-    num_nodes = 1
+    num_nodes = 2
 
     # ngpus = 6
     # num_nodes = 1
@@ -1068,7 +1069,7 @@ def run_group_full_16k_colddown(
     default_limit_shards = 50
     # default_limit_shards = 2
 
-    for exp_config in _ft_16k_colddown_checkpoints():
+    for exp_config in _ft_8k_colddown_checkpoints():
         model_checkpoint = exp_config["model_checkpoint"]
         model_slug = exp_config["model_slug"]
         per_device_train_batch_size = exp_config["per_device_train_batch_size"]
@@ -1096,12 +1097,13 @@ def run_group_full_16k_colddown(
         local_save_steps = exp_config.get("save_steps", save_steps)
 
         if model is not None and model.lower() not in model_checkpoint.lower():
+            print("Skip model")
             continue
 
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
 
-        model_dir_prefix_mid = "_ft_16k_colddown_"
+        model_dir_prefix_mid = "_ft_8k_colddown_"
         if flexible_eos_tokens:
             model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
 
@@ -1260,7 +1262,7 @@ def _cli() -> argparse.ArgumentParser:
             "full2",
             "full_4k",
             "full_4k_colddown",
-            "full_16k_colddown",
+            "full_8k_colddown",
             "full_4k_distill_from_4eos_tokens",
             "lora",
             "full-flexible-eos-tokens",
@@ -1360,8 +1362,8 @@ def main() -> None:
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
         )
-    elif args.group == "full_16k_colddown":
-        run_group_full_16k_colddown(
+    elif args.group == "full_8k_colddown":
+        run_group_full_8k_colddown(
             dry=args.dry,
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
