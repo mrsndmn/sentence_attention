@@ -126,12 +126,17 @@ def evaluate_synthetic_my_recall(
             inputs_ids = inputs["input_ids"]
 
         prediction = tokenizer.decode(outputs[0, inputs_ids.shape[1] :], skip_special_tokens=True)
-        predicted_number = re.findall(r"\D*(\d+)", prediction)[0]
-
-        print("prediction", prediction)
-        print("predicted_number", predicted_number)
-        print("answer", answer)
-        prediction_scores.append(int(predicted_number) == answer)
+        predicted_numbers = re.findall(r"\D*(\d+)", prediction)
+        predicted_number = 0
+        if len(predicted_numbers) > 0:
+            predicted_number = predicted_numbers[0]
+            print("prediction", prediction)
+            print("predicted_number", predicted_number)
+            print("answer", answer)
+            prediction_scores.append(int(predicted_number) == answer)
+        else:
+            print("No numbers found in prediction", prediction)
+            prediction_scores.append(False)
 
     result = {
         "model_type": model_type,
