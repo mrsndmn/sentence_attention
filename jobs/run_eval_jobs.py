@@ -41,7 +41,7 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     experiment = copy.deepcopy(experiment)
 
-    env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin"
+    env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin"
 
     pretrained_model = experiment.pop("pretrained_model")
     benchmark = experiment.pop("benchmark")
@@ -120,7 +120,7 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
 
     experiment = copy.deepcopy(experiment)
 
-    env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin"
+    env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin"
 
     pretrained_model = experiment.pop("pretrained_model")
     benchmark = experiment.pop("benchmark")

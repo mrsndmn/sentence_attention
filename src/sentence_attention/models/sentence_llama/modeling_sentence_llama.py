@@ -149,6 +149,7 @@ def sentence_attention_forward(
 
     attn_weights = None
     if kwargs.get("output_attentions", False):
+        print("Output attentions")
         attn_weights = torch.nn.functional.softmax((query @ key.permute(0, 1, 3, 2)) + causal_mask, dim=-1)
 
     return attn_output, attn_weights
