@@ -194,7 +194,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             job_desc=f"{job_description} {random_suffix} #rnd #multimodality #tarasov #notify_completed @mrsndmn",
             # stop_timer=600, # в минутах, = 10 часов
             env_variables={
-                "PATH": "/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin:/home/user/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin",
+                "PATH": "/workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin:/home/user/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin:/opt/hpcx/ompi/bin:/opt/hpcx/ucx/bin:/opt/hpcx/ucc/bin:/opt/hpcx/sharp/bin:/opt/hpcx/hcoll/bin",
                 # "CLEARML_CONFIG_FILE": f"{workdir_prefix}/configs/clearml.conf",
                 # "CLEARML_PROJECT": "sentence_attention",
                 # "CLEARML_LOG_MODEL": "FALSE",
@@ -1052,8 +1052,8 @@ def run_group_full_8k_colddown(
     resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
-    ngpus = 8
-    num_nodes = 2
+    ngpus = 2
+    num_nodes = 1
 
     # ngpus = 6
     # num_nodes = 1

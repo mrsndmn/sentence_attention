@@ -1,7 +1,7 @@
 set -x
 set -e
 
-ENV_PREFIX=/workspace-SR004.nfs2/d.tarasov/envs/tokens_pruning/bin
+ENV_PREFIX=/workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin
 WORKDIR=/workspace-SR004.nfs2/d.tarasov/sentence_attention
 
 
