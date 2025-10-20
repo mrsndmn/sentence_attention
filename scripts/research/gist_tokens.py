@@ -1,4 +1,6 @@
+import ast
 import os
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -322,6 +324,7 @@ def analyze_attention_to_gists(
     input_ids: torch.Tensor,
     model: SentenceLlamaForCausalLM,
     output_path: str = "/tmp/attention_to_gists.png",
+    ignore_tokens_positions: Optional[List[int]] = None,
 ):
     if attentions is None or len(attentions) == 0:
         print("No attentions provided; skipping attention-to-gists analysis.")
@@ -355,16 +358,37 @@ def analyze_attention_to_gists(
     # Compute average attention mass to gist tokens among keys
     masses = []  # per layer, per head
     gist_mask_keys = gist_mask.unsqueeze(1).unsqueeze(1)  # (B, 1, 1, T)
+
+    # Build ignore indices
+    ignore_set: set[int] = set()
+    T_all = gist_mask.size(-1)
+    if ignore_tokens_positions:
+        for p in ignore_tokens_positions:
+            p_int = int(p)
+            if 0 <= p_int < T_all:
+                ignore_set.add(p_int)
+    cols = torch.tensor(sorted(list(ignore_set)), dtype=torch.long, device=gist_mask.device) if ignore_set else None
+    keep_queries = None
+    if ignore_set:
+        keep_queries = torch.ones(T_all, dtype=torch.bool, device=gist_mask.device)
+        keep_queries[cols] = False
+
     for a in att_list:
         # a: (B, H, T, T)
         a = a.detach()
         if a.dim() != 4:
             a = a.view(a.size(-4), a.size(-3), a.size(-2), a.size(-1))
         B, H, Tq, Tk = a.shape
+        # Zero out ignored key columns
+        if cols is not None and cols.numel() > 0:
+            a[:, :, :, cols] = 0.0
         # attention mass towards gist keys
         mass_to_gist = (a * gist_mask_keys.to(a.dtype)).sum(dim=-1)  # (B, H, Tq)
-        # average over queries and batch
-        avg_mass = mass_to_gist.mean(dim=-1).mean(dim=0)  # (H,)
+        # average over queries and batch (exclude ignored queries if provided)
+        if keep_queries is not None and keep_queries.any():
+            avg_mass = mass_to_gist[:, :, keep_queries].mean(dim=-1).mean(dim=0)  # (H,)
+        else:
+            avg_mass = mass_to_gist.mean(dim=-1).mean(dim=0)  # (H,)
         masses.append(avg_mass.float().cpu())
 
     masses_stacked = torch.stack(masses, dim=0).numpy()  # (L, H)
@@ -384,6 +408,7 @@ def analyze_attention_to_gists(
 def visualize_mean_attention_map(
     attentions: tuple,
     output_path: str = "/tmp/mean_attention_map.png",
+    ignore_tokens_positions: Optional[List[int]] = None,
 ):
     if attentions is None or len(attentions) == 0:
         print("No attentions provided; skipping mean attention map.")
@@ -403,14 +428,29 @@ def visualize_mean_attention_map(
             att_list.append(a.squeeze())
 
     layer_maps = []
+    ignore_set: set[int] = set()
     for a in att_list:
         a = a.detach()
         if a.dim() != 4:
             a = a.view(a.size(-4), a.size(-3), a.size(-2), a.size(-1))
         # Mean over batch and heads -> (T, T)
-        layer_maps.append(a.mean(dim=(0, 1)))
+        lm = a.mean(dim=(0, 1))
+        if ignore_tokens_positions:
+            if not ignore_set:
+                T_local = lm.size(0)
+                for p in ignore_tokens_positions:
+                    p_int = int(p)
+                    if 0 <= p_int < T_local:
+                        ignore_set.add(p_int)
+            if ignore_set:
+                cols = torch.tensor(sorted(list(ignore_set)), dtype=torch.long, device=lm.device)
+                lm[:, cols] = 0.0
+                lm[cols, :] = 0.0
+        layer_maps.append(lm)
 
     mean_map = torch.stack(layer_maps, dim=0).mean(dim=0).cpu().float().numpy()
+    # Normalize per rows
+    mean_map = mean_map / mean_map.sum(axis=1, keepdims=True)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fig, ax = plt.subplots(1, 1, figsize=(6, 5))
@@ -426,8 +466,11 @@ def visualize_mean_attention_map(
 
     for layer_idx in [0, 4, 8, 12, 16, 20, 24]:
         plt.figure(figsize=(6, 5))
+        layer_map = layer_maps[layer_idx].cpu().float().numpy()
+        # Normalize per rows
+        layer_map = layer_map / layer_map.sum(axis=1, keepdims=True)
         im = plt.imshow(
-            layer_maps[layer_idx].cpu().float().numpy(),
+            layer_map,
             vmin=0.0,
             vmax=1.0,
             cmap="viridis",
@@ -449,6 +492,7 @@ def visualize_per_token_mean_attention(
     input_ids: torch.Tensor,
     model: SentenceLlamaForCausalLM,
     output_path: str = "/tmp/per_token_attention.png",
+    ignore_tokens_positions: Optional[List[int]] = None,
 ):
     if attentions is None or len(attentions) == 0:
         print("No attentions provided; skipping per-token mean attention.")
@@ -477,8 +521,30 @@ def visualize_per_token_mean_attention(
 
     # Average over layers -> (T, T)
     mean_map = torch.stack(layer_maps, dim=0).mean(dim=0)
-    # Per-key mass: average over queries -> (T,)
-    per_key_mass = mean_map.mean(dim=0)
+
+    # Apply ignore mask for specified token positions (both query rows and key columns)
+    T = mean_map.size(0)
+    ignore_set: set[int] = set()
+    if ignore_tokens_positions:
+        for p in ignore_tokens_positions:
+            p_int = int(p)
+            if 0 <= p_int < T:
+                ignore_set.add(p_int)
+    if ignore_set:
+        cols = torch.tensor(sorted(list(ignore_set)), dtype=torch.long, device=mean_map.device)
+        # Zero out ignored key columns
+        mean_map[:, cols] = 0.0
+        # Exclude ignored queries from averaging
+        keep_queries = torch.ones(T, dtype=torch.bool, device=mean_map.device)
+        keep_queries[cols] = False
+        if keep_queries.any():
+            per_key_mass = mean_map[keep_queries].mean(dim=0)
+        else:
+            per_key_mass = mean_map.mean(dim=0)
+    else:
+        # Per-key mass: average over queries -> (T,)
+        per_key_mass = mean_map.mean(dim=0)
+
     # Normalize to frequency (should already sum to 1, but be safe numerically)
     denom = per_key_mass.sum().clamp_min(1e-8)
     per_key_mass = (per_key_mass / denom).cpu().float().numpy()
@@ -489,6 +555,11 @@ def visualize_per_token_mean_attention(
     for gid in gist_ids:
         gist_mask |= input_ids[0] == gid
     gist_mask_np = gist_mask.cpu().numpy()
+    # Remove markers for ignored positions
+    if ignore_set:
+        for p in ignore_set:
+            if 0 <= p < gist_mask_np.shape[0]:
+                gist_mask_np[p] = False
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fig, axes = plt.subplots(2, 1, figsize=(12, 6), gridspec_kw={"height_ratios": [3, 1]})
@@ -539,6 +610,12 @@ if __name__ == "__main__":
     parser.add_argument("--output_attention_heatmap_path", type=str, default="/tmp/attention_to_gists.png")
     parser.add_argument("--output_mean_attention_map_path", type=str, default="/tmp/mean_attention_map.png")
     parser.add_argument("--output_per_token_attention_path", type=str, default="/tmp/per_token_attention.png")
+    parser.add_argument(
+        "--ignore_tokens_positions",
+        type=str,
+        default="",
+        help="Comma-separated list or Python list of token positions to ignore (e.g., '12,24' or '[12,24]')",
+    )
     parser.add_argument("--num_random_tokens_for_stats", type=int, default=2048)
     parser.add_argument("--num_examples", type=int, default=2)
     parser.add_argument("--text", type=str, default="")
@@ -595,18 +672,33 @@ if __name__ == "__main__":
             output_prefix=args.output_hidden_states_prefix,
         )
 
+        # Parse ignore positions once
+        ignore_positions = None
+        if args.ignore_tokens_positions:
+            s = args.ignore_tokens_positions.strip()
+            try:
+                if s.startswith("[") and s.endswith("]"):
+                    ignore_positions = [int(x) for x in ast.literal_eval(s)]
+                else:
+                    ignore_positions = [int(x) for x in s.split(",") if x.strip()]
+            except Exception:
+                print(f"Failed to parse --ignore_tokens_positions='{args.ignore_tokens_positions}', ignoring.")
+                ignore_positions = None
+
         # Attention-to-gists analysis
         analyze_attention_to_gists(
             attentions=outputs.attentions,
             input_ids=inputs["input_ids"],
             model=model,
             output_path=args.output_attention_heatmap_path,
+            ignore_tokens_positions=ignore_positions,
         )
 
         # Mean attention map
         visualize_mean_attention_map(
             attentions=outputs.attentions,
             output_path=args.output_mean_attention_map_path,
+            ignore_tokens_positions=ignore_positions,
         )
 
         # Per-token mean normalized attention
@@ -615,6 +707,7 @@ if __name__ == "__main__":
             input_ids=inputs["input_ids"],
             model=model,
             output_path=args.output_per_token_attention_path,
+            ignore_tokens_positions=ignore_positions,
         )
 
         breakpoint()
