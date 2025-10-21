@@ -355,7 +355,7 @@ def evaluate_benchmarks(
                     bench_desc_suffix = f" ({ruler_mode})"
                 job_description = f"Eval {benchmark}{bench_desc_suffix}: {experiment_dir}/{checkpoint} {JOB_DESCRIPTION_SUFFIX}"
 
-                if job_description in in_progress_jobs_descriptions:
+                if not force and job_description in in_progress_jobs_descriptions:
                     print(f"Job {job_description} already in progress, skipping")
                     continue
 

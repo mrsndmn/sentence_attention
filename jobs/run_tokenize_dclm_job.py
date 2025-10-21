@@ -20,13 +20,14 @@ if __name__ == "__main__":
     for seq_length in [8192]:
         for num_eos_tokens in [4]:
 
-            for shard_index in range(10):
+            num_shards = 1
+            for shard_index in range(num_shards):
                 # for pretrained_model_name in ["unsloth/llama-3-8b", "Qwen/Qwen2.5-1.5B"]:
                 # for pretrained_model_name in ["unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
                 for pretrained_model_name in ["unsloth/Llama-3.2-1B"]:
                     # for pretrained_model_name in ["Qwen/Qwen2.5-1.5B"]:
 
-                    script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin/python scripts/tokenize_dclm.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --shard_index {shard_index} '"
+                    script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin/python scripts/tokenize_dclm.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --shard_index {shard_index} --num_shards {num_shards} '"
                     print("\n\n", script)
                     if dry:
                         print("Skip running job")
