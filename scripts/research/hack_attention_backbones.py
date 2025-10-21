@@ -19,7 +19,7 @@ if __name__ == "__main__":
         base_model, base_tokenizer = load_model_from_checkpoint(base_model)  # type: ignore[assignment]
 
         base_0 = base_tokenizer.end_of_sentence_token_ids[0]
-        base_1 = base_tokenizer.end_of_sentence_token_ids[2]
+        base_1 = base_tokenizer.end_of_sentence_token_ids[1]
 
         donor_0 = donor_tokenizer.end_of_sentence_token_ids[0]
         donor_3 = donor_tokenizer.end_of_sentence_token_ids[2]
@@ -27,11 +27,11 @@ if __name__ == "__main__":
         base_model.model.embed_tokens.weight[base_0] = donor_model.model.embed_tokens.weight[donor_0]  # type: ignore[attr-defined]
         base_model.model.embed_tokens.weight[base_1] = donor_model.model.embed_tokens.weight[donor_3]  # type: ignore[attr-defined]
 
-        base_model.lm_head.weight[base_0] = donor_model.lm_head.weight[donor_0]
-        base_model.lm_head.weight[base_1] = donor_model.lm_head.weight[donor_3]
+        # base_model.lm_head.weight[base_0] = donor_model.lm_head.weight[donor_0]
+        # base_model.lm_head.weight[base_1] = donor_model.lm_head.weight[donor_3]
 
         base_model.save_pretrained(output_model)
-        donor_tokenizer.save_pretrained(output_model)
+        base_tokenizer.save_pretrained(output_model)
         print("Saved to ", output_model)
 
         # donor_gist_embeddings = []
