@@ -17,7 +17,7 @@ def process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens) -
     dclm_only_texts = []
     input_ids_lengths = []
     bins_counts = [0] * 100
-    total_dataset_size = 500000
+    total_dataset_size = 1000000
     max_bin_size = total_dataset_size / len(bins_counts)
 
     pbar = tqdm(total=total_dataset_size)
@@ -62,6 +62,8 @@ def process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens) -
         pbar.update(1)
 
     dataset = Dataset.from_dict({"text": dclm_only_texts})
+
+    print("Filtered stratified dataset length: ", len(dataset))
 
     return dataset
 
@@ -129,13 +131,15 @@ if __name__ == "__main__":
     dataset_files = []
 
     assert args.num_shards == 1, "num_shards must be 1 for dclm"
-    shard_index_dataset = args.shard_index + 1
-    for i in range(50):
-        dataset_files.append(
-            f"global-shard_{shard_index_dataset:02}_of_10/local-shard_0_of_10/shard_{i:08d}_processed.jsonl.zst"
-        )
+
+    for shard_index_dataset in range(1, 6):
+        for i in range(50):
+            dataset_files.append(
+                f"global-shard_{shard_index_dataset:02}_of_10/local-shard_0_of_10/shard_{i:08d}_processed.jsonl.zst"
+            )
 
     dataset = load_dataset(dataset_name, num_proc=16, split="train", data_files=dataset_files)
+    print(f"Loaded dataset from {dataset_name} with {len(dataset)} items")
 
     stratified_dataset_path = "./artifacts/data/dclm_tokenized_strarified"
 

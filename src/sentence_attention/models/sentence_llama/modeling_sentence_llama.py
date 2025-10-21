@@ -1169,7 +1169,8 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
             from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache
 
-            PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+            # PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+            PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
             self.config._attn_implementation = PREFILL_DEFAULT_ATTN_IMPLEMENTATION
 
             scrooge_prefill_outputs = full_prefill_small_kv_cache(
