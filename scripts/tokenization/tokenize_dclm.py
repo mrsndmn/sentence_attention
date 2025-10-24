@@ -39,7 +39,7 @@ def process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens, n
         # Bin by length in [0, max_length], cap at last bin
         bins = [
             min(num_bins - 1, int((l * num_bins) / max_length)) if l <= max_length else num_bins - 1
-            for l in lengths  #  # noqa: E741
+            for l in lengths  # noqa: E741
         ]
 
         # Deterministic pseudo-random per index to enable stratified sampling
