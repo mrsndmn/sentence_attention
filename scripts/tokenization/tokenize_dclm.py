@@ -1,5 +1,6 @@
 import os
 import random
+import sys
 import time
 
 import torch
@@ -12,58 +13,98 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 
 
-def process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens) -> Dataset:
+def process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens, num_proc) -> Dataset:
+    """
+    Create a stratified subset (by sequence length) using parallel, batched operations.
+    Avoids building large Python lists; relies on Arrow-backed Dataset ops.
+    """
 
-    dclm_only_texts = []
-    input_ids_lengths = []
-    bins_counts = [0] * 100
     total_dataset_size = 1000000
-    max_bin_size = total_dataset_size / len(bins_counts)
+    num_bins = 100
+    max_bin_size = total_dataset_size / num_bins
 
-    pbar = tqdm(total=total_dataset_size)
+    # 1) Compute lengths, bins, and a deterministic random key per row (batched, parallel)
+    def _compute_len_bin(batch, indices=None):
+        texts = batch["text"]
+        enc = tokenizer(
+            texts,
+            add_special_tokens=True,
+            padding=False,
+            truncation=False,
+            return_attention_mask=False,
+            return_token_type_ids=False,
+        )
+        lengths = [len(ids) for ids in enc["input_ids"]]
 
-    for item in dataset.shuffle(seed=42):
-        # for item in tqdm(dataset.select(range(samples_count))):
-        tokenized = tokenizer(item["text"])
-        cur_len = len(tokenized["input_ids"])
+        # Bin by length in [0, max_length], cap at last bin
+        bins = [
+            min(num_bins - 1, int((l * num_bins) / max_length)) if l <= max_length else num_bins - 1
+            for l in lengths  #  # noqa: E741
+        ]
 
-        if cur_len > 16384:
-            continue
+        # Deterministic pseudo-random per index to enable stratified sampling
+        seed = 42
+        if indices is None:
+            # Fall back: use per-batch positions if indices are not provided
+            indices = list(range(len(lengths)))
+        rnd = random.Random
+        rands = [rnd(seed + int(i)).random() for i in indices]
 
-        if pbar.n > total_dataset_size:
-            break
+        return {"_sa_length": lengths, "_sa_bin": bins, "_sa_rand": rands}
 
-        if pbar.n % 10 == 0:
-            if args.timeout_minutes > 0:
-                if time.time() - start_time > args.timeout_minutes * 60:
-                    print("Timeout reached")
-                    break
+    dataset = dataset.map(
+        _compute_len_bin,
+        batched=True,
+        with_indices=True,
+        num_proc=num_proc,
+        desc="Computing lengths and bins",
+    )
 
-        current_bin = -1
-        for i in range(len(bins_counts)):
-            max_value = 16384 / len(bins_counts) * (i + 1)
-            min_value = 16384 / len(bins_counts) * i
-            if cur_len <= max_value and cur_len >= min_value:
-                current_bin = i
-                break
+    # 2) Filter out sequences longer than max_length (parallel, batched)
+    dataset = dataset.filter(
+        lambda l: [x <= max_length for x in l],  # noqa: E741
+        input_columns=["_sa_length"],
+        batched=True,
+        num_proc=num_proc,
+        desc="Filtering by max_length",
+    )
 
-        assert current_bin != -1
-        if bins_counts[current_bin] > max_bin_size:
-            if cur_len > (8192 * (0.5 + random.random())):
-                pass
-            else:
-                continue
+    # 3) One pass to get counts per bin without materializing full columns
+    bin_counts = [0] * num_bins
+    for row in tqdm(dataset.to_iterable_dataset(num_shards=1), desc="Computing bin counts", total=len(dataset)):
+        b = int(row["_sa_bin"])
+        if 0 <= b < num_bins:
+            bin_counts[b] += 1
 
-        bins_counts[current_bin] += 1
+    # 4) Compute per-bin keep probability to target max_bin_size items per bin
+    keep_prob = []
+    for count in bin_counts:
+        if count <= 0:
+            keep_prob.append(0.0)
+        else:
+            keep_prob.append(min(1.0, max_bin_size / float(count)))
 
-        input_ids_lengths.append(cur_len)
-        dclm_only_texts.append(item["text"])
+    # 5) Probabilistic per-bin sampling using the precomputed random key (parallel, batched)
+    def _keep_mask(batch):
+        bins = batch["_sa_bin"]
+        rands = batch["_sa_rand"]
+        return [float(r) <= keep_prob[int(b)] for r, b in zip(rands, bins)]
 
-        pbar.update(1)
+    dataset = dataset.filter(
+        _keep_mask,
+        batched=True,
+        num_proc=num_proc,
+        desc="Stratified sampling by bin",
+    )
 
-    dataset = Dataset.from_dict({"text": dclm_only_texts})
+    # 6) Drop helper columns
+    dataset = (
+        dataset.remove_columns(["_sa_length", "_sa_bin", "_sa_rand"])
+        if set(["_sa_length", "_sa_bin", "_sa_rand"]).issubset(set(dataset.column_names))
+        else dataset
+    )
 
-    print("Filtered stratified dataset length: ", len(dataset))
+    print("Filtered stratified dataset length:", len(dataset))
 
     return dataset
 
@@ -147,11 +188,11 @@ if __name__ == "__main__":
         dataset = Dataset.load_from_disk(stratified_dataset_path)
         print(f"Loaded stratified dataset from {stratified_dataset_path}")
     else:
-        dataset = process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens)
+        dataset = process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens, num_proc)
         dataset.save_to_disk(stratified_dataset_path)
 
     if args.only_stratified:
-        os.exit(0)
+        sys.exit(0)
 
     def process_dataset_item(dataset_item):
         text = dataset_item["text"]
