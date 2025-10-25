@@ -19,7 +19,7 @@ def process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens, n
     Avoids building large Python lists; relies on Arrow-backed Dataset ops.
     """
 
-    total_dataset_size = 1000000
+    total_dataset_size = 2000000
     num_bins = 100
     max_bin_size = total_dataset_size / num_bins
 
@@ -173,7 +173,7 @@ if __name__ == "__main__":
 
     assert args.num_shards == 1, "num_shards must be 1 for dclm"
 
-    for shard_index_dataset in range(1, 6):
+    for shard_index_dataset in range(1, 11):
         for i in range(50):
             dataset_files.append(
                 f"global-shard_{shard_index_dataset:02}_of_10/local-shard_0_of_10/shard_{i:08d}_processed.jsonl.zst"
