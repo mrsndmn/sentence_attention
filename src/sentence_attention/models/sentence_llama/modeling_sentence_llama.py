@@ -210,7 +210,7 @@ class SentenceBaseModelOutputWithPast(BaseModelOutputWithPast):
 
 @dataclass
 class SentenceCausalLMOutputWithPast(CausalLMOutputWithPast):
-    pass
+    last_hidden_state: torch.Tensor = None
 
 
 class SentenceLlamaAttention(nn.Module):
@@ -651,6 +651,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
         is_sentence_chunked_prefill: bool = False,
+        num_items_in_batch=None,  # not used
         # **flash_attn_kwargs: Unpack[FlashAttentionKwargs],
     ) -> Union[Tuple, SentenceBaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -1391,6 +1392,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         cache_position: Optional[torch.LongTensor] = None,
         logits_to_keep: int = 0,
         is_sentence_chunked_prefill: bool = False,
+        fused_linear_cross_entropy: bool = False,
         **kwargs,
     ) -> Union[Tuple, SentenceCausalLMOutputWithPast]:
         r"""
@@ -1453,6 +1455,17 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         )
 
         hidden_states = outputs[0]
+
+        if fused_linear_cross_entropy:
+            return SentenceCausalLMOutputWithPast(
+                loss=None,
+                logits=None,
+                last_hidden_state=hidden_states,
+                past_key_values=outputs.past_key_values,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+            )
+
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 

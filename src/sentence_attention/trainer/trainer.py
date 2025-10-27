@@ -69,8 +69,16 @@ class SentenceTrainer(Trainer):
 
         assert special_embeddings_mask.shape == attention_mask.shape
 
-        outputs = model(**model_kwargs)
+        fused_linear_cross_entropy = True
+
+        torch.compiler.cudagraph_mark_step_begin()
+        outputs = model(
+            fused_linear_cross_entropy=fused_linear_cross_entropy,
+            **model_kwargs,
+        )
         # [ bs, seq_len, 2 ]
+
+        # breakpoint()
 
         if self.args.past_index >= 0:
             self._past = outputs[self.args.past_index]
@@ -83,9 +91,22 @@ class SentenceTrainer(Trainer):
 
             # User-defined compute_loss function
             if self.compute_loss_func is not None:
-                loss = self.compute_loss_func(
-                    outputs.logits, labels, vocab_size=unwrapped_model.config.vocab_size, num_items_in_batch=num_items_in_batch
-                )
+                if fused_linear_cross_entropy:
+                    # print("Use fused liger lce")
+                    loss = self.compute_loss_func(
+                        model.lm_head.weight,
+                        outputs.last_hidden_state,
+                        labels,
+                        vocab_size=unwrapped_model.config.vocab_size,
+                        num_items_in_batch=num_items_in_batch,
+                    )
+                else:
+                    loss = self.compute_loss_func(
+                        outputs.logits,
+                        labels,
+                        vocab_size=unwrapped_model.config.vocab_size,
+                        num_items_in_batch=num_items_in_batch,
+                    )
             elif model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
                 loss = self.label_smoother(outputs, labels, shift_labels=True)
             else:

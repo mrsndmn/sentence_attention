@@ -13,7 +13,7 @@ from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 from sentence_attention.trainer.trainer import SentenceTrainer
 from transformers import DataCollatorForLanguageModeling, TrainerCallback
-from transformers.loss.loss_utils import ForCausalLMLoss
+from transformers.loss.loss_utils import ForCausalLMLossFusedLinearCE
 
 # print("Setting inductor config for flex sentence attention")
 # inductor_config.max_autotune = True
@@ -128,6 +128,8 @@ if __name__ == "__main__":
 
     nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
+    print("train_dataset", train_dataset)
+
     def crutch_collator(examples):
         collate_dummy = nested_data_collator(examples)
 
@@ -227,7 +229,7 @@ if __name__ == "__main__":
         eval_dataset=eval_dataset,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
-        compute_loss_func=ForCausalLMLoss,
+        compute_loss_func=ForCausalLMLossFusedLinearCE,
     )
 
     trainer.accelerator.init_trackers(

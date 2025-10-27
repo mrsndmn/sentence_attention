@@ -11,6 +11,7 @@ class SentenceTrainingArguments(TrainingArguments):
 
     ddp_find_unused_parameters: bool = field(default=False)
     load_best_model_at_end: bool = field(default=False)
+    remove_unused_columns: bool = field(default=False)
 
     number_of_eos_tokens: int = field(default=1)
 
