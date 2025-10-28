@@ -13,7 +13,7 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 
 
-def process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens, num_proc) -> Dataset:
+def process_stratified_dataset(dataset, tokenizer, max_length, num_proc) -> Dataset:
     """
     Create a stratified subset (by sequence length) using parallel, batched operations.
     Avoids building large Python lists; relies on Arrow-backed Dataset ops.
@@ -71,7 +71,7 @@ def process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens, n
 
     # 3) One pass to get counts per bin without materializing full columns
     bin_counts = [0] * num_bins
-    for row in tqdm(dataset.to_iterable_dataset(num_shards=1), desc="Computing bin counts", total=len(dataset)):
+    for row in tqdm(dataset.shard(num_shards=100, index=0), desc="Computing bin counts", total=len(dataset)):
         b = int(row["_sa_bin"])
         if 0 <= b < num_bins:
             bin_counts[b] += 1
@@ -182,13 +182,18 @@ if __name__ == "__main__":
     dataset = load_dataset(dataset_name, num_proc=16, split="train", data_files=dataset_files)
     print(f"Loaded dataset from {dataset_name} with {len(dataset)} items")
 
-    stratified_dataset_path = "./artifacts/data/dclm_tokenized_strarified"
+    stratified_dataset_path = f"./artifacts/data/dclm_tokenized_strarified_max_length_{max_length}"
+
+    print("stratified_dataset_path", stratified_dataset_path)
 
     if os.path.exists(stratified_dataset_path):
         dataset = Dataset.load_from_disk(stratified_dataset_path)
+        dataset = dataset.shard(num_shards=20, index=0)
+        print("Warning ⚠️: loaded only 5% of stratified dataset")
         print(f"Loaded stratified dataset from {stratified_dataset_path}")
+        print("Loaded stratified dataset length:", len(dataset))
     else:
-        dataset = process_stratified_dataset(dataset, tokenizer, max_length, num_eos_tokens, num_proc)
+        dataset = process_stratified_dataset(dataset, tokenizer, max_length, num_proc)
         dataset.save_to_disk(stratified_dataset_path)
 
     if args.only_stratified:
@@ -222,4 +227,5 @@ if __name__ == "__main__":
 
     dataset = dataset.map(process_dataset_item, num_proc=num_proc, remove_columns=columns_to_remove)
 
+    dataset = dataset.shuffle(seed=42)
     dataset.save_to_disk(target_dir)

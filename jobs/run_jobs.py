@@ -85,7 +85,9 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         save_total_limit = exp.pop("save_total_limit", "")
         if save_total_limit != "":
             save_total_limit = f"--save_total_limit {save_total_limit}"
-        torch_compile = exp.pop("torch_compile", 1)
+        torch_compile = exp.pop("torch_compile", 0)
+
+        assert str(torch_compile) == "0", "torch_compile must be 0, use liger kernel instead"
 
         eval_strategy = exp.pop("eval_strategy", "no")
         weight_decay = exp.pop("weight_decay", "0.01")
@@ -242,7 +244,7 @@ def run_training_experiments(
     save_total_limit: int = 3,
     per_device_train_batch_size: int = 4,
     optim: str = "adamw_torch_fused",
-    torch_compile: str = "1",
+    torch_compile: str = "0",
     logging_steps: str = "",
     max_grad_norm: float = 1.0,
     warmup_steps: int = 2000,
@@ -328,7 +330,7 @@ def _models_for_eos_only() -> List[str]:
             "model_checkpoint": "unsloth/Meta-Llama-3.1-8B",
             # "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments_in_progress/sentence_Meta-Llama-3.1-8B_ft_only_eos_embedding_num_eos_tokens_4_CZO3YUYH/checkpoint-100/",
             "gradient_checkpointing": "0",
-            "torch_compile": "1",
+            "torch_compile": "0",
             "per_device_train_batch_size": 1,
         },
         {
@@ -477,7 +479,13 @@ def _ft_8k_colddown_checkpoints() -> List[Dict[str, Any]]:
             "model_slug": "Llama-3.2-3B_lr1e-4",
             "number_of_eos_tokens": 4,
             "per_device_train_batch_size": 1,
-        }
+        },
+        {
+            "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_8/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_8_XF4BDKFN/checkpoint-8000/",
+            "model_slug": "Llama-3.2-3B",
+            "number_of_eos_tokens": 8,
+            "per_device_train_batch_size": 1,
+        },
     ]
 
     return all_experiments
@@ -1042,7 +1050,7 @@ def run_group_full_4k_colddown(
         )
 
 
-def run_group_full_8k_colddown(
+def run_group_full_16k_colddown(
     *,
     dry: bool,
     num_eos_tokens: List[int],
@@ -1054,14 +1062,14 @@ def run_group_full_8k_colddown(
     resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
-    ngpus = 1
-    num_nodes = 1
+    ngpus = 8
+    num_nodes = 2
 
     # ngpus = 6
     # num_nodes = 1
 
     num_train_epochs = 1
-    save_steps = 100
+    save_steps = 1000
     optimized_params = "full"
     max_grad_norm = "2.0"
     # lr_scheduler_type = "constant_with_warmup"
@@ -1105,7 +1113,7 @@ def run_group_full_8k_colddown(
         if int(number_of_eos_tokens) not in num_eos_tokens:
             continue
 
-        model_dir_prefix_mid = "_ft_8k_colddown_"
+        model_dir_prefix_mid = "_ft_16k_colddown_"
         if flexible_eos_tokens:
             model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
 
@@ -1264,7 +1272,7 @@ def _cli() -> argparse.ArgumentParser:
             "full2",
             "full_4k",
             "full_4k_colddown",
-            "full_8k_colddown",
+            "full_16k_colddown",
             "full_4k_distill_from_4eos_tokens",
             "lora",
             "full-flexible-eos-tokens",
@@ -1364,8 +1372,8 @@ def main() -> None:
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
         )
-    elif args.group == "full_8k_colddown":
-        run_group_full_8k_colddown(
+    elif args.group == "full_16k_colddown":
+        run_group_full_16k_colddown(
             dry=args.dry,
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,

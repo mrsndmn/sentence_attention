@@ -58,8 +58,8 @@ if __name__ == "__main__":
                     if training_args.dataset == "fineweb_edu":
                         dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
                     elif training_args.dataset == "dclm":
-                        # dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token{dataset_suffix}_merged"
-                        dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_8192_with_eos_token{dataset_suffix}_merged"
+                        dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token{dataset_suffix}_merged"
+                        # dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_8192_with_eos_token{dataset_suffix}_merged"
                     elif training_args.dataset == "my_recall":
                         # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
                         dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"

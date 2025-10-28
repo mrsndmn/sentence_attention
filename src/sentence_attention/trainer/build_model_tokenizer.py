@@ -72,6 +72,7 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
 
     print("model.config._attn_implementation", model.config._attn_implementation)
 
+    # tokenizer.padding_side = "right"
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
 

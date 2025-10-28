@@ -22,6 +22,7 @@ from typing import Callable, List, Optional, Tuple, Union, Unpack
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint
+from liger_kernel.transformers import LigerFusedLinearCrossEntropyLoss
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.generation import GenerationMixin
 from transformers.integrations.flex_attention import compile_friendly_flex_attention
@@ -1099,6 +1100,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         # breakpoint()
         # torch.save(final_mask, "final_mask_partial.pt")
         if ft_with_bos_token:
+            # TODO assert tokenizer is right padded
             final_mask[:, :, :, 0] = 0
 
         # torch.set_printoptions(profile='full', linewidth=10000)
@@ -1393,6 +1395,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         logits_to_keep: int = 0,
         is_sentence_chunked_prefill: bool = False,
         fused_linear_cross_entropy: bool = False,
+        num_items_in_batch: Optional[int] = None,
         **kwargs,
     ) -> Union[Tuple, SentenceCausalLMOutputWithPast]:
         r"""
@@ -1457,8 +1460,29 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         hidden_states = outputs[0]
 
         if fused_linear_cross_entropy:
+
+            labels = nn.functional.pad(labels, (0, 1), value=-100)
+            shift_labels = labels[..., 1:].contiguous()
+
+            # Flatten the tokens
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            shift_labels = shift_labels.to(hidden_states.device)
+            # loss = fixed_cross_entropy(logits, shift_labels, num_items_in_batch, ignore_index, **kwargs)
+
+            assert num_items_in_batch is not None
+
+            liger_lce = LigerFusedLinearCrossEntropyLoss(reduction="sum")
+
+            # Ensure 2D shape (B*T, H) even if the input accidentally becomes 2D or non-contiguous
+            hidden_2d = hidden_states.flatten(0, 1)
+            # print('lm_head_weight', self.lm_head.weight.shape, 'hidden_2d', hidden_2d.shape, 'shift_labels', shift_labels.shape)
+            loss = liger_lce(self.lm_head.weight, hidden_2d, shift_labels)
+
+            loss = loss / num_items_in_batch
+
             return SentenceCausalLMOutputWithPast(
-                loss=None,
+                loss=loss,
                 logits=None,
                 last_hidden_state=hidden_states,
                 past_key_values=outputs.past_key_values,
