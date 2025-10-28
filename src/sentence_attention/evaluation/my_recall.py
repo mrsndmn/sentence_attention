@@ -10,20 +10,41 @@ from transformers import AutoTokenizer
 from wonderwords import RandomWord
 
 
-def generate_random_sample_full(num_examples=200, random_word=None, hint_first=False):
+def generate_random_sample_full(
+    num_examples=200, random_word=None, hint_first=False, niddle_type: Literal["numbers", "strings"] = "numbers"
+):
 
     if random_word is None:
         random_word = RandomWord()
 
     keys_values = {}
+    values_set = set()
     for _ in range(num_examples):
         word = "-".join(random_word.random_words(3))
         while word in keys_values:
             word = "-".join(random_word.random_words(3))
-        keys_values[word] = random.randint(1, 1000000)
+
+        if niddle_type == "numbers":
+            value = random.randint(1, 1000000)
+        elif niddle_type == "strings":
+            value = "-".join(random_word.random_words(1))
+            while value in values_set:
+                value = "-".join(random_word.random_words(1))
+            values_set.add(value)
+        else:
+            raise ValueError(f"Invalid niddle type: {niddle_type}")
+
+        keys_values[word] = value
 
     query_key = random.choice(list(keys_values.keys()))
     query_answer = keys_values[query_key]
+
+    if niddle_type == "numbers":
+        magic_object_name = "number"
+    elif niddle_type == "strings":
+        magic_object_name = "string"
+    else:
+        raise ValueError(f"Invalid niddle type: {niddle_type}")
 
     haystack_samples_list = []
     keys_values_keys = list(keys_values.keys())
@@ -31,24 +52,29 @@ def generate_random_sample_full(num_examples=200, random_word=None, hint_first=F
     for key in keys_values_keys:
         value = keys_values[key]
 
-        example = f"One of the special magic numbers for {key} is: {value}.\n"
+        example = f"One of the special magic {magic_object_name}s for {key} is: {value}.\n"
         haystack_samples_list.append(example)
 
     haystack_samples = "\n".join(haystack_samples_list)
 
-    template_prefix = "A special magic number is hidden within the following text."
+    template_prefix = f"A special magic {magic_object_name} is hidden within the following text."
     if hint_first:
-        template_prefix = f"The special magic number for {key} is hidden within the following text."
+        template_prefix = f"The special magic {magic_object_name} for {key} is hidden within the following text."
 
     full_sample_template = """
-{template_prefix} Make sure to memorize it. I will quiz you about the number afterwards.
+{template_prefix} Make sure to memorize it. I will quiz you about the {magic_object_name} afterwards.
 {haystack_samples}
-The special magic number for {query_key} mentioned in the provided text is {template_query_answer}"""
+The special magic {magic_object_name} for {query_key} mentioned in the provided text is {template_query_answer}"""
 
     full_sample_template_no_answer = full_sample_template.format(
-        template_prefix=template_prefix, haystack_samples=haystack_samples, query_key=query_key, template_query_answer=""
+        magic_object_name=magic_object_name,
+        template_prefix=template_prefix,
+        haystack_samples=haystack_samples,
+        query_key=query_key,
+        template_query_answer="",
     )
     full_sample_template_with_answer = full_sample_template.format(
+        magic_object_name=magic_object_name,
         template_prefix=template_prefix,
         haystack_samples=haystack_samples,
         query_key=query_key,
@@ -84,7 +110,9 @@ def evaluate_synthetic_my_recall(
     dataset_path=None,
     model_type: Literal["sentence", "vanilla"] = "sentence",
     max_samples: int = 10,
+    sample_num_examples: int = 10,
     hint_first: bool = False,
+    niddle_type: Literal["numbers", "strings"] = "numbers",
 ) -> Dict:
     """
     Compute PPL on PG19 for either SentenceLlama or vanilla Llama and return a JSON-serializable dict.
@@ -101,7 +129,9 @@ def evaluate_synthetic_my_recall(
 
     prediction_scores = []
     for _ in range(max_samples):
-        result = generate_random_sample_full(num_examples=10, random_word=random_word, hint_first=hint_first)
+        result = generate_random_sample_full(
+            num_examples=sample_num_examples, random_word=random_word, hint_first=hint_first, niddle_type=niddle_type
+        )
 
         sample = result["sample_without_answer"]
         answer = result["query_answer"]
@@ -126,17 +156,27 @@ def evaluate_synthetic_my_recall(
             inputs_ids = inputs["input_ids"]
 
         prediction = tokenizer.decode(outputs[0, inputs_ids.shape[1] :], skip_special_tokens=True)
-        predicted_numbers = re.findall(r"\D*(\d+)", prediction)
-        predicted_number = 0
-        if len(predicted_numbers) > 0:
-            predicted_number = predicted_numbers[0]
+        if niddle_type == "numbers":
+            predicted_numbers = re.findall(r"\D*(\d+)", prediction)
+            predicted_number = 0
+            if len(predicted_numbers) > 0:
+                predicted_number = predicted_numbers[0]
+                print("prediction", prediction)
+                print("predicted_number", predicted_number)
+                print("answer", answer)
+                prediction_scores.append(int(predicted_number) == answer)
+            else:
+                print("No numbers found in prediction", prediction)
+                prediction_scores.append(False)
+        elif niddle_type == "strings":
+            predicted_string = prediction.strip().split(": ")[0].split(".")[0]
             print("prediction", prediction)
-            print("predicted_number", predicted_number)
+            print("predicted_string", predicted_string)
             print("answer", answer)
-            prediction_scores.append(int(predicted_number) == answer)
+            prediction_scores.append((predicted_string == answer) or (answer in prediction))
+            # breakpoint()
         else:
-            print("No numbers found in prediction", prediction)
-            prediction_scores.append(False)
+            raise ValueError(f"Invalid niddle type: {niddle_type}")
 
     result = {
         "model_type": model_type,

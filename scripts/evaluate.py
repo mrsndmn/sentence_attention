@@ -20,6 +20,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-save-results", action="store_true", default=False)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--attention-implementation", type=str, default=None)
+    parser.add_argument("--synthetic_my_recall_sample_num_examples", type=int, default=10)
+    parser.add_argument("--synthetic_my_recall_niddle_type", type=str, default="numbers", choices=["numbers", "strings"])
 
     args = parser.parse_args()
 
@@ -52,10 +54,23 @@ if __name__ == "__main__":
             out_path = save_pg19_results_json(out_dir, results)
             print(f"Results saved to {out_path}")
     elif args.benchmark == "synthetic_my_recall":
-        results = evaluate_synthetic_my_recall(model, tokenizer, max_samples=args.max_samples)
+        results = evaluate_synthetic_my_recall(
+            model,
+            tokenizer,
+            max_samples=args.max_samples,
+            sample_num_examples=args.synthetic_my_recall_sample_num_examples,
+            niddle_type=args.synthetic_my_recall_niddle_type,
+        )
         print("results", results)
     elif args.benchmark == "synthetic_my_recall_hint":
-        results = evaluate_synthetic_my_recall(model, tokenizer, max_samples=args.max_samples, hint_first=True)
+        results = evaluate_synthetic_my_recall(
+            model,
+            tokenizer,
+            max_samples=args.max_samples,
+            hint_first=True,
+            sample_num_examples=args.synthetic_my_recall_sample_num_examples,
+            niddle_type=args.synthetic_my_recall_niddle_type,
+        )
         print("results", results)
     else:
         if args.no_save_results:
