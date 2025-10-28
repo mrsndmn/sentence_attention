@@ -9,7 +9,7 @@ from transformers import AutoTokenizer
 def test_eos_tokens_count():
 
     for eos_num in os.listdir(os.path.join(WORKDIR_PREFIX, "artifacts/experiments")):
-        if eos_num == "bad_multi_eos_experiments":
+        if eos_num in ["bad_multi_eos_experiments", "frankensteins"]:
             continue
 
         num_eos_tokens = int(eos_num.split("_")[1])
@@ -29,9 +29,14 @@ def test_eos_tokens_count():
                 if not checkpoint.startswith("checkpoint"):
                     continue
 
-                tokenizer = AutoTokenizer.from_pretrained(
-                    os.path.join(WORKDIR_PREFIX, "artifacts/experiments", eos_num, experiment_dir, checkpoint)
+                full_checkpoint_path = os.path.join(
+                    WORKDIR_PREFIX, "artifacts/experiments", eos_num, experiment_dir, checkpoint
                 )
+
+                if os.path.exists(os.path.join(full_checkpoint_path, "pytorch_model_fsdp_0")):
+                    continue
+
+                tokenizer = AutoTokenizer.from_pretrained(full_checkpoint_path)
                 for i in range(4):
                     eos_token = f"<end_of_sentence_{i}>"
                     assert eos_token in tokenizer.get_vocab(), f"Tokenizer {checkpoint} does not have {eos_token} token"

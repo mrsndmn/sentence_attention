@@ -240,7 +240,7 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial
 def test_generate_flex_attention():
 
     checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/"
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067/"
     )
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)

@@ -81,5 +81,3 @@ def test_sentence_attention_impl_equivalence():
         time_end = time.time()
         time_taken2.append(time_end - time_start)
     print("time taken to prefill no mask", np.mean(time_taken2))
-
-    breakpoint()

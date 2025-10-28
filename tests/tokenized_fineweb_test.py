@@ -6,10 +6,12 @@ from sentence_attention.tokenization_utils_fast import PreTrainedTokenizerFastEO
 
 
 def _test_tokenized_fineweb(tokenizer):
-    dataset = Dataset.load_from_disk(f"{ARTIFACTS_PREFIX}/data/fineweb_edu_tokenized_Llama-3.2-1B_with_eos_token_num_1_merged/")
+    dataset = Dataset.load_from_disk(
+        f"{ARTIFACTS_PREFIX}/data/fineweb_edu_tokenized_Llama-3.2-1B_max_length_4096_with_eos_token_num_1_merged/"
+    )
     item = dataset[0]
     decoded = tokenizer.decode(item["input_ids"])
-    assert decoded.count("<end_of_sentence>") == 32, "decoded content has 32 eos tokens"
+    assert decoded.count("<end_of_sentence_0>") == 32, "decoded content has 32 eos tokens"
 
 
 def test_tokenized_fineweb():
@@ -25,7 +27,9 @@ def test_tokenized_fineweb():
 
 
 def _test_tokenized_fineweb_4_eos_tokens(tokenizer):
-    dataset = Dataset.load_from_disk(f"{ARTIFACTS_PREFIX}/data/fineweb_edu_tokenized_Llama-3.2-1B_with_eos_token_num_4_merged/")
+    dataset = Dataset.load_from_disk(
+        f"{ARTIFACTS_PREFIX}/data/fineweb_edu_tokenized_Llama-3.2-1B_max_length_4096_with_eos_token_num_4_merged/"
+    )
     item = dataset[0]
 
     decoded = tokenizer.decode(item["input_ids"])

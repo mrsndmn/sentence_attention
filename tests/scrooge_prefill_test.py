@@ -41,23 +41,8 @@ def test_generate_country():
 
 
 def test_generate_number():
-
-    checkpoint = os.path.join(ARTIFACTS_PREFIX, "./experiments/eos_1/sentence_Llama-3.2-1B_ft_full_L1DB3Z21/checkpoint-1349/")
-    # checkpoint = os.path.join(
-    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR/checkpoint-1349"
-    # )
-    # checkpoint = os.path.join(
-    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_OPOKS8O7/checkpoint-336"
-    # )
-    # checkpoint = os.path.join(
-    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft2_full_num_eos_tokens_4_MV7M599S/checkpoint-10794/"
-    # )
     checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-2000/"
-    )
-
-    checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments_in_progress/sentence_Llama-3.2-1B_ft_4k_full_num_eos_tokens_4_2KSJNQ7I/checkpoint-4000"
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067"
     )
 
     save_maps = False
@@ -155,20 +140,16 @@ def test_generate_number():
                 failed.append(task_type)
 
         # assert len(failed) == 0, f"Failed tests: {failed}"
-    breakpoint()
+    # breakpoint()
 
 
 def test_generate_summary():
 
     checkpoint1 = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/"
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067/"
     )
 
-    checkpoint2 = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-1B_ft_4k_full_num_eos_tokens_4_2KSJNQ7I/checkpoint-11000"
-    )
-
-    for checkpoint in [checkpoint1, checkpoint2]:
+    for checkpoint in [checkpoint1]:
         model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
@@ -334,7 +315,7 @@ def test_scrooge_prefills():
 
     checkpoint = os.path.join(
         ARTIFACTS_PREFIX,
-        "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/",
+        "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067",
     )
 
     device = "cuda"
@@ -415,7 +396,7 @@ def test_kv_cache_forward():
 
     checkpoint = os.path.join(
         ARTIFACTS_PREFIX,
-        "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/",
+        "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067/",
     )
 
     device = "cuda"
@@ -684,7 +665,9 @@ def test_kv_cache_forward():
         # logits_processor=logits_processor,
     )
 
-    scrooge_prefill_generated_output_text = tokenizer.decode(scrooge_prefill_generated_outputs[0], skip_special_tokens=False)
+    scrooge_prefill_generated_output_text = tokenizer.decode(
+        scrooge_prefill_generated_outputs[0, 1:], skip_special_tokens=False
+    )
     print("Scrooge prefill generated output text", scrooge_prefill_generated_output_text)
 
     print("SP tokens    :", scrooge_prefill_generated_outputs[0].cpu().numpy().tolist())
