@@ -18,11 +18,15 @@ if __name__ == "__main__":
             print(f"Shard {shard_dir} does not exist")
             continue
 
-        all_shards.append(Dataset.load_from_disk(shard_dir))
+        shard = Dataset.load_from_disk(shard_dir)
+        print(f"Shard {shard_index} length: {len(shard)}")
+        all_shards.append(shard)
 
     print(f"Merging {len(all_shards)} shards")
 
     dataset = concatenate_datasets(all_shards)
     print(f"Dataset length: {len(dataset)}")
     print(f"Saving dataset to {args.target_dir}")
+    input("Press Enter to continue")
+
     dataset.save_to_disk(args.target_dir)

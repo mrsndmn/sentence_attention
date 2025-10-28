@@ -1,5 +1,5 @@
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -67,13 +67,22 @@ class SentenceTrainer(Trainer):
 
         assert special_embeddings_mask.shape == attention_mask.shape
 
-        outputs = model(**model_kwargs)
+        fused_linear_cross_entropy = True
+
+        torch.compiler.cudagraph_mark_step_begin()
+        outputs = model(
+            fused_linear_cross_entropy=fused_linear_cross_entropy,
+            labels=labels,
+            **model_kwargs,
+        )
         # [ bs, seq_len, 2 ]
 
         if self.args.past_index >= 0:
             self._past = outputs[self.args.past_index]
 
-        if labels is not None and self.label_smoother is not None or self.compute_loss_func is not None:
+        if fused_linear_cross_entropy:
+            loss = outputs.loss
+        elif labels is not None and self.label_smoother is not None or self.compute_loss_func is not None:
             if _is_peft_model(unwrapped_model):
                 model_name = unwrapped_model.base_model.model._get_name()
             else:
@@ -82,7 +91,10 @@ class SentenceTrainer(Trainer):
             # User-defined compute_loss function
             if self.compute_loss_func is not None:
                 loss = self.compute_loss_func(
-                    outputs.logits, labels, vocab_size=unwrapped_model.config.vocab_size, num_items_in_batch=num_items_in_batch
+                    outputs.logits,
+                    labels,
+                    vocab_size=unwrapped_model.config.vocab_size,
+                    num_items_in_batch=num_items_in_batch,
                 )
             elif model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
                 loss = self.label_smoother(outputs, labels, shift_labels=True)
@@ -160,10 +172,10 @@ class SentenceTrainer(Trainer):
     def prediction_step(
         self,
         model: nn.Module,
-        inputs: Optional[Dict[str, Union[torch.Tensor, Any]]],
+        inputs: Dict[str, torch.Tensor | Any] | None,
         prediction_loss_only: bool,
-        ignore_keys: Optional[List[str]] = None,
-    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+        ignore_keys: List[str] | None = None,
+    ) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
         """
         Perform an evaluation step on `model` using `inputs`.
 
@@ -238,8 +250,8 @@ class SentenceTrainer(Trainer):
         self,
         dataloader: DataLoader,
         description: str,
-        prediction_loss_only: Optional[bool] = None,
-        ignore_keys: Optional[List[str]] = None,
+        prediction_loss_only: bool | None = None,
+        ignore_keys: List[str] | None = None,
         metric_key_prefix: str = "eval",
     ) -> EvalLoopOutput:
         """
@@ -447,7 +459,7 @@ class SentenceTrainer(Trainer):
 
         return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
 
-    def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
+    def save_model(self, output_dir: str | None = None, _internal_call: bool = False):
 
         while True:
             try:

@@ -8,12 +8,12 @@ import torch.profiler
 import transformers
 from accelerate import PartialState
 from datasets import Dataset, load_dataset
-from transformers import DataCollatorForLanguageModeling, TrainerCallback
-from transformers.loss.loss_utils import ForCausalLMLoss
-
+from sentence_attention.artifacts.experiments import WORKDIR_PREFIX
 from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 from sentence_attention.trainer.trainer import SentenceTrainer
+from transformers import DataCollatorForLanguageModeling, TrainerCallback
+from transformers.loss.loss_utils import ForCausalLMLossFusedLinearCE
 
 # print("Setting inductor config for flex sentence attention")
 # inductor_config.max_autotune = True
@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
         if training_args.add_end_of_sentence_token:
             print("Loading fineweb edu tokenized with eos tokenizer")
-            datasets_path_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data"
+            datasets_path_prefix = WORKDIR_PREFIX + "/artifacts/data"
 
             max_length_dataset_suffix = "_max_length_4096"
 
@@ -55,10 +55,19 @@ if __name__ == "__main__":
             if training_args.model_type == "sentence_pretrained_checkpoint":
                 # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
                 if "llama" in training_args.model_checkpoint.lower():
-                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+                    if training_args.dataset == "fineweb_edu":
+                        dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+                    elif training_args.dataset == "dclm":
+                        dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token{dataset_suffix}_merged"
+                        # dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_8192_with_eos_token{dataset_suffix}_merged"
+                    elif training_args.dataset == "my_recall":
+                        # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
+                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
+                        # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_10000_with_eos_token{dataset_suffix}_merged"
+                    else:
+                        raise ValueError(f"Unknown dataset: {training_args.dataset}")
                 elif "qwen2" in training_args.model_checkpoint.lower():
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
-                    dataset_shards_limit *= 2
                     print("Increase dataset shards for Qwen2.5-1.5B to", dataset_shards_limit)
                 elif "smollm2" in training_args.model_checkpoint.lower():
                     dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
@@ -68,10 +77,16 @@ if __name__ == "__main__":
             else:
                 dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos"
 
+            # dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_max_length_8196_with_eos_token_num_4_merged_shard_0_of_1000/"
+            # dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token_num_4_merged_shard_0_of_1000/"
+
             print("Loading dataset from", dataset_path)
             fineweb_dataset = Dataset.load_from_disk(dataset_path)
 
-            TOTAL_SHARDS = 14  # CONSTANT
+            if "labels" in fineweb_dataset.column_names:
+                fineweb_dataset = fineweb_dataset.rename_column("labels", "labels_hidden")
+
+            TOTAL_SHARDS = 50  # CONSTANT
             dataset_shards = []
 
             for i in range(TOTAL_SHARDS):
@@ -82,6 +97,8 @@ if __name__ == "__main__":
 
             print(f"loaded {len(dataset_shards)} shards")
             fineweb_dataset = datasets.concatenate_datasets(dataset_shards)
+
+            print("dataset len", len(fineweb_dataset))
 
         else:
             data_files = []
@@ -107,9 +124,11 @@ if __name__ == "__main__":
 
         # smollm_corpus = smollm_corpus.train_test_split(test_size=100, seed=1)
         train_dataset = fineweb_dataset
-        eval_dataset = fineweb_dataset.select(range(100))
+        eval_dataset = fineweb_dataset.select(range(min(10, len(fineweb_dataset))))
 
     nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+
+    print("train_dataset", train_dataset)
 
     def crutch_collator(examples):
         collate_dummy = nested_data_collator(examples)
@@ -120,9 +139,15 @@ if __name__ == "__main__":
         assert "special_embeddings_mask" in collate_dummy
         assert "clothest_end_of_sentence_token_idx" in collate_dummy
 
+        if "labels_hidden" in collate_dummy:
+            collate_dummy["labels"] = collate_dummy["labels_hidden"].squeeze(1)
+            del collate_dummy["labels_hidden"]
+
         return collate_dummy
 
     data_collator = crutch_collator
+
+    # breakpoint()
 
     trackers_project_name = os.path.basename(training_args.output_dir)
     training_args.run_name = trackers_project_name
@@ -165,14 +190,24 @@ if __name__ == "__main__":
 
             def on_pre_optimizer_step(self, args, state, control, **kwargs):
 
-                for p in model.model.embed_tokens.parameters():
+                embed_tokens_params = model.model.embed_tokens
+                if hasattr(embed_tokens_params, "modules_to_save"):
+                    # handle lora case
+                    embed_tokens_params = embed_tokens_params.modules_to_save
+
+                for p in embed_tokens_params.parameters():
                     current_grad = p.grad
                     p.grad = torch.zeros_like(p.grad)
 
                     for unfrozen_idx in unfrozen_idxes:
                         p.grad[unfrozen_idx] = current_grad[unfrozen_idx]
 
-                for p in model.lm_head.parameters():
+                lm_head_params = model.lm_head
+                if hasattr(lm_head_params, "modules_to_save"):
+                    # handle lora case
+                    lm_head_params = lm_head_params.modules_to_save
+
+                for p in lm_head_params.parameters():
                     current_grad = p.grad
                     p.grad = torch.zeros_like(p.grad)
 
@@ -183,6 +218,8 @@ if __name__ == "__main__":
 
         callbacks.append(ZeroOutGradientsForAllExceptEosEmbedding(model))
 
+    transformers.logging.set_verbosity_info()
+
     trainer = SentenceTrainer(
         model,
         callbacks=callbacks,
@@ -192,14 +229,14 @@ if __name__ == "__main__":
         eval_dataset=eval_dataset,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
-        compute_loss_func=ForCausalLMLoss,
+        compute_loss_func=ForCausalLMLossFusedLinearCE,
     )
 
     trainer.accelerator.init_trackers(
         project_name=trackers_project_name,
     )
 
-    trainer.train()
+    trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
     out_dir_path = Path(training_args.output_dir)
 
     if state.is_main_process:

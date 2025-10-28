@@ -7,13 +7,12 @@ import datasets
 import numpy as np
 import torch
 import torch.nn.functional as F
-from tqdm import tqdm
-from transformers import AutoTokenizer
-
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     special_token_mask_to_clothest_token_idx_slow,
 )
 from sentence_attention.models.sentence_llama.scrooge_prefill import scrooge_prefill
+from tqdm import tqdm
+from transformers import AutoTokenizer
 
 
 def _str_to_dtype(dtype_str: str) -> torch.dtype:
@@ -45,7 +44,7 @@ def evaluate_pg19_ppl(
     model.to(device)
 
     dataset = datasets.Dataset.load_from_disk(dataset_path)
-    if max_samples != -1:
+    if max_samples is not None:
         dataset = dataset.select(range(max_samples))
 
     print(
@@ -100,7 +99,7 @@ def evaluate_pg19_ppl(
                     current_tokens_log_probas.extend(log_probas_list)  # noqa: B023
 
                     log_probas_list_no_eos = []
-                    for token_id, log_proba in zip(input_ids[0, :].cpu().numpy().tolist(), log_probas_list):
+                    for token_id, log_proba in zip(input_ids[0, :].cpu().numpy().tolist(), log_probas_list, strict=True):
                         # Ignore all except the last EOS token
                         if token_id in special_token_ids[:-1]:  # noqa: B023
                             continue
@@ -198,7 +197,9 @@ def evaluate_pg19_ppl(
         "diagnostics": {
             "input_ids_lengths": all_input_ids,
             "kv_cache_lengths": all_kv_lengths,
-            "compression_ratios": [float(i) / float(k) if k > 0 else None for i, k in zip(all_input_ids, all_kv_lengths)],
+            "compression_ratios": [
+                float(i) / float(k) if k > 0 else None for i, k in zip(all_input_ids, all_kv_lengths, strict=True)
+            ],
             "max_cuda_memory_gb": float(torch.cuda.max_memory_allocated() / 1024**3) if torch.cuda.is_available() else None,
         },
     }

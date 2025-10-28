@@ -1,0 +1,22 @@
+{
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "none",
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.10",
+  "include": [
+    "src",
+    "scripts"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "scripts",
+      "extraPaths": ["src", "../transformers_adaptive_fan_in_fan_out/src"]
+    },
+    {
+      "root": "src",
+      "extraPaths": ["../transformers_adaptive_fan_in_fan_out/src", "../AutoCompressors"]
+    }
+  ]
+}
+
+

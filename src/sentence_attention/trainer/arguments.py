@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Optional
 
 from transformers import TrainingArguments
 
@@ -11,6 +10,7 @@ class SentenceTrainingArguments(TrainingArguments):
 
     ddp_find_unused_parameters: bool = field(default=False)
     load_best_model_at_end: bool = field(default=False)
+    remove_unused_columns: bool = field(default=False)
 
     number_of_eos_tokens: int = field(default=1)
 
@@ -38,11 +38,14 @@ class SentenceTrainingArguments(TrainingArguments):
     eval_strategy: str = field(default="steps")
     eval_steps: int = field(default=10000)
 
-    sentence_attention_implementation: str = field(default="sentence_attention")  # sentence_attention | sentence_attention_flex
+    sentence_attention_implementation: str = field(
+        default="sentence_attention_flex"
+        # default="sentence_attention"
+    )  # sentence_attention | sentence_attention_flex
 
     save_strategy: str = field(default="steps")
     save_steps: int = field(default=10000)
-    save_total_limit: Optional[int] = field(default=3)
+    save_total_limit: int | None = field(default=3)
     save_only_model: bool = field(default=False)
 
     push_to_hub: bool = field(default=False)
@@ -51,6 +54,8 @@ class SentenceTrainingArguments(TrainingArguments):
     logging_steps: int = field(default=100)
     dataloader_drop_last: bool = field(default=True)
     dataloader_num_workers: int = field(default=0)
+
+    dataset: str = field(default="fineweb_edu")  # fineweb_edu | dclm | my_recall
 
     bf16: bool = field(default=False)
 

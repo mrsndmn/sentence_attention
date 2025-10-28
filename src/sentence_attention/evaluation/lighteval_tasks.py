@@ -93,7 +93,7 @@ def mmlu_pro_mc_prompt(line, task_name: str = None):
     topic = line["category"]
     query = f"The following are multiple choice questions (with answers) about {topic.replace('_', ' ')}.\n\n"
     query += line["question"] + "\n"
-    query += "".join([f"{key}. {choice}\n" for key, choice in zip(LETTER_INDICES, line["options"])])
+    query += "".join([f"{key}. {choice}\n" for key, choice in zip(LETTER_INDICES, line["options"], strict=True)])
     query += "Answer:"
 
     return Doc(
@@ -458,7 +458,7 @@ def mmlu_mc_prompt(line, task_name: str = None):
     topic = line["subject"]
     query = f"The following are multiple choice questions (with answers) about {topic.replace('_', ' ')}.\n\n"
     query += line["question"] + "\n"
-    query += "".join([f"{key}. {choice}\n" for key, choice in zip(LETTER_INDICES, line["choices"])])
+    query += "".join([f"{key}. {choice}\n" for key, choice in zip(LETTER_INDICES, line["choices"], strict=True)])
     query += "Answer:"
 
     gold_ix = LETTER_INDICES.index(line["answer"]) if isinstance(line["answer"], str) else line["answer"]

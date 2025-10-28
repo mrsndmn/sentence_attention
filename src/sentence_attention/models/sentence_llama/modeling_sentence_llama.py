@@ -16,8 +16,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple, Union, Unpack
+from typing import List, Tuple, Union, Unpack
 
 import torch
 import torch.nn as nn
@@ -97,10 +98,10 @@ def sentence_attention_forward(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
+    attention_mask: torch.Tensor | None,
     dropout: float = 0.0,
-    scaling: Optional[float] = None,
-    is_causal: Optional[bool] = None,
+    scaling: float | None = None,
+    is_causal: bool | None = None,
     **kwargs,
 ) -> Tuple[torch.Tensor, None]:
     if hasattr(module, "num_key_value_groups"):
@@ -149,6 +150,7 @@ def sentence_attention_forward(
 
     attn_weights = None
     if kwargs.get("output_attentions", False):
+        print("Output attentions")
         attn_weights = torch.nn.functional.softmax((query @ key.permute(0, 1, 3, 2)) + causal_mask, dim=-1)
 
     return attn_output, attn_weights
@@ -160,15 +162,16 @@ def sentence_attention_forward_flex(
     key: torch.Tensor,
     value: torch.Tensor,
     attention_mask: Union[torch.Tensor, "BlockMask"],
-    scaling: Optional[float] = None,
-    softcap: Optional[float] = None,
-    head_mask: Optional[torch.Tensor] = None,
+    scaling: float | None = None,
+    softcap: float | None = None,
+    head_mask: torch.Tensor | None = None,
     **kwargs,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 
-    if hasattr(module, "num_key_value_groups"):
-        key = repeat_kv(key, module.num_key_value_groups)
-        value = repeat_kv(value, module.num_key_value_groups)
+    # if hasattr(module, "num_key_value_groups"):
+    #     # print("module.num_key_value_groups", module.num_key_value_groups)
+    #     key = repeat_kv(key, module.num_key_value_groups)
+    #     value = repeat_kv(value, module.num_key_value_groups)
 
     assert isinstance(attention_mask, torch.nn.attention.flex_attention.BlockMask), "attention_mask must be a BlockMask"
 
@@ -184,7 +187,8 @@ def sentence_attention_forward_flex(
         value,
         score_mod=None,
         block_mask=attention_mask,
-        enable_gqa=False,  # explicit repeat kv is already done above
+        # enable_gqa=False,  # explicit repeat kv is already done above
+        enable_gqa=True,
         scale=scaling,
         # Last time checked on PyTorch == 2.5.1: Flex Attention always computes the lse regardless.
         # For simplification, we thus always return it as no additional computations are introduced.
@@ -207,7 +211,7 @@ class SentenceBaseModelOutputWithPast(BaseModelOutputWithPast):
 
 @dataclass
 class SentenceCausalLMOutputWithPast(CausalLMOutputWithPast):
-    pass
+    last_hidden_state: torch.Tensor = None
 
 
 class SentenceLlamaAttention(nn.Module):
@@ -232,13 +236,13 @@ class SentenceLlamaAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         position_embeddings: Tuple[torch.Tensor, torch.Tensor],
-        attention_mask: Optional[torch.Tensor],
-        past_key_value: Optional[Cache] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        special_embeddings_mask: Optional[torch.Tensor] = None,
-        clothest_end_of_sentence_token_idx: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None,
+        past_key_value: Cache | None = None,
+        cache_position: torch.LongTensor | None = None,
+        special_embeddings_mask: torch.Tensor | None = None,
+        clothest_end_of_sentence_token_idx: torch.Tensor | None = None,
         **kwargs: Unpack[FlashAttentionKwargs],
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor | None, Tuple[torch.Tensor] | None]:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
@@ -329,17 +333,17 @@ class SentenceLlamaDecoderLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Cache] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
-        cache_position: Optional[torch.LongTensor] = None,
-        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
-        special_embeddings_mask: Optional[torch.Tensor] = None,
-        clothest_end_of_sentence_token_idx: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_value: Cache | None = None,
+        output_attentions: bool | None = False,
+        use_cache: bool | None = False,
+        cache_position: torch.LongTensor | None = None,
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor] | None = None,  # necessary, but kept here for BC
+        special_embeddings_mask: torch.Tensor | None = None,
+        clothest_end_of_sentence_token_idx: torch.Tensor | None = None,
         **kwargs: Unpack[FlashAttentionKwargs],
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+    ) -> Tuple[torch.FloatTensor, Tuple[torch.FloatTensor, torch.FloatTensor] | None]:
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -634,22 +638,23 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
     def forward(
         self,
         input_ids: torch.LongTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_frequency: Optional[torch.Tensor] = None,
-        special_embeddings_mask: Optional[torch.Tensor] = None,
-        clothest_end_of_sentence_token_idx: Optional[torch.Tensor] = None,
-        stop_words_tokens_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        token_frequency: torch.Tensor | None = None,
+        special_embeddings_mask: torch.Tensor | None = None,
+        clothest_end_of_sentence_token_idx: torch.Tensor | None = None,
+        stop_words_tokens_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: Cache | List[torch.FloatTensor] | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+        cache_position: torch.LongTensor | None = None,
         is_sentence_chunked_prefill: bool = False,
+        num_items_in_batch=None,  # not used
         # **flash_attn_kwargs: Unpack[FlashAttentionKwargs],
-    ) -> Union[Tuple, SentenceBaseModelOutputWithPast]:
+    ) -> Tuple | SentenceBaseModelOutputWithPast:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         use_cache = use_cache if use_cache is not None else self.config.use_cache
@@ -914,10 +919,13 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             q_idx,
             kv_idx,
             device=attention_mask.device,
+            # BLOCK_SIZE=256,
             BLOCK_SIZE=128,
+            # BLOCK_SIZE=64,
+            # BLOCK_SIZE=32,
         )
 
-        print("block_mask", block_mask)
+        # print("block_mask", block_mask)
 
         return block_mask
 
@@ -1092,6 +1100,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         # breakpoint()
         # torch.save(final_mask, "final_mask_partial.pt")
         if ft_with_bos_token:
+            # TODO assert tokenizer is right padded
             final_mask[:, :, :, 0] = 0
 
         # torch.set_printoptions(profile='full', linewidth=10000)
@@ -1130,7 +1139,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         attention_mask = kwargs["attention_mask"]
 
-        special_embeddings_mask = kwargs.get("special_embeddings_mask", None)
+        special_embeddings_mask = kwargs.get("special_embeddings_mask")
 
         if special_embeddings_mask is None:
             special_embeddings_mask = torch.zeros_like(attention_mask)
@@ -1138,26 +1147,34 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                 for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
                     special_embeddings_mask[input_ids == end_of_sentence_token_id] = 1
 
-        clothest_end_of_sentence_token_idx = kwargs.get("clothest_end_of_sentence_token_idx", None)
+        clothest_end_of_sentence_token_idx = kwargs.get("clothest_end_of_sentence_token_idx")
         if clothest_end_of_sentence_token_idx is None:
             clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
                 special_embeddings_mask,
                 num_special_tokens=len(self.config.end_of_sentence_token_ids),
             )
 
-        past_key_values = kwargs.get("past_key_values", None)
+        past_key_values = kwargs.get("past_key_values")
         if past_key_values is None:
             past_key_values = DynamicCache()
 
-        cache_position = kwargs.get("cache_position", None)
+        cache_position = kwargs.get("cache_position")
         if cache_position is None:
             assert past_key_values.get_seq_length() == 0, "cache_position must be provided if past_key_values is provided"
             cache_position = torch.arange(0, input_ids.shape[1], device=input_ids.device)
+
+        prev_attention_implementation = self.config._attn_implementation
+
+        initial_input_ids = input_ids.clone()
 
         if input_ids.shape[1] > 1 and past_key_values.get_seq_length() == 0:
             # Prefill
 
             from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache
+
+            # PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+            PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
+            self.config._attn_implementation = PREFILL_DEFAULT_ATTN_IMPLEMENTATION
 
             scrooge_prefill_outputs = full_prefill_small_kv_cache(
                 self,
@@ -1186,6 +1203,10 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         current_input_ids = input_ids.clone()
 
         device = input_ids.device
+
+        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
+        # Forse eager attention for decoding
+        self.config._attn_implementation = DECODE_DEFAULT_ATTN_IMPLEMENTATION
 
         for _new_token_id in range(max_new_tokens):
 
@@ -1247,21 +1268,35 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             #     # Decode tokens: [430, 1364, 374, 264, 1695, 1732, 13, 220, 128256, 128257, 128258, 128259, 8100, 374, 264, 1695, 6691, 323, 264, 1695, 7555]
             #     print("generated_tokens", generated_tokens)
 
+        if prev_attention_implementation is not None:
+            self.config._attn_implementation = prev_attention_implementation
+            print(
+                "Restore attention implementation for decoding",
+                "self.config._attn_implementation",
+                self.config._attn_implementation,
+            )
+
         generated_tokens_t = torch.tensor([generated_tokens], device=input_ids.device, dtype=torch.long)
+
+        # print("initial_input_ids", initial_input_ids.shape)
+        # print("generated_tokens_t", generated_tokens_t.shape)
+        concatenated_tokens = torch.cat([initial_input_ids, generated_tokens_t], dim=-1)
+        # print("concatenated_tokens", concatenated_tokens.shape)
+        # breakpoint()
         if kwargs.get("return_dict_in_generate", False):
             return {
-                "sequences": generated_tokens_t,
+                "sequences": concatenated_tokens,
             }
 
-        return generated_tokens_t
+        return concatenated_tokens
 
     def prepare_inputs_for_generation(
         self,
         input_ids: torch.LongTensor,
-        past_key_values: Optional[Cache] = None,
-        attention_mask: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        past_key_values: Cache | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
         **kwargs,
     ):
         outputs = super().prepare_inputs_for_generation(
@@ -1344,23 +1379,25 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
     def forward(
         self,
         input_ids: torch.LongTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        special_embeddings_mask: Optional[torch.Tensor] = None,
-        clothest_end_of_sentence_token_idx: Optional[torch.Tensor] = None,
-        stop_words_tokens_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        special_embeddings_mask: torch.Tensor | None = None,
+        clothest_end_of_sentence_token_idx: torch.Tensor | None = None,
+        stop_words_tokens_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: Cache | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+        cache_position: torch.LongTensor | None = None,
         logits_to_keep: int = 0,
         is_sentence_chunked_prefill: bool = False,
+        fused_linear_cross_entropy: bool = False,
+        num_items_in_batch: int | None = None,
         **kwargs,
-    ) -> Union[Tuple, SentenceCausalLMOutputWithPast]:
+    ) -> Tuple | SentenceCausalLMOutputWithPast:
         r"""
         Args:
             labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -1421,6 +1458,39 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         )
 
         hidden_states = outputs[0]
+
+        if fused_linear_cross_entropy:
+
+            labels = nn.functional.pad(labels, (0, 1), value=-100)
+            shift_labels = labels[..., 1:].contiguous()
+
+            # Flatten the tokens
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            shift_labels = shift_labels.to(hidden_states.device)
+            # loss = fixed_cross_entropy(logits, shift_labels, num_items_in_batch, ignore_index, **kwargs)
+
+            assert num_items_in_batch is not None
+            from liger_kernel.transformers import LigerFusedLinearCrossEntropyLoss
+
+            liger_lce = LigerFusedLinearCrossEntropyLoss(reduction="sum")
+
+            # Ensure 2D shape (B*T, H) even if the input accidentally becomes 2D or non-contiguous
+            hidden_2d = hidden_states.flatten(0, 1)
+            # print('lm_head_weight', self.lm_head.weight.shape, 'hidden_2d', hidden_2d.shape, 'shift_labels', shift_labels.shape)
+            loss = liger_lce(self.lm_head.weight, hidden_2d, shift_labels)
+
+            loss = loss / num_items_in_batch
+
+            return SentenceCausalLMOutputWithPast(
+                loss=loss,
+                logits=None,
+                last_hidden_state=hidden_states,
+                past_key_values=outputs.past_key_values,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+            )
+
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 

@@ -1,4 +1,5 @@
-from typing import List, Sequence
+from collections.abc import Sequence
+from typing import List
 
 import torch
 from transformers.generation.logits_process import LogitsProcessor

@@ -1,16 +1,14 @@
 import os
 
 import torch
-from transformers import AutoTokenizer
-
+from sentence_attention.artifacts.experiments import ARTIFACTS_PREFIX
 from sentence_attention.models.sentence_gpt2.tokenization_gpt2_fast import GPT2TokenizerFastEOS
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
     SentenceLlamaModel,
     special_token_mask_to_clothest_token_idx_slow,
 )
-
-ARTIFACTS_PREFIX = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/"
+from transformers import AutoTokenizer
 
 
 def test_sentence_attention_4d_mask():
@@ -70,22 +68,19 @@ def test_sentence_attention_4d_mask():
 
 
 @torch.no_grad()
-def test_sentence_llama_model_generate_with_eos_token():
+def test_sentence_llama_model_generate_with_eos_token_only():
 
     device = "cuda"
 
     checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/"
+        ARTIFACTS_PREFIX,
+        "experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_colddown_full_num_eos_tokens_4_M10GPB8E/checkpoint-2000/",
     )
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint).to(device)
     tokenizer = GPT2TokenizerFastEOS.from_pretrained(checkpoint)
 
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
-    torch.use_deterministic_algorithms(False)
-
-    model.resize_token_embeddings(len(tokenizer))
-    print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
+    # model.resize_token_embeddings(len(tokenizer))
+    # print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
 
     input_text = "Russia - Moscow. France - Paris. Germany - Berlin. Italy - "
 
@@ -113,7 +108,7 @@ def test_sentence_llama_model_generate_with_eos_token():
 
         outputs_logits.append(output.logits)
 
-        tokens_order = torch.argsort(output.logits[:, -1], dim=-1, descending=True)[:, :1000].cpu().numpy().tolist()
+        tokens_order = torch.argsort(output.logits[:, -1], dim=-1, descending=True)[:, :100].cpu().numpy().tolist()
         tokens_orders.append(tokens_order)
         print(attn_impl, "logits", tokens_order)
 
@@ -132,6 +127,10 @@ def test_sentence_llama_model_generate_with_eos_token():
         assert torch.allclose(
             outputs_hidden_states[0][h_i], outputs_hidden_states[1][h_i], atol=1e-4
         ), f"hidden_states[{h_i}] are not equal"
+
+    print("diffs_hidden_states", diffs_hidden_states)
+
+    # breakpoint()
 
 
 def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_pad():
@@ -241,7 +240,7 @@ def test_sentence_llama_model_generate_with_eos_token_and_attention_mask_partial
 def test_generate_flex_attention():
 
     checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_62XMQ139/checkpoint-10794/"
+        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067/"
     )
 
     model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)

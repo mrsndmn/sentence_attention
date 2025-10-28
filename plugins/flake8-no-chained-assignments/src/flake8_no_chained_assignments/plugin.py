@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import ast
-from typing import Generator, Tuple
+from collections.abc import Generator
+from typing import Tuple
 
 ERROR_CODE = "SAC001"
 ERROR_MESSAGE = "SAC001 Chained assignments are prohibited"

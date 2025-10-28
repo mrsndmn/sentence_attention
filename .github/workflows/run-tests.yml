@@ -14,4 +14,4 @@ jobs:
       env:
         PYTHONPATH: /workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/src:./src
         HF_HOME: /workspace-SR004.nfs2/.cache/huggingface
-      run: /home/jovyan/.mlspace/envs/tokens_pruning/bin/pytest -v ./tests/
+      run: /home/jovyan/.mlspace/envs/sentence_attention/bin/pytest -v ./tests/

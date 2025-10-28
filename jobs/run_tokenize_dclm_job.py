@@ -16,18 +16,18 @@ if __name__ == "__main__":
     # for num_eos_tokens in [ 1, 4, 8, 16 ]:
     # for seq_length in [1024, 4096]:
 
-    num_processing_shards = 50
+    # for seq_length in [16384]:
+    for seq_length in [8192]:
+        for num_eos_tokens in [4]:
 
-    for seq_length in [4096]:
-        for num_eos_tokens in [1, 2, 4, 8, 16]:
-
-            for shard_index in range(15):
+            num_shards = 1
+            for shard_index in range(num_shards):
                 # for pretrained_model_name in ["unsloth/llama-3-8b", "Qwen/Qwen2.5-1.5B"]:
                 # for pretrained_model_name in ["unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
                 for pretrained_model_name in ["unsloth/Llama-3.2-1B"]:
                     # for pretrained_model_name in ["Qwen/Qwen2.5-1.5B"]:
 
-                    script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin/python scripts/tokenize_fineweb_edu.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --num_shards {num_processing_shards} --shard_index {shard_index}'"
+                    script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin/python scripts/tokenize_dclm.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --shard_index {shard_index} --num_shards {num_shards} '"
                     print("\n\n", script)
                     if dry:
                         print("Skip running job")
@@ -36,7 +36,7 @@ if __name__ == "__main__":
                     result = client.run_job(
                         payload={
                             "script": script,
-                            "job_desc": f"Tokenize fineweb EOS model={pretrained_model_name} num_eos_tokens={num_eos_tokens} seq_length={seq_length} shard_index={shard_index} #{author_name} #rnd #multimodal #notify_completed @mrsndmn",
+                            "job_desc": f"Tokenize DCLM EOS model={pretrained_model_name} num_eos_tokens={num_eos_tokens} seq_length={seq_length} shard_index={shard_index} #{author_name} #rnd #multimodal @mrsndmn",
                             "instance_type": "a100.1gpu",
                             "region": extra_options["region"],
                             "env_variables": {

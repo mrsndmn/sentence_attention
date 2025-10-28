@@ -44,7 +44,7 @@ def calculate_compression_rates(data: Dict[str, Dict[str, float]], gist_tokens: 
         if num_eos_tokens == 0:
             compression_rate = "-"
         else:
-            compression_rate = total_tokens / (num_eos_tokens * gist_tokens)
+            compression_rate = (total_tokens - num_eos_tokens) / (num_eos_tokens * gist_tokens)
         compression_rates[benchmark] = compression_rate
 
     return compression_rates
@@ -115,7 +115,7 @@ def main():
     all_benchmarks = sorted(set(short_data.keys()) | set(long_data.keys()))
 
     # Generate tables for different gist token counts
-    gist_token_counts = [1, 2, 4]
+    gist_token_counts = [1, 2, 4, 8]
 
     # Determine which benchmarks to show based on args
     if args.benchmarks == "short":

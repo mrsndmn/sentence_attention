@@ -26,6 +26,7 @@ def full_prefill_small_kv_cache(
         clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
         past_key_values=past_key_values,
         output_hidden_states=output_hidden_states,
+        logits_to_keep=1,
     )
     last_outputs = outputs
 
@@ -180,6 +181,7 @@ def scrooge_prefill(
             past_key_values=past_key_values,
             cache_position=torch.arange(prev_sentence_i, sentence_i, device=input_ids.device),
             output_hidden_states=output_hidden_states,
+            logits_to_keep=1,
         )
 
         if output_hidden_states:

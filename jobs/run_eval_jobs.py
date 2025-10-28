@@ -6,7 +6,6 @@ import time
 
 import client_lib  # импортируем библиотеку для работы с ML Space
 from mls.manager.job.utils import training_job_api_from_profile
-
 from sentence_attention.artifacts.experiments import sort_checkpoints
 from sentence_attention.evaluation.benchmarks import (
     all_benchmarks,
@@ -23,14 +22,22 @@ N_WORKERS = 1
 BASE_IMAGE = "cr.ai.cloud.ru/aicloud-base-images/cuda12.1-torch2-py311:0.0.36"
 # BASE_IMAGE = "cr.ai.cloud.ru/f51af5b1-d43b-4db4-938d-569d7cfffb7a/cuda12.1-torch2-py310-adaptive_attention:0.0.3"
 
-JOB_DESCRIPTION_SUFFIX = "#rnd #multimodality @mrsndmn"
+JOB_DESCRIPTION_SUFFIX = "#rnd #multimodality #tarasov @mrsndmn"
 
 workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention"
 
-experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments")
+
+def run_local_process(script_str, env_variables):
+    import subprocess
+
+    envs_variables_backup = {k: os.environ[k] for k in env_variables.keys()}  # noqa: SIM118
+    os.environ.update(env_variables)
+    result = subprocess.run(script_str, shell=True)
+    os.environ.update(envs_variables_backup)
+    return result
 
 
-def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
+def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, local=False, ruler_mode="tiny"):
 
     experiment = copy.deepcopy(experiment)
 
@@ -44,14 +51,41 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     helmet_workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/HELMET"
 
-    output_dir = os.path.join(pretrained_model, "helmet_eval", benchmark)
+    if ruler_mode == "tiny":
+        output_dir = os.path.join(pretrained_model, "helmet_eval", benchmark)  # tiny eval
+    elif ruler_mode == "short":
+        output_dir = os.path.join(pretrained_model, "helmet_eval_short", benchmark)  # short eval
+    elif ruler_mode == "long":
+        output_dir = os.path.join(pretrained_model, "helmet_eval_long", benchmark)  # long eval
+    else:
+        raise ValueError(f"Invalid ruler_mode: {ruler_mode}")
+
     os.makedirs(output_dir, exist_ok=True)
 
     assert benchmark in long_benchmarks, f"Invalid benchmark: {benchmark}"
 
-    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {env_bin_path}/python eval.py --config configs/{benchmark}_tiny.yaml --model_name_or_path {pretrained_model} --use_chat_template False --no_torch_compile --output_dir {output_dir} '"
+    if ruler_mode == "long":
+        bench_config = f"configs/{benchmark}.yaml"
+    else:
+        bench_config = f"configs/{benchmark}_{ruler_mode}.yaml"
+
+    current_env_bin_path = env_bin_path
+    python_path_prefix_dirs = f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src"
+    if "sepcache" in pretrained_model.lower():
+        current_env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/sepcache/bin"
+        python_path_prefix_dirs = f"{helmet_workdir_prefix}/src"
+
+    use_chat_template = "instruct" in pretrained_model.lower()
+    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {current_env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template {use_chat_template} --no_torch_compile --output_dir {output_dir} --limit_max_length 33000 '"
 
     print(f"\n\n{script_str}\n")
+
+    env_variables = {
+        "PATH": f"{current_env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
+        "PYTHONPATH": f"{python_path_prefix_dirs}:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
+        "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
+        # "LD_LIBRARY_PATH": "/usr/local/nvidia/lib:/usr/local/nvidia/lib64",
+    }
 
     job_w_args = client_lib.Job(
         base_image=BASE_IMAGE,
@@ -64,11 +98,7 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
         processes_per_worker=1,
         job_desc=job_description,
         # stop_timer=600, # в минутах, = 10 часов
-        env_variables={
-            "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
-            "PYTHONPATH": f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
-            "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
-        },
+        env_variables=env_variables,
     )
 
     if dry:
@@ -76,10 +106,7 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
     else:
         if local:
             print("Running local process")
-            import subprocess
-
-            # Example: Running a simple command
-            result = subprocess.run(script_str, shell=True)
+            result = run_local_process(script_str, env_variables)
             if result.returncode != 0:
                 print("Failed to run job:", job_description)
 
@@ -105,6 +132,12 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
 
     print(f"\n\n{script_str}\n")
 
+    env_variables = {
+        "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
+        "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
+        "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
+    }
+
     job_w_args = client_lib.Job(
         base_image=BASE_IMAGE,
         script=script_str,
@@ -116,11 +149,7 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
         processes_per_worker=1,
         job_desc=job_description,
         # stop_timer=600, # в минутах, = 10 часов
-        env_variables={
-            "PATH": f"{env_bin_path}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/conda/bin",
-            "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
-            "HF_HOME": "/workspace-SR004.nfs2/.cache/huggingface",
-        },
+        env_variables=env_variables,
     )
 
     if dry:
@@ -128,23 +157,20 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
     else:
         if local:
             print("Running local process")
-            import subprocess
-
-            # Example: Running a simple command
-            result = subprocess.run(script_str, shell=True)
+            result = run_local_process(script_str, env_variables)
             if result.returncode != 0:
                 print("Failed to run job:", job_description)
-
         else:
             print(job_description, "\n", job_w_args.submit())
 
     return
 
 
-def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False):
+def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False, ruler_mode="none"):
 
     if experiment["benchmark"] in ["recall", "rag", "rerank", "cite", "longqa", "summ", "icl"]:
-        return run_helmet_eval_experiments(experiment, job_description, dry, local)
+        assert ruler_mode in ["tiny", "short", "long"], f"Invalid mode: {ruler_mode}"
+        return run_helmet_eval_experiments(experiment, job_description, dry, local, ruler_mode=ruler_mode)
 
     return run_lighteval_eval_experiments(experiment, job_description, dry, local)
 
@@ -247,6 +273,116 @@ def get_in_progress_jobs_descriptions(client):
     return in_progress_jobs_descriptions
 
 
+def evaluate_benchmarks(
+    base_path: str,
+    experiments_dirs: list[str],
+    benchmarks: list[str],
+    num_checkpoints: int,
+    force: bool,
+    dry: bool,
+    local: bool,
+    max_jobs_queue_size: int,
+    model: str,
+    limit_jobs: int,
+    in_progress_jobs_descriptions=None,
+    ruler_mode="none",
+):
+
+    stop = False
+    processed_models = 0
+    check_queue_processed_models = -1
+
+    for benchmark in benchmarks:
+        if benchmark == "gsm8k":
+            continue
+
+        for experiment_dir in experiments_dirs:
+            if stop:
+                break
+
+            if model is not None and model.lower() not in experiment_dir.lower():
+                print(f"Skipping {experiment_dir} because it does not contain {model}")
+                continue
+
+            experiment_eval_dir = os.listdir(os.path.join(base_path, experiment_dir))
+            experiment_eval_dir = [
+                x for x in experiment_eval_dir if x != "sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_X745XTCC"
+            ]
+
+            checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
+
+            for checkpoint in checkpoints:
+
+                if max_jobs_queue_size is not None and check_queue_processed_models < processed_models:
+                    while True:
+                        in_queue_jobs = get_in_progress_jobs(client, statuses=["Pending"])
+                        queue_size = len(in_queue_jobs)
+
+                        if queue_size >= max_jobs_queue_size:
+                            sleep_time = 10
+                            print(
+                                f"Max jobs queue size {queue_size} / {max_jobs_queue_size} reached, waiting for {sleep_time} seconds"
+                            )
+                            time.sleep(sleep_time)
+                        else:
+                            # update in_progress_jobs_descriptions
+                            in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
+                            break
+
+                        check_queue_processed_models = processed_models
+
+                full_experiment_dir = os.path.join(base_path, experiment_dir, checkpoint)
+
+                evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark, ruler_mode=ruler_mode)
+
+                if os.path.exists(evaluation_file) and os.stat(evaluation_file).st_size > 0:
+                    if force:
+                        if not dry:
+                            os.remove(evaluation_file)
+                        print(f"Force remove metrics {evaluation_file}")
+
+                    else:
+                        print(f"Evaluation file {evaluation_file} already exists")
+                        continue
+
+                experiment = {
+                    "pretrained_model": full_experiment_dir,
+                    "benchmark": benchmark,
+                }
+
+                bench_desc_suffix = ""
+                if ruler_mode != "none":
+                    bench_desc_suffix = f" ({ruler_mode})"
+                job_description = f"Eval {benchmark}{bench_desc_suffix}: {experiment_dir}/{checkpoint} {JOB_DESCRIPTION_SUFFIX}"
+
+                if not force and job_description in in_progress_jobs_descriptions:
+                    print(f"Job {job_description} already in progress, skipping")
+                    continue
+
+                run_eval_experiments(
+                    experiment,
+                    dry=dry,
+                    job_description=job_description,
+                    local=local,
+                    ruler_mode=ruler_mode,
+                )
+
+                processed_models += 1
+                if not dry:
+                    pass
+                    # time.sleep(5)  # to avoid race conditions and brusting max queue size
+
+                if limit_jobs is not None and processed_models >= limit_jobs:
+                    print(f"Processed {processed_models} models, stopping")
+                    stop = True
+                    break
+
+    return {
+        "stop": stop,
+        "processed_models": processed_models,
+    }
+
+
 if __name__ == "__main__":
 
     import argparse
@@ -263,6 +399,8 @@ if __name__ == "__main__":
     parser.add_argument("--max_jobs_queue_size", type=int, default=None)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--local", action="store_true")
+    parser.add_argument("--ruler_mode", type=str, default="none", choices=["none", "tiny", "short", "long"])
+    parser.add_argument("--run_for_in_progress_jobs", action="store_true")
     args = parser.parse_args()
 
     num_checkpoints = args.num_checkpoints
@@ -275,7 +413,7 @@ if __name__ == "__main__":
         assert args.limit_jobs > 0
 
     if args.benchmark == "all":
-        benchmarks = copy.deepcopy(all_benchmarks)
+        benchmarks = copy.deepcopy(long_benchmarks + short_benchmarks)
     elif args.benchmark == "long":
         benchmarks = copy.deepcopy(long_benchmarks)
     elif args.benchmark == "short":
@@ -290,99 +428,68 @@ if __name__ == "__main__":
 
     print(f"Evaluating {num_checkpoints} checkpoints for {benchmarks} benchmarks")
 
-    check_queue_processed_models = -1
     processed_models = 0
 
     stop = False
 
-    for eos_num in os.listdir(experiments_dir):
-        if stop:
-            break
+    experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments")
+    if args.run_for_in_progress_jobs:
+        assert args.eos_num == "all", "eos_num is not supported for in_progress_jobs"
+        experiments_dir = os.path.join(workdir_prefix, "artifacts", "experiments_in_progress")
 
-        if args.eos_num != "all":
-            if eos_num != args.eos_num:
-                continue
+    all_models = [""]
+    if args.model is not None:
+        all_models = args.model.split(",")
 
-        experiments_dirs = os.listdir(os.path.join(experiments_dir, eos_num))
+    if args.run_for_in_progress_jobs:
+        experiments_dirs = os.listdir(experiments_dir)
 
-        for benchmark in benchmarks:
-            if benchmark == "gsm8k":
-                continue
+        for current_model in all_models:
+            result = evaluate_benchmarks(
+                base_path=experiments_dir,
+                experiments_dirs=experiments_dirs,
+                benchmarks=benchmarks,
+                num_checkpoints=num_checkpoints,
+                force=args.force,
+                dry=args.dry,
+                local=args.local,
+                model=current_model,
+                limit_jobs=args.limit_jobs,
+                max_jobs_queue_size=args.max_jobs_queue_size,
+                in_progress_jobs_descriptions=in_progress_jobs_descriptions,
+                ruler_mode=args.ruler_mode,
+            )
+            processed_models += result["processed_models"]
 
-            for experiment_dir in experiments_dirs:
+    else:
+        for current_model in all_models:
+            for eos_num in os.listdir(experiments_dir):
                 if stop:
                     break
 
-                if args.model is not None and args.model.lower() not in experiment_dir.lower():
-                    print(f"Skipping {experiment_dir} because it does not contain {args.model}")
-                    continue
-
-                # if experiment_dir not in ['sentence_Llama-3.2-3B_ft_bos_token_full_num_eos_tokens_4_8H2VTT04', 'sentence_Llama-3.2-3B_ft_full_num_eos_tokens_4_IMK8VHPR']:
-                #     continue
-
-                experiment_eval_dir = os.listdir(os.path.join(experiments_dir, eos_num, experiment_dir))
-                checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
-
-                for checkpoint in checkpoints:
-
-                    if args.max_jobs_queue_size is not None and check_queue_processed_models < processed_models:
-                        while True:
-                            in_queue_jobs = get_in_progress_jobs(client, statuses=["Pending"])
-                            queue_size = len(in_queue_jobs)
-
-                            if queue_size >= args.max_jobs_queue_size:
-                                sleep_time = 10
-                                print(
-                                    f"Max jobs queue size {queue_size} / {args.max_jobs_queue_size} reached, waiting for {sleep_time} seconds"
-                                )
-                                time.sleep(sleep_time)
-                            else:
-                                # update in_progress_jobs_descriptions
-                                in_progress_jobs_descriptions = get_in_progress_jobs_descriptions(client)
-                                break
-
-                            check_queue_processed_models = processed_models
-
-                    full_experiment_dir = os.path.join(experiments_dir, eos_num, experiment_dir, checkpoint)
-
-                    evaluation_file = checkpoint_evaluation_file(full_experiment_dir, benchmark)
-
-                    if os.path.exists(evaluation_file) and os.stat(evaluation_file).st_size > 0:
-                        if args.force:
-                            if not args.dry:
-                                os.remove(evaluation_file)
-                            print(f"Force remove metrics {evaluation_file}")
-
-                        else:
-                            print(f"Evaluation file {evaluation_file} already exists")
-                            continue
-
-                    experiment = {
-                        "pretrained_model": full_experiment_dir,
-                        "benchmark": benchmark,
-                    }
-
-                    job_description = f"Eval {benchmark}: {eos_num}/{experiment_dir}/{checkpoint} {JOB_DESCRIPTION_SUFFIX}"
-
-                    if job_description in in_progress_jobs_descriptions:
-                        print(f"Job {job_description} already in progress, skipping")
+                if args.eos_num != "all":
+                    if eos_num != args.eos_num:
                         continue
 
-                    run_eval_experiments(
-                        experiment,
-                        dry=args.dry,
-                        job_description=job_description,
-                        local=args.local,
-                    )
+                base_path = os.path.join(experiments_dir, eos_num)
+                experiments_dirs = os.listdir(base_path)
 
-                    processed_models += 1
-                    if not args.dry:
-                        pass
-                        # time.sleep(5)  # to avoid race conditions and brusting max queue size
+                result = evaluate_benchmarks(
+                    base_path=base_path,
+                    experiments_dirs=experiments_dirs,
+                    benchmarks=benchmarks,
+                    num_checkpoints=num_checkpoints,
+                    force=args.force,
+                    dry=args.dry,
+                    local=args.local,
+                    model=current_model,
+                    limit_jobs=args.limit_jobs,
+                    max_jobs_queue_size=args.max_jobs_queue_size,
+                    in_progress_jobs_descriptions=in_progress_jobs_descriptions,
+                    ruler_mode=args.ruler_mode,
+                )
 
-                    if args.limit_jobs is not None and processed_models >= args.limit_jobs:
-                        print(f"Processed {processed_models} models, stopping")
-                        stop = True
-                        break
+                stop = result["stop"]
+                processed_models += result["processed_models"]
 
     print(f"Runned {processed_models} jobs")

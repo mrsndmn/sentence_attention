@@ -12,7 +12,7 @@ if __name__ == "__main__":
 
     max_length_dataset_suffix = "_max_length_4096"
     dataset_suffix = "_num_4"
-    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token_num_4_merged_shard_0_of_1000"
 
     fineweb_dataset = Dataset.load_from_disk(dataset_path)
 
@@ -25,6 +25,6 @@ if __name__ == "__main__":
 
     plt.hist(input_ids_lengths, bins=100)
     plt.show()
-    plt.savefig("/tmp/input_ids_lengths.png")
-    print("saved to /tmp/input_ids_lengths.png")
+    plt.savefig("/tmp/input_ids_lengths_fineweb.png")
+    print("saved to /tmp/input_ids_lengths_fineweb.png")
     breakpoint()
