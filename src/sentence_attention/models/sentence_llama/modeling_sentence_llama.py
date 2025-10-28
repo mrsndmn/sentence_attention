@@ -23,7 +23,6 @@ from typing import List, Tuple, Union, Unpack
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint
-from liger_kernel.transformers import LigerFusedLinearCrossEntropyLoss
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.generation import GenerationMixin
 from transformers.integrations.flex_attention import compile_friendly_flex_attention
@@ -1472,6 +1471,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             # loss = fixed_cross_entropy(logits, shift_labels, num_items_in_batch, ignore_index, **kwargs)
 
             assert num_items_in_batch is not None
+            from liger_kernel.transformers import LigerFusedLinearCrossEntropyLoss
 
             liger_lce = LigerFusedLinearCrossEntropyLoss(reduction="sum")
 
