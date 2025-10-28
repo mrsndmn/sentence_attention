@@ -43,4 +43,5 @@ ignore = [
     # simplify rules (ternary / nested-if) — non-blocking for now
     "SIM108",
     "SIM102",
+    "UP035",
 ]

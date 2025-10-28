@@ -3,7 +3,8 @@ import glob
 import json
 import os
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Dict, List, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -101,7 +102,7 @@ def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
         return read_short_benchmark_metric(checkpoint_path, task_name)
 
 
-def get_score_metric_for_helmet_task(task_name: str, score_file: Optional[str] = None) -> str:
+def get_score_metric_for_helmet_task(task_name: str, score_file: str | None = None) -> str:
     if score_file is not None and task_name == "recall":
         if "json_kv_eval_" in score_file:
             return "substring_exact_match"
@@ -217,8 +218,8 @@ def build_table(
     benchmarks: List[str],
     training_mapping: Dict[str, str],
     row_predicate=None,
-    model_filter: Optional[str] = None,
-    eos_tokens_filter: Optional[int] = None,
+    model_filter: str | None = None,
+    eos_tokens_filter: int | None = None,
 ) -> List[List[str]]:
     table_rows: List[List[str]] = []
     for row in rows:

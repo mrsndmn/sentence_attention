@@ -99,7 +99,7 @@ def evaluate_pg19_ppl(
                     current_tokens_log_probas.extend(log_probas_list)  # noqa: B023
 
                     log_probas_list_no_eos = []
-                    for token_id, log_proba in zip(input_ids[0, :].cpu().numpy().tolist(), log_probas_list):
+                    for token_id, log_proba in zip(input_ids[0, :].cpu().numpy().tolist(), log_probas_list, strict=True):
                         # Ignore all except the last EOS token
                         if token_id in special_token_ids[:-1]:  # noqa: B023
                             continue
@@ -197,7 +197,9 @@ def evaluate_pg19_ppl(
         "diagnostics": {
             "input_ids_lengths": all_input_ids,
             "kv_cache_lengths": all_kv_lengths,
-            "compression_ratios": [float(i) / float(k) if k > 0 else None for i, k in zip(all_input_ids, all_kv_lengths)],
+            "compression_ratios": [
+                float(i) / float(k) if k > 0 else None for i, k in zip(all_input_ids, all_kv_lengths, strict=True)
+            ],
             "max_cuda_memory_gb": float(torch.cuda.max_memory_allocated() / 1024**3) if torch.cuda.is_available() else None,
         },
     }

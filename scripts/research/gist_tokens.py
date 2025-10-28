@@ -1,6 +1,6 @@
 import ast
 import os
-from typing import List, Optional
+from typing import List
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -324,7 +324,7 @@ def analyze_attention_to_gists(
     input_ids: torch.Tensor,
     model: SentenceLlamaForCausalLM,
     output_path: str = "/tmp/attention_to_gists.png",
-    ignore_tokens_positions: Optional[List[int]] = None,
+    ignore_tokens_positions: List[int] | None = None,
 ):
     if attentions is None or len(attentions) == 0:
         print("No attentions provided; skipping attention-to-gists analysis.")
@@ -408,7 +408,7 @@ def analyze_attention_to_gists(
 def visualize_mean_attention_map(
     attentions: tuple,
     output_path: str = "/tmp/mean_attention_map.png",
-    ignore_tokens_positions: Optional[List[int]] = None,
+    ignore_tokens_positions: List[int] | None = None,
 ):
     if attentions is None or len(attentions) == 0:
         print("No attentions provided; skipping mean attention map.")
@@ -492,7 +492,7 @@ def visualize_per_token_mean_attention(
     input_ids: torch.Tensor,
     model: SentenceLlamaForCausalLM,
     output_path: str = "/tmp/per_token_attention.png",
-    ignore_tokens_positions: Optional[List[int]] = None,
+    ignore_tokens_positions: List[int] | None = None,
 ):
     if attentions is None or len(attentions) == 0:
         print("No attentions provided; skipping per-token mean attention.")

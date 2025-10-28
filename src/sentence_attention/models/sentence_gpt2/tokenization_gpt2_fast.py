@@ -14,7 +14,7 @@
 """Tokenization classes for OpenAI GPT."""
 
 import re
-from typing import Any, Optional, Tuple
+from typing import Any, Tuple
 
 from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
 from transformers.tokenization_utils_base import BatchEncoding
@@ -124,7 +124,7 @@ class GPT2TokenizerFast(PreTrainedTokenizerFast):
 
         return super()._encode_plus(*args, **kwargs)
 
-    def save_vocabulary(self, save_directory: str, filename_prefix: Optional[str] = None) -> Tuple[str]:
+    def save_vocabulary(self, save_directory: str, filename_prefix: str | None = None) -> Tuple[str]:
         files = self._tokenizer.model.save(save_directory, name=filename_prefix)
         return tuple(files)
 

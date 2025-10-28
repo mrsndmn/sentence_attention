@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Optional
 
 from transformers import TrainingArguments
 
@@ -46,7 +45,7 @@ class SentenceTrainingArguments(TrainingArguments):
 
     save_strategy: str = field(default="steps")
     save_steps: int = field(default=10000)
-    save_total_limit: Optional[int] = field(default=3)
+    save_total_limit: int | None = field(default=3)
     save_only_model: bool = field(default=False)
 
     push_to_hub: bool = field(default=False)

@@ -2,12 +2,11 @@ import argparse
 import json
 
 import yaml
-from tqdm.auto import tqdm
-from transformers import AutoTokenizer
-
 from sentence_attention.evaluation.benchmarks import long_benchmarks, short_benchmarks
 from sentence_attention.evaluation.evaluation import build_evaluation_pipeline
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import SentenceLlamaForCausalLM
+from tqdm.auto import tqdm
+from transformers import AutoTokenizer
 
 artifacts_prefix = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments"
 
@@ -109,7 +108,7 @@ if __name__ == "__main__":
             num_eos_tokens = 0
             total_tokens = 0
 
-            for dataset, test_file, demo_file in zip(datasets, test_files, demo_files):
+            for dataset, test_file, demo_file in zip(datasets, test_files, demo_files, strict=True):
 
                 if test_file != "":
                     test_file = "../HELMET/" + test_file

@@ -2,7 +2,7 @@ import argparse
 import hashlib
 import json
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -12,7 +12,7 @@ def compute_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def get_backend_tokenizer_json(tokenizer: PreTrainedTokenizer) -> Optional[str]:
+def get_backend_tokenizer_json(tokenizer: PreTrainedTokenizer) -> str | None:
     """Return backend tokenizer JSON string if available (fast tokenizers)."""
     try:
         if isinstance(tokenizer, PreTrainedTokenizerFast) and hasattr(tokenizer, "_tokenizer"):

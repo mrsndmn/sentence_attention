@@ -88,7 +88,7 @@ def process_stratified_dataset(dataset, tokenizer, max_length, num_proc) -> Data
     def _keep_mask(batch):
         bins = batch["_sa_bin"]
         rands = batch["_sa_rand"]
-        return [float(r) <= keep_prob[int(b)] for r, b in zip(rands, bins)]
+        return [float(r) <= keep_prob[int(b)] for r, b in zip(rands, bins, strict=True)]
 
     dataset = dataset.filter(
         _keep_mask,

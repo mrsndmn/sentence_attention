@@ -3,7 +3,8 @@ import glob
 import json
 import os
 import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Dict, List, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -122,7 +123,7 @@ def read_long_short_benchmark_metric(checkpoint_path: str, task_name: str) -> st
     return final_results
 
 
-def read_benchmark_metric(checkpoint_path: str, task_name: str, preferred_order: Sequence[str]) -> Optional[float]:
+def read_benchmark_metric(checkpoint_path: str, task_name: str, preferred_order: Sequence[str]) -> float | None:
 
     if task_name in long_benchmarks:
         return read_long_benchmark_metric(checkpoint_path, task_name)
@@ -181,7 +182,7 @@ def plot_benchmark_over_checkpoints(
     experiment_dirs: List[str],
     benchmarks: List[str],
     metric_preference: Sequence[str],
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
 ) -> None:
     matplotlib.style.use("seaborn-v0_8-darkgrid")
 
@@ -259,7 +260,7 @@ def heatmap_benchmark_over_checkpoints(
     experiment_dirs: List[str],
     benchmarks: List[str],
     metric_preference: Sequence[str],
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
 ) -> None:
     matplotlib.style.use("seaborn-v0_8-darkgrid")
 
@@ -372,7 +373,7 @@ def heatmap_benchmark_over_checkpoints(
                 col = step_to_idx.get(e["step"])
                 if col is None:
                     continue
-                for l, v in zip(e["bench_length"], e["bench_value"]):  # noqa: E741
+                for l, v in zip(e["bench_length"], e["bench_value"], strict=True):  # noqa: E741
                     row = length_to_idx.get(l)
                     if row is not None:
                         grid[row, col] = v
