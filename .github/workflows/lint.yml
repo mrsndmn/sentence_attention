@@ -21,9 +21,3 @@ jobs:
         HF_HOME: /workspace-SR004.nfs2/.cache/huggingface
       run: |
         /home/jovyan/.mlspace/envs/sentence_attention/bin/python -m ruff check .
-    - name: Run flake8 (with no-chained-assignments plugin)
-      env:
-        PYTHONPATH: /workspace-SR004.nfs2/d.tarasov/transformers_adaptive_fan_in_fan_out/src:./src
-        HF_HOME: /workspace-SR004.nfs2/.cache/huggingface
-      run: |
-        /home/jovyan/.mlspace/envs/sentence_attention/bin/python -m flake8 .
