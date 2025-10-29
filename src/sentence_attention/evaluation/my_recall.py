@@ -11,7 +11,13 @@ from wonderwords import RandomWord
 
 
 def generate_random_sample_full(
-    num_examples=200, random_word=None, hint_first=False, niddle_type: Literal["numbers", "strings"] = "numbers"
+    num_examples=200,
+    random_word=None,
+    hint_first=False,
+    niddle_type: Literal["numbers", "strings", "strings_upper"] = "numbers",
+    query_words_count=3,
+    value_words_count=1,
+    value_max_number=1000000,
 ):
 
     if random_word is None:
@@ -20,16 +26,22 @@ def generate_random_sample_full(
     keys_values = {}
     values_set = set()
     for _ in range(num_examples):
-        word = "-".join(random_word.random_words(3))
+        word = "-".join(random_word.random_words(query_words_count))
         while word in keys_values:
-            word = "-".join(random_word.random_words(3))
+            word = "-".join(random_word.random_words(query_words_count))
 
         if niddle_type == "numbers":
-            value = random.randint(1, 1000000)
+            value = random.randint(1, value_max_number)
         elif niddle_type == "strings":
-            value = "-".join(random_word.random_words(1))
+            value = "-".join(random_word.random_words(value_words_count))
             while value in values_set:
-                value = "-".join(random_word.random_words(1))
+                value = "-".join(random_word.random_words(value_words_count))
+            values_set.add(value)
+        elif niddle_type == "strings_upper":
+            value = "-".join(random_word.random_words(value_words_count))
+            while value in values_set:
+                value = "-".join(random_word.random_words(value_words_count))
+            value = value.upper()
             values_set.add(value)
         else:
             raise ValueError(f"Invalid niddle type: {niddle_type}")
@@ -59,7 +71,7 @@ def generate_random_sample_full(
 
     template_prefix = f"A special magic {magic_object_name} is hidden within the following text."
     if hint_first:
-        template_prefix = f"The special magic {magic_object_name} for {key} is hidden within the following text."
+        template_prefix = f"The special magic {magic_object_name} for {query_key} is hidden within the following text."
 
     full_sample_template = """
 {template_prefix} Make sure to memorize it. I will quiz you about the {magic_object_name} afterwards.
@@ -88,9 +100,23 @@ The special magic {magic_object_name} for {query_key} mentioned in the provided 
     }
 
 
-def generate_random_sample(num_examples=200, random_word=None, no_answer=False, return_answer=False, hint_first=False):
+def generate_random_sample(
+    num_examples=200,
+    random_word=None,
+    no_answer=False,
+    return_answer=False,
+    hint_first=False,
+    query_words_count=3,
+    value_words_count=1,
+):
 
-    result = generate_random_sample_full(num_examples=num_examples, random_word=random_word, hint_first=hint_first)
+    result = generate_random_sample_full(
+        num_examples=num_examples,
+        random_word=random_word,
+        hint_first=hint_first,
+        query_words_count=query_words_count,
+        value_words_count=value_words_count,
+    )
 
     if not return_answer:
         if no_answer:
@@ -112,7 +138,12 @@ def evaluate_synthetic_my_recall(
     max_samples: int = 10,
     sample_num_examples: int = 10,
     hint_first: bool = False,
-    niddle_type: Literal["numbers", "strings"] = "numbers",
+    niddle_type: Literal["numbers", "strings", "strings_upper"] = "numbers",
+    query_words_count: int = 3,
+    value_words_count: int = 1,
+    value_max_number: int = 1000000,
+    save_results: bool = False,
+    checkpoint_path: str = None,
 ) -> Dict:
     """
     Compute PPL on PG19 for either SentenceLlama or vanilla Llama and return a JSON-serializable dict.
@@ -120,6 +151,18 @@ def evaluate_synthetic_my_recall(
     """
 
     assert dataset_path is None, "dataset_path is not supported for my_recall"
+
+    if save_results:
+        out_dir = os.path.join(checkpoint_path, "evaluation")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(
+            out_dir,
+            f"synthetic_my_recall_num_examples_{sample_num_examples}_type_{niddle_type}_hint_first_{hint_first}_query_words_count_{query_words_count}_value_words_count_{value_words_count}_value_max_number_{value_max_number}.json",
+        )
+        if os.path.exists(out_path):
+            print("Results file already exists, skipping")
+            with open(out_path) as f:
+                return json.load(f)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -130,7 +173,13 @@ def evaluate_synthetic_my_recall(
     prediction_scores = []
     for _ in range(max_samples):
         result = generate_random_sample_full(
-            num_examples=sample_num_examples, random_word=random_word, hint_first=hint_first, niddle_type=niddle_type
+            num_examples=sample_num_examples,
+            random_word=random_word,
+            hint_first=hint_first,
+            niddle_type=niddle_type,
+            query_words_count=query_words_count,
+            value_words_count=value_words_count,
+            value_max_number=value_max_number,
         )
 
         sample = result["sample_without_answer"]
@@ -151,7 +200,7 @@ def evaluate_synthetic_my_recall(
             inputs_ids = prompt_tokens
         else:
             inputs = tokenizer(sample, return_tensors="pt").to(device)
-            print("inputs.input_ids.shape", inputs["input_ids"].shape)
+            # print("inputs.input_ids.shape", inputs["input_ids"].shape)
             outputs = model.generate(**inputs, max_new_tokens=20)
             inputs_ids = inputs["input_ids"]
 
@@ -161,18 +210,18 @@ def evaluate_synthetic_my_recall(
             predicted_number = 0
             if len(predicted_numbers) > 0:
                 predicted_number = predicted_numbers[0]
-                print("prediction", prediction)
-                print("predicted_number", predicted_number)
-                print("answer", answer)
+                # print("prediction", prediction)
+                # print("predicted_number", predicted_number)
+                # print("answer", answer)
                 prediction_scores.append(int(predicted_number) == answer)
             else:
-                print("No numbers found in prediction", prediction)
+                # print("No numbers found in prediction", prediction)
                 prediction_scores.append(False)
         elif niddle_type == "strings":
             predicted_string = prediction.strip().split(": ")[0].split(".")[0]
-            print("prediction", prediction)
-            print("predicted_string", predicted_string)
-            print("answer", answer)
+            # print("prediction", prediction)
+            # print("predicted_string", predicted_string)
+            # print("answer", answer)
             prediction_scores.append((predicted_string == answer) or (answer in prediction))
             # breakpoint()
         else:
@@ -181,18 +230,30 @@ def evaluate_synthetic_my_recall(
     result = {
         "model_type": model_type,
         "max_samples": int(max_samples),
+        "sample_num_examples": int(sample_num_examples),
+        "niddle_type": niddle_type,
+        "hint_first": hint_first,
+        "query_words_count": int(query_words_count),
+        "value_words_count": int(value_words_count),
+        "value_max_number": int(value_max_number),
         "accuracy": np.mean(prediction_scores),
         "diagnostics": {
             "max_cuda_memory_gb": float(torch.cuda.max_memory_allocated() / 1024**3) if torch.cuda.is_available() else None,
         },
     }
 
+    if save_results:
+        out_dir = os.path.join(checkpoint_path, "evaluation")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(
+            out_dir,
+            f"synthetic_my_recall_num_examples_{sample_num_examples}_type_{niddle_type}_hint_first_{hint_first}_query_words_count_{query_words_count}_value_words_count_{value_words_count}_value_max_number_{value_max_number}.json",
+        )
+        if not os.path.exists(out_path):
+            with open(out_path, "w") as f:
+                json.dump(result, f, indent=4)
+            print(f"Results saved to {out_path}")
+        else:
+            raise ValueError(f"Results file {out_path} already exists")
+
     return result
-
-
-def save_pg19_results_json(output_dir: str, results: Dict) -> str:
-    os.makedirs(output_dir, exist_ok=True)
-    out_path = os.path.join(output_dir, "pg19.json")
-    with open(out_path, "w") as f:
-        json.dump(results, f, indent=2)
-    return out_path

@@ -65,7 +65,7 @@ if __name__ == "__main__":
                         # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
                         dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_10000_with_eos_token{dataset_suffix}_merged"
                     elif training_args.dataset == "my_recall_strings":
-                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_strings_max_length_4096_num_samples_10000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
+                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_strings_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
                     else:
                         raise ValueError(f"Unknown dataset: {training_args.dataset}")
                 elif "qwen2" in training_args.model_checkpoint.lower():
@@ -131,6 +131,9 @@ if __name__ == "__main__":
     nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     print("train_dataset", train_dataset)
+    if "labels_hidden" in train_dataset.column_names:
+        train_dataset = train_dataset.remove_columns("labels_hidden")
+        print("removed labels_hidden column from train_dataset")
 
     def crutch_collator(examples):
         collate_dummy = nested_data_collator(examples)
