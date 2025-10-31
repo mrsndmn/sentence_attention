@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
             if os.stat(checkpoint_directory).st_ctime > time.time() - 10 * 60:
                 # Time for all fsdp checkpoints to be saved
-                sleep_time = 10 * 60 - (time.time() - os.stat(out_dir).st_ctime)
+                sleep_time = 10 * 60 - (time.time() - os.stat(checkpoint_directory).st_ctime)
                 time.sleep(sleep_time)
                 print("Sleeping for", sleep_time, "seconds")
 
