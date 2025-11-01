@@ -278,6 +278,7 @@ def evaluate_benchmarks(
     experiments_dirs: list[str],
     benchmarks: list[str],
     num_checkpoints: int,
+    checkpoints_step: int,
     force: bool,
     dry: bool,
     local: bool,
@@ -309,7 +310,7 @@ def evaluate_benchmarks(
                 x for x in experiment_eval_dir if x != "sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_X745XTCC"
             ]
 
-            checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints]
+            checkpoints = sort_checkpoints(experiment_eval_dir)[:num_checkpoints:checkpoints_step]
 
             for checkpoint in checkpoints:
 
@@ -389,6 +390,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_checkpoints", type=int, default=1)
+    parser.add_argument("--checkpoints_step", type=int, default=1)
     parser.add_argument("--dry", action="store_true")
     parser.add_argument("--benchmark", type=str, default="all")
     parser.add_argument(
@@ -404,6 +406,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     num_checkpoints = args.num_checkpoints
+    checkpoints_step = args.checkpoints_step
 
     client, _ = training_job_api_from_profile("default")
 
@@ -450,6 +453,7 @@ if __name__ == "__main__":
                 experiments_dirs=experiments_dirs,
                 benchmarks=benchmarks,
                 num_checkpoints=num_checkpoints,
+                checkpoints_step=checkpoints_step,
                 force=args.force,
                 dry=args.dry,
                 local=args.local,
@@ -479,6 +483,7 @@ if __name__ == "__main__":
                     experiments_dirs=experiments_dirs,
                     benchmarks=benchmarks,
                     num_checkpoints=num_checkpoints,
+                    checkpoints_step=checkpoints_step,
                     force=args.force,
                     dry=args.dry,
                     local=args.local,

@@ -1270,11 +1270,11 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         if prev_attention_implementation is not None:
             self.config._attn_implementation = prev_attention_implementation
-            print(
-                "Restore attention implementation for decoding",
-                "self.config._attn_implementation",
-                self.config._attn_implementation,
-            )
+            # print(
+            #     "Restore attention implementation for decoding",
+            #     "self.config._attn_implementation",
+            #     self.config._attn_implementation,
+            # )
 
         generated_tokens_t = torch.tensor([generated_tokens], device=input_ids.device, dtype=torch.long)
 

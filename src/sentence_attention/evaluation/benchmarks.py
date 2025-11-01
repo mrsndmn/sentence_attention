@@ -12,6 +12,8 @@ all_benchmarks = [
     "winogrande",
     "pg19",
     # "gsm8k",
+    "synthetic_my_recall",
+    "synthetic_my_recall_grid",
 ]
 
 short_benchmarks = [

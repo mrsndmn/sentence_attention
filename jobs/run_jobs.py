@@ -1,3 +1,4 @@
+from typing import Literal
 import argparse
 import glob
 import math
@@ -566,8 +567,23 @@ def check_experiment_in_progress(experiment_prefix_base_name: str, in_progress_j
 
 
 def run_group_eos_only_my_recall(
-    *, dry: bool, num_eos_tokens: List[int], test: bool = False, force: bool = False, in_progress_jobs: List[Dict], model: str
+    *,
+    dry: bool,
+    num_eos_tokens: List[int],
+    test: bool = False,
+    force: bool = False,
+    in_progress_jobs: List[Dict],
+    model: str,
+    niddle_type: Literal["numbers", "strings"] = "numbers",
 ):
+
+    models_checkpoints = [
+        {
+            "model_checkpoint": f"{workdir_prefix}/artifacts/experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067/",
+            "model_slug": "Llama-3.2-3B",
+        },
+    ]
+
     return _run_group_eos_only(
         dry=dry,
         num_eos_tokens=num_eos_tokens,
@@ -575,22 +591,36 @@ def run_group_eos_only_my_recall(
         force=force,
         in_progress_jobs=in_progress_jobs,
         model=model,
-        dataset="my_recall",
-        limit_dataset_shards=20,
-        extra_exp_suffix="_my_recall",
+        dataset=f"my_recall_{niddle_type}",
+        limit_dataset_shards=50,
+        extra_exp_suffix=f"_my_recall_{niddle_type}",
         global_batch_size=16,
         per_device_train_batch_size=1,
         save_safetensors="0",
-        ngpus=2,
+        ngpus=4,
         learning_rate=0.001,
+        models_checkpoints=models_checkpoints,
     )
 
 
 def run_group_eos_only(
-    *, dry: bool, num_eos_tokens: List[int], test: bool = False, force: bool = False, in_progress_jobs: List[Dict], model: str
+    *,
+    dry: bool,
+    num_eos_tokens: List[int],
+    test: bool = False,
+    force: bool = False,
+    in_progress_jobs: List[Dict],
+    model: str,
+    models_checkpoints=None,
 ) -> None:
     return _run_group_eos_only(
-        dry=dry, num_eos_tokens=num_eos_tokens, test=test, force=force, in_progress_jobs=in_progress_jobs, model=model
+        dry=dry,
+        num_eos_tokens=num_eos_tokens,
+        test=test,
+        force=force,
+        in_progress_jobs=in_progress_jobs,
+        model=model,
+        models_checkpoints=models_checkpoints,
     )
 
 
@@ -611,6 +641,7 @@ def _run_group_eos_only(
     save_safetensors="1",
     learning_rate=0.0001,
     ngpus=4,
+    models_checkpoints=None,
 ) -> None:
     n_nodes = 1
     num_train_epochs = 1
@@ -619,9 +650,12 @@ def _run_group_eos_only(
 
     max_steps = -1
 
+    if models_checkpoints is None:
+        models_checkpoints = _models_for_eos_only()
+
     for number_of_eos_tokens in num_eos_tokens:
 
-        for exp_config in _models_for_eos_only():
+        for exp_config in models_checkpoints:
             model_checkpoint = exp_config["model_checkpoint"]
             gradient_checkpointing = exp_config.get("gradient_checkpointing", None)
             torch_compile = exp_config.get("torch_compile", None)
@@ -642,7 +676,7 @@ def _run_group_eos_only(
 
             # TODO check sucessful experiment has already been processed
 
-            model_checkpoint_slug = model_checkpoint.split("/")[-1]
+            model_checkpoint_slug = exp_config.get("model_slug", model_checkpoint.split("/")[-1])
             gradient_accumulation_steps = math.ceil(global_batch_size / ngpus / n_nodes / local_per_device_train_batch_size)
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}{extra_exp_suffix}"
@@ -1291,6 +1325,7 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--model", type=str, help="Model checkpoint filter")
+    parser.add_argument("--niddle_type", type=str, help="Niddle type", default="numbers", choices=["numbers", "strings"])
     parser.add_argument("--resume_from_checkpoint", type=str, help="Resume from checkpoint", default=None)
 
     return parser
@@ -1342,6 +1377,7 @@ def main() -> None:
             model=args.model,
             test=args.test,
             force=args.force,
+            niddle_type=args.niddle_type,
         )
     elif args.group == "full_4k_my_recall":
         run_group_full_4k_my_recall(

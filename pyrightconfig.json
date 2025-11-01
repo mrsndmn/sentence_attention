@@ -13,6 +13,10 @@
       "extraPaths": ["src", "../transformers_adaptive_fan_in_fan_out/src"]
     },
     {
+      "root": "jobs",
+      "extraPaths": ["src", "../transformers_adaptive_fan_in_fan_out/src"]
+    },
+    {
       "root": "src",
       "extraPaths": ["../transformers_adaptive_fan_in_fan_out/src", "../AutoCompressors"]
     }

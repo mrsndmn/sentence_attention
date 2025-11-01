@@ -14,7 +14,7 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFastEOS
 
 def _generate_one_sample(task):
     # task: Tuple[int, bool] -> (seed, no_answer)
-    seed, no_answer = task
+    seed, no_answer, niddle_type = task
     import random as _random
 
     import numpy as _np
@@ -27,7 +27,7 @@ def _generate_one_sample(task):
     _torch.manual_seed(seed)
 
     rw = _RandomWord()
-    return _gen(num_examples=100, random_word=rw)
+    return _gen(num_examples=100, random_word=rw, niddle_type=niddle_type)
 
 
 if __name__ == "__main__":
@@ -42,6 +42,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_proc", type=int, default=16)
     parser.add_argument("--num_samples", type=int, default=10000)
     parser.add_argument("--with_labels_on_answer", action="store_true")
+    parser.add_argument("--niddle_type", type=str, default="numbers", choices=["numbers", "strings"])
     args = parser.parse_args()
 
     pretrained_model_name = args.pretrained_model_name  # HuggingFaceTB/SmolLM2-1.7B / unsloth/Llama-3.2-1B
@@ -56,6 +57,9 @@ if __name__ == "__main__":
     print(f"pretrained_model_name_short: {pretrained_model_name_short}")
 
     suffix = f"_max_length_{max_length}_num_samples_{args.num_samples}"
+
+    if args.niddle_type != "numbers":
+        suffix = f"_{args.niddle_type}{suffix}"
 
     if args.with_eos_token:
         suffix = f"{suffix}_with_eos_token_num_{num_eos_tokens}_merged"
@@ -92,7 +96,7 @@ if __name__ == "__main__":
     # Parallel sample generation with multiprocessing, progress per sample
     num_workers = num_proc
     base_seed = int.from_bytes(os.urandom(8), "little")
-    tasks = [(base_seed + 10007 * (i + 1), False) for i in range(args.num_samples)]
+    tasks = [(base_seed + 10007 * (i + 1), False, args.niddle_type) for i in range(args.num_samples)]
 
     generated_samples_with_answer = []
     generated_samples_without_answer = []

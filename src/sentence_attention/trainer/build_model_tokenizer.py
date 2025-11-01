@@ -77,6 +77,7 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
     tokenizer.pad_token = tokenizer.eos_token
 
     if training_args.add_end_of_sentence_token and model.config.vocab_size != len(tokenizer):
+        # breakpoint()
         model.resize_token_embeddings(len(tokenizer))
         print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
         model.config.end_of_sentence_token_ids = tokenizer.end_of_sentence_token_ids
