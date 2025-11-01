@@ -487,6 +487,12 @@ def _ft_8k_colddown_checkpoints() -> List[Dict[str, Any]]:
             "number_of_eos_tokens": 8,
             "per_device_train_batch_size": 1,
         },
+        {
+            "model_checkpoint": "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_8/sentence_Meta-Llama-3.1-8B_ft_only_eos_embedding_num_eos_tokens_8_4QWOKQVA/checkpoint-906/",
+            "model_slug": "Llama-3.1-8B",
+            "number_of_eos_tokens": 8,
+            "per_device_train_batch_size": 1,
+        },
     ]
 
     return all_experiments
@@ -738,7 +744,7 @@ def run_group_full_4k(
     resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
-    ngpus = 8
+    ngpus = 4
     num_nodes = 2
 
     num_train_epochs = 1
@@ -748,7 +754,7 @@ def run_group_full_4k(
     # lr_scheduler_type = "constant_with_warmup"
     lr_scheduler_type = "cosine_with_min_lr"
 
-    default_limit_shards = 20
+    default_limit_shards = 49
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -766,9 +772,11 @@ def run_group_full_4k(
         extra_kwargs = {}
         fsdp = None
         local_torch_compile = None
+        local_learning_rate = 0.00005
         if "Llama-3.1-8B" in model_checkpoint:
             fsdp = "1"
             local_torch_compile = "0"
+            local_learning_rate = 0.000025
 
         if fsdp is not None:
             extra_kwargs["fsdp"] = fsdp
@@ -808,7 +816,7 @@ def run_group_full_4k(
             continue
 
         run_training_experiments(
-            learning_rate=0.0001,
+            learning_rate=local_learning_rate,
             lr_scheduler_type=lr_scheduler_type,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
@@ -1096,7 +1104,7 @@ def run_group_full_16k_colddown(
     resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
-    ngpus = 8
+    ngpus = 4
     num_nodes = 2
 
     # ngpus = 6
@@ -1127,16 +1135,11 @@ def run_group_full_16k_colddown(
 
         extra_kwargs = {}
         fsdp = None
-        local_torch_compile = None
         if "Llama-3.1-8B" in model_checkpoint:
             fsdp = "1"
-            local_torch_compile = "0"
 
         if fsdp is not None:
             extra_kwargs["fsdp"] = fsdp
-
-        if local_torch_compile is not None:
-            extra_kwargs["torch_compile"] = local_torch_compile
 
         local_save_steps = exp_config.get("save_steps", save_steps)
 
@@ -1174,7 +1177,6 @@ def run_group_full_16k_colddown(
             learning_rate=0.00005,
             lr_scheduler_type=lr_scheduler_type,
             model_type="sentence_pretrained_checkpoint",
-            fsdp="1",
             # Rertain on EOSo data
             limit_dataset_shards=local_limit_shards,
             offset_dataset_shards=0,
@@ -1197,7 +1199,7 @@ def run_group_full_16k_colddown(
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=1,
+            warmup_steps=2000,
             dry=dry,
             bf16="0",
             add_end_of_sentence_token=1,
