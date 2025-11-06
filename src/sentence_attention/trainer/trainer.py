@@ -109,12 +109,24 @@ class SentenceTrainer(Trainer):
             # We don't use .loss here since the model may return tuples instead of ModelOutput.
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
 
+        moe_loss = torch.tensor(0.0).to(loss.device)
+        lm_loss = loss.detach()
+        if outputs.moe_aux_loss is not None:
+            # print("loss", loss.item())
+            # print("moe aux loss", outputs.moe_aux_loss.item())
+            moe_loss = outputs.moe_aux_loss * self.args.moe_aux_loss_weight
+            loss += moe_loss
+
         if self.args.average_tokens_across_devices and (self.model_accepts_loss_kwargs or self.compute_loss_func):
             loss *= self.accelerator.num_processes
 
         outputs.loss = loss
 
-        return (loss, outputs) if return_outputs else loss
+        metrics = {"lm_loss": lm_loss, "moe_loss": moe_loss.detach()}
+        for k, v in metrics.items():
+            metrics[k] = v.detach()
+
+        return (loss, outputs) if return_outputs else (loss, metrics)
 
     def update_eval_set_kwargs_containers(self, model, inputs):
 
