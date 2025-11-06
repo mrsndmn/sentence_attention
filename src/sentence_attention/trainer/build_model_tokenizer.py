@@ -64,11 +64,17 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
 
         print("model_class", model_class)
         model = model_class.from_pretrained(model_checkpoint, torch_dtype=torch_dtype)
-
     else:
         raise ValueError(f"{training_args.model_type} is not supported")
 
     model.config._attn_implementation = training_args.sentence_attention_implementation
+
+    if training_args.moe_special_embeddings_layer_idx is not None:
+        model.config.moe_special_embeddings_layer_idx = training_args.moe_special_embeddings_layer_idx
+        model.config.moe_num_experts = training_args.moe_num_experts
+        torch.set_default_dtype(torch_dtype)
+        model.init_gist_moe()
+        torch.set_default_dtype(torch.float32)
 
     print("model.config._attn_implementation", model.config._attn_implementation)
 

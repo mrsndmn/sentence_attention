@@ -744,7 +744,7 @@ def run_group_full_4k(
     resume_from_checkpoint: bool = None,
     force: bool = False,
 ) -> None:
-    ngpus = 4
+    ngpus = 8
     num_nodes = 2
 
     num_train_epochs = 1
@@ -772,11 +772,10 @@ def run_group_full_4k(
         extra_kwargs = {}
         fsdp = None
         local_torch_compile = None
-        local_learning_rate = 0.00005
+        local_learning_rate = 0.0001
         if "Llama-3.1-8B" in model_checkpoint:
             fsdp = "1"
             local_torch_compile = "0"
-            local_learning_rate = 0.000025
 
         if fsdp is not None:
             extra_kwargs["fsdp"] = fsdp

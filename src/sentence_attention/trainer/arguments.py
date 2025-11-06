@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-
+from typing import Optional
 from transformers import TrainingArguments
 
 AVAILABLE_OPTIMIZED_PARAMS = ["full", "lora", "only_eos_embedding"]
@@ -75,3 +75,7 @@ class SentenceTrainingArguments(TrainingArguments):
     flexible_eos_tokens: bool = field(default=False)
 
     ft_with_bos_token: bool = field(default=False)
+
+    moe_num_experts: int = field(default=0)
+    moe_special_embeddings_layer_idx: Optional[int] = field(default=None)
+    moe_aux_loss_weight: float = 1.0

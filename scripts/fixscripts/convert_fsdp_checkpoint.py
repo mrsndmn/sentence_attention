@@ -1,5 +1,7 @@
 import argparse
 import os
+import re
+import shutil
 from tqdm.auto import tqdm
 import time
 import glob
@@ -18,6 +20,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--watch", action="store_true", help="Watch the checkpoint directories and merge them when they are created"
     )
+    parser.add_argument("--keep_only_last_optimizer", action="store_true", help="Keep only the last optimizer checkpoint")
 
     parser.add_argument(
         "--initial_model_checkpoint", type=str, help="EOSO checkpoint that was used as initialisation for full pretraining"
@@ -29,22 +32,28 @@ if __name__ == "__main__":
 
     checkpoint_directories = checkpoint_directories.removesuffix("/")
 
-    assert checkpoint_directories.endswith("/pytorch_model_fsdp_0"), "Checkpoint directory must end with /pytorch_model_fsdp_0"
+    # assert checkpoint_directories.endswith("/pytorch_model_fsdp_0"), "Checkpoint directory must end with /pytorch_model_fsdp_0"
 
     while True:
-        for checkpoint_directory in tqdm(sorted(glob.glob(checkpoint_directories))):
+        sorted_checkpoint_directories = sorted(
+            glob.glob(checkpoint_directories), key=lambda x: int(re.search(r"checkpoint-(\d+)", x).group(1))
+        )
+        print("sorted_checkpoint_directories", sorted_checkpoint_directories)
+        for checkpoint_directory in tqdm(sorted_checkpoint_directories):
             # out dir is renamed from pytorch_model_fsdp_0 to pytorch_model_merged
             # so we need to rename the out dir to pytorch_model_fsdp_0
+            checkpoint_directory = os.path.join(checkpoint_directory, "pytorch_model_fsdp_0")
+
             out_dir = checkpoint_directory.replace("pytorch_model_fsdp_0", "hf_model_merged_weihts_only")
             print("Checking", out_dir)
 
-            if os.stat(checkpoint_directory).st_ctime > time.time() - 10 * 60:
+            if os.path.exists(checkpoint_directory) and os.stat(checkpoint_directory).st_ctime > time.time() - 10 * 60:
                 # Time for all fsdp checkpoints to be saved
                 sleep_time = 10 * 60 - (time.time() - os.stat(checkpoint_directory).st_ctime)
                 time.sleep(sleep_time)
                 print("Sleeping for", sleep_time, "seconds")
 
-            if not os.path.exists(out_dir):
+            if not os.path.exists(out_dir) and not os.path.exists(os.path.join(out_dir, "config.json")):
                 print("Merging", checkpoint_directory, "to", out_dir)
                 merge_fsdp_weights(checkpoint_directory, out_dir, safe_serialization=True)
             else:
@@ -70,6 +79,16 @@ if __name__ == "__main__":
 
             initial_model.save_pretrained(hf_out_dir)
             tokenizer.save_pretrained(hf_out_dir)
+
+            shutil.rmtree(checkpoint_directory)  # /hf_model_merged_weihts_only
+            shutil.rmtree(out_dir)  # /pytorch_model_fsdp_0
+
+        if args.keep_only_last_optimizer:
+            for checkpoint_rm_optimizer_state in sorted_checkpoint_directories[:-1]:
+                optimizer_state_path = os.path.join(checkpoint_rm_optimizer_state, "optimizer_0")
+                if os.path.exists(optimizer_state_path):
+                    shutil.rmtree(optimizer_state_path)
+                    print("Removed optimizer state from", optimizer_state_path)
 
         if not args.watch:
             break

@@ -49,6 +49,8 @@ from transformers.utils import (
     logging,
 )
 
+from sentence_attention.models.sentence_llama.mixture_of_experts import MoE
+
 logger = logging.get_logger(__name__)
 
 _CONFIG_FOR_DOC = "LlamaConfig"
@@ -206,12 +208,13 @@ ALL_ATTENTION_FUNCTIONS["sentence_attention_flex"] = sentence_attention_forward_
 
 @dataclass
 class SentenceBaseModelOutputWithPast(BaseModelOutputWithPast):
-    pass
+    moe_aux_loss: torch.Tensor | None = None
 
 
 @dataclass
 class SentenceCausalLMOutputWithPast(CausalLMOutputWithPast):
     last_hidden_state: torch.Tensor = None
+    moe_aux_loss: torch.Tensor | None = None
 
 
 class SentenceLlamaAttention(nn.Module):
@@ -536,8 +539,15 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         self.rotary_emb = LlamaRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
 
+        if self.config.moe_special_embeddings_layer_idx is not None:
+            self.gist_moe = MoE(dim=config.hidden_size, num_experts=config.moe_num_experts)
+
         # Initialize weights and apply final processing
         self.post_init()
+
+    def init_gist_moe(self):
+        assert self.config.moe_special_embeddings_layer_idx is not None
+        self.gist_moe = MoE(dim=self.config.hidden_size, num_experts=self.config.moe_num_experts)
 
     def get_input_embeddings(self):
         return self.embed_tokens
@@ -606,9 +616,13 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         all_self_attns,
         special_embeddings_mask,
         clothest_end_of_sentence_token_idx,
+        num_items_in_batch,
     ):
 
-        for decoder_layer in decoder_layers:
+        moe_special_embeddings_layer_idx = self.config.moe_special_embeddings_layer_idx
+        aux_loss = None
+
+        for layer_idx, decoder_layer in enumerate(decoder_layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -631,7 +645,11 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
-        return hidden_states, all_hidden_states, all_self_attns
+            if moe_special_embeddings_layer_idx is not None and layer_idx == moe_special_embeddings_layer_idx:
+                # TODO apply moe only for gist embeddings!
+                hidden_states, aux_loss = self.gist_moe(hidden_states, attention_mask=attention_mask)
+
+        return hidden_states, all_hidden_states, all_self_attns, aux_loss
 
     @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
     # @torch.compiler.disable(recursive=False)
@@ -746,7 +764,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         all_self_attns = () if output_attentions else None
 
         # Before FanIn
-        hidden_states, all_hidden_states, all_self_attns = self.forward_decoder_layers(
+        hidden_states, all_hidden_states, all_self_attns, aux_loss = self.forward_decoder_layers(
             self.layers,
             hidden_states,
             causal_mask,
@@ -761,6 +779,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             all_self_attns,
             special_embeddings_mask,
             clothest_end_of_sentence_token_idx,
+            num_items_in_batch=num_items_in_batch,
         )
 
         hidden_states = self.norm(hidden_states)
@@ -776,6 +795,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             past_key_values=past_key_values,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
+            moe_aux_loss=aux_loss,
         )
 
     def _update_causal_mask(
@@ -1124,6 +1144,9 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         # Initialize weights and apply final processing
         self.post_init()
 
+    def init_gist_moe(self):
+        self.model.init_gist_moe()
+
     def generate(self, *args, **kwargs):
 
         # if self.config.flexible_eos_tokens:
@@ -1455,6 +1478,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             return_dict=return_dict,
             cache_position=cache_position,
             is_sentence_chunked_prefill=is_sentence_chunked_prefill,
+            num_items_in_batch=num_items_in_batch,
         )
 
         hidden_states = outputs[0]
@@ -1489,6 +1513,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                 past_key_values=outputs.past_key_values,
                 hidden_states=outputs.hidden_states,
                 attentions=outputs.attentions,
+                moe_aux_loss=outputs.moe_aux_loss,
             )
 
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
@@ -1508,4 +1533,5 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
+            moe_aux_loss=outputs.moe_aux_loss,
         )
