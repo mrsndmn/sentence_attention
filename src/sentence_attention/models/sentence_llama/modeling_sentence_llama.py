@@ -646,8 +646,19 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 all_self_attns += (layer_outputs[1],)
 
             if moe_special_embeddings_layer_idx is not None and layer_idx == moe_special_embeddings_layer_idx:
-                # TODO apply moe only for gist embeddings!
-                hidden_states, aux_loss = self.gist_moe(hidden_states, attention_mask=attention_mask)
+                hidden_states_special_embeddings = hidden_states.flatten(0, 1)[special_embeddings_mask.flatten()]
+                hidden_states_special_embeddings = hidden_states_special_embeddings.unsqueeze(0)
+                hidden_states_special_embeddings, aux_loss = self.gist_moe(
+                    hidden_states_special_embeddings, attention_mask=attention_mask
+                )
+                hidden_states_special_embeddings = hidden_states_special_embeddings.squeeze(0)
+
+                hidden_states = hidden_states.clone()
+                hidden_states_shape = hidden_states.shape
+
+                hidden_states_flatten = hidden_states.flatten(0, 1)
+                hidden_states_flatten[special_embeddings_mask.flatten()] = hidden_states_special_embeddings
+                hidden_states = hidden_states_flatten.reshape(hidden_states_shape)
 
         return hidden_states, all_hidden_states, all_self_attns, aux_loss
 
