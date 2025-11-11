@@ -94,11 +94,7 @@ def read_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 
     # if task_name == "pg19":
     #     pass
-
-    if task_name in long_benchmarks:
-        return read_long_benchmark_metric(checkpoint_path, task_name)
-    else:
-        return read_short_benchmark_metric(checkpoint_path, task_name)
+    return read_long_benchmark_metric(checkpoint_path, task_name)
 
 
 def get_score_metric_for_helmet_task(task_name: str, score_file: str | None = None) -> str:
@@ -120,277 +116,280 @@ def get_score_metric_for_helmet_task(task_name: str, score_file: str | None = No
     }[task_name]
 
 
+bench_name_to_score_files = {
+    "cite": [
+        (
+            "asqa_8k",
+            "alce_asqa_30_eval_asqa_eval_gtr_top2000_in8192_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeLsum",
+        ),
+        (
+            "asqa_16k",
+            "alce_asqa_75_eval_asqa_eval_gtr_top2000_in16384_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeLsum",
+        ),
+        (
+            "asqa_32k",
+            "alce_asqa_165_eval_asqa_eval_gtr_top2000_in32768_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeLsum",
+        ),
+        (
+            "qampari_8k",
+            "alce_qampari_30_eval_qampari_eval_gtr_top2000_in8192_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
+            "qampari_rec_top5",
+        ),
+        (
+            "qampari_16k",
+            "alce_qampari_75_eval_qampari_eval_gtr_top2000_in16384_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
+            "qampari_rec_top5",
+        ),
+        (
+            "qampari_32k",
+            "alce_qampari_165_eval_qampari_eval_gtr_top2000_in32768_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
+            "qampari_rec_top5",
+        ),
+    ],
+    "icl": [
+        (
+            "coarse_8k",
+            "icl_trec_coarse_400shot_balance_eval__in8192_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
+            "exact_match",
+        ),
+        (
+            "coarse_16k",
+            "icl_trec_coarse_800shot_balance_eval__in16384_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
+            "exact_match",
+        ),
+        (
+            "coarse_32k",
+            "icl_trec_coarse_1600shot_balance_eval__in32768_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
+            "exact_match",
+        ),
+        (
+            "coarse_64k",
+            "icl_trec_coarse_3300shot_balance_eval__in65536_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
+            "exact_match",
+        ),
+        (
+            "fine_8k",
+            "icl_trec_fine_400shot_balance_eval__in8192_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
+            "exact_match",
+        ),
+        (
+            "fine_16k",
+            "icl_trec_fine_800shot_balance_eval__in16384_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
+            "exact_match",
+        ),
+        (
+            "fine_32k",
+            "icl_trec_fine_1600shot_balance_eval__in32768_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
+            "exact_match",
+        ),
+        (
+            "fine_64k",
+            "icl_trec_fine_3200shot_balance_eval__in65536_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
+            "exact_match",
+        ),
+    ],
+    "longqa": [
+        (
+            "infbench_choice_eng_8k",
+            "infbench_choice_eng_7982_eval__in8192_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_choice_eng_16k",
+            "infbench_choice_eng_16174_eval__in16384_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_choice_eng_32k",
+            "infbench_choice_eng_32558_eval__in32768_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_choice_eng_64k",
+            "infbench_choice_eng_65326_eval__in65536_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_qa_eng_8k",
+            "infbench_qa_eng_7982_eval__in8192_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_qa_eng_16k",
+            "infbench_qa_eng_16174_eval__in16384_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_qa_eng_32k",
+            "infbench_qa_eng_32558_eval__in32768_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_qa_eng_64k",
+            "infbench_qa_eng_65326_eval__in65536_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "narrativeqa_8k",
+            "narrativeqa_7892_eval__in8192_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "narrativeqa_16k",
+            "narrativeqa_16084_eval__in16384_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "narrativeqa_32k",
+            "narrativeqa_32468_eval__in32768_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "narrativeqa_64k",
+            "narrativeqa_65236_eval__in65536_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+    ],
+    "recall": [
+        (
+            "json_kv_8k",
+            "json_kv_eval_test_k105_dep6_in8192_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "substring_exact_match",
+        ),
+        (
+            "json_kv_16k",
+            "json_kv_eval_test_k220_dep6_in16384_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "substring_exact_match",
+        ),
+        (
+            "json_kv_32k",
+            "json_kv_eval_test_k440_dep6_in32768_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "substring_exact_match",
+        ),
+        (
+            "json_kv_64k",
+            "json_kv_eval_test_k900_dep6_in65536_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "substring_exact_match",
+        ),
+        (
+            "ruler_niah_mk_2_8k",
+            "ruler_niah_mk_2_eval_validation_8192_in8192_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mk_2_16k",
+            "ruler_niah_mk_2_eval_validation_16384_in16384_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mk_2_32k",
+            "ruler_niah_mk_2_eval_validation_32768_in32768_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mk_2_64k",
+            "ruler_niah_mk_2_eval_validation_65536_in65536_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mk_38k",
+            "ruler_niah_mk_3_eval_validation_8192_in8192_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mk_316k",
+            "ruler_niah_mk_3_eval_validation_16384_in16384_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mk_332k",
+            "ruler_niah_mk_3_eval_validation_32768_in32768_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mk_364k",
+            "ruler_niah_mk_3_eval_validation_65536_in65536_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mv_8k",
+            "ruler_niah_mv_eval_validation_16384_in16384_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mv_16k",
+            "ruler_niah_mv_eval_validation_32768_in32768_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mv_32k",
+            "ruler_niah_mv_eval_validation_65536_in65536_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+        (
+            "ruler_niah_mv_64k",
+            "ruler_niah_mv_eval_validation_8192_in8192_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
+            "ruler_recall",
+        ),
+    ],
+    "rerank": [
+        (
+            "8k",
+            "msmarco_rerank_psg_eval_test_reranking_data_k50_dep3_in8192_size100_shots2_sampFalsemax200min0t0.0p1.0_chatFalse_42.json.score",
+            "NDCG@10",
+        ),
+        (
+            "16k",
+            "msmarco_rerank_psg_eval_test_reranking_data_k130_dep3_in16384_size100_shots2_sampFalsemax200min0t0.0p1.0_chatFalse_42.json.score",
+            "NDCG@10",
+        ),
+        (
+            "32k",
+            "msmarco_rerank_psg_eval_test_reranking_data_k285_dep3_in32768_size100_shots2_sampFalsemax200min0t0.0p1.0_chatFalse_42.json.score",
+            "NDCG@10",
+        ),
+    ],
+    "summ": [
+        (
+            "infbench_8k",
+            "infbench_sum_eng_6792_eval__in8192_size100_shots2_sampFalsemax1200min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_16k",
+            "infbench_sum_eng_14984_eval__in16384_size100_shots2_sampFalsemax1200min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "infbench_32k",
+            "infbench_sum_eng_31368_eval__in32768_size100_shots2_sampFalsemax1200min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "lexsum_8k",
+            "multi_lexsum_7492_eval__in8192_size100_shots2_sampFalsemax400min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "lexsum_16k",
+            "multi_lexsum_15684_eval__in16384_size100_shots2_sampFalsemax400min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+        (
+            "lexsum_32k",
+            "multi_lexsum_32068_eval__in32768_size100_shots2_sampFalsemax400min0t0.0p1.0_chatFalse_42.json.score",
+            "rougeL_recall",
+        ),
+    ],
+}
+
+
 def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
 
-    bench_name_to_score_files = {
-        "cite": [
-            (
-                "asqa_8k",
-                "alce_asqa_30_eval_asqa_eval_gtr_top2000_in8192_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeLsum",
-            ),
-            (
-                "asqa_16k",
-                "alce_asqa_75_eval_asqa_eval_gtr_top2000_in16384_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeLsum",
-            ),
-            (
-                "asqa_32k",
-                "alce_asqa_165_eval_asqa_eval_gtr_top2000_in32768_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeLsum",
-            ),
-            (
-                "qampari_8k",
-                "alce_qampari_30_eval_qampari_eval_gtr_top2000_in8192_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
-                "qampari_rec_top5",
-            ),
-            (
-                "qampari_16k",
-                "alce_qampari_75_eval_qampari_eval_gtr_top2000_in16384_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
-                "qampari_rec_top5",
-            ),
-            (
-                "qampari_32k",
-                "alce_qampari_165_eval_qampari_eval_gtr_top2000_in32768_size100_shots2_sampFalsemax300min0t0.0p1.0_chatFalse_42.json.score",
-                "qampari_rec_top5",
-            ),
-        ],
-        "icl": [
-            (
-                "coarse_8k",
-                "icl_trec_coarse_400shot_balance_eval__in8192_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
-                "exact_match",
-            ),
-            (
-                "coarse_16k",
-                "icl_trec_coarse_800shot_balance_eval__in16384_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
-                "exact_match",
-            ),
-            (
-                "coarse_32k",
-                "icl_trec_coarse_1600shot_balance_eval__in32768_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
-                "exact_match",
-            ),
-            (
-                "coarse_64k",
-                "icl_trec_coarse_3300shot_balance_eval__in65536_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
-                "exact_match",
-            ),
-            (
-                "fine_8k",
-                "icl_trec_fine_400shot_balance_eval__in8192_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
-                "exact_match",
-            ),
-            (
-                "fine_16k",
-                "icl_trec_fine_800shot_balance_eval__in16384_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
-                "exact_match",
-            ),
-            (
-                "fine_32k",
-                "icl_trec_fine_1600shot_balance_eval__in32768_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
-                "exact_match",
-            ),
-            (
-                "fine_64k",
-                "icl_trec_fine_3200shot_balance_eval__in65536_size500_shots0_sampFalsemax20min0t0.0p1.0_chatFalse_42.json.score",
-                "exact_match",
-            ),
-        ],
-        "longqa": [
-            (
-                "infbench_choice_eng_8k",
-                "infbench_choice_eng_7982_eval__in8192_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_choice_eng_16k",
-                "infbench_choice_eng_16174_eval__in16384_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_choice_eng_32k",
-                "infbench_choice_eng_32558_eval__in32768_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_choice_eng_64k",
-                "infbench_choice_eng_65326_eval__in65536_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_qa_eng_8k",
-                "infbench_qa_eng_7982_eval__in8192_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_qa_eng_16k",
-                "infbench_qa_eng_16174_eval__in16384_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_qa_eng_32k",
-                "infbench_qa_eng_32558_eval__in32768_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_qa_eng_64k",
-                "infbench_qa_eng_65326_eval__in65536_size100_shots2_sampFalsemax10min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "narrativeqa_8k",
-                "narrativeqa_7892_eval__in8192_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "narrativeqa_16k",
-                "narrativeqa_16084_eval__in16384_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "narrativeqa_32k",
-                "narrativeqa_32468_eval__in32768_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "narrativeqa_64k",
-                "narrativeqa_65236_eval__in65536_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-        ],
-        "recall": [
-            (
-                "json_kv_8k",
-                "json_kv_eval_test_k105_dep6_in8192_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "substring_exact_match",
-            ),
-            (
-                "json_kv_16k",
-                "json_kv_eval_test_k220_dep6_in16384_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "substring_exact_match",
-            ),
-            (
-                "json_kv_32k",
-                "json_kv_eval_test_k440_dep6_in32768_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "substring_exact_match",
-            ),
-            (
-                "json_kv_64k",
-                "json_kv_eval_test_k900_dep6_in65536_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "substring_exact_match",
-            ),
-            (
-                "ruler_niah_mk_2_8k",
-                "ruler_niah_mk_2_eval_validation_8192_in8192_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mk_2_16k",
-                "ruler_niah_mk_2_eval_validation_16384_in16384_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mk_2_32k",
-                "ruler_niah_mk_2_eval_validation_32768_in32768_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mk_2_64k",
-                "ruler_niah_mk_2_eval_validation_65536_in65536_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mk_38k",
-                "ruler_niah_mk_3_eval_validation_8192_in8192_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mk_316k",
-                "ruler_niah_mk_3_eval_validation_16384_in16384_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mk_332k",
-                "ruler_niah_mk_3_eval_validation_32768_in32768_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mk_364k",
-                "ruler_niah_mk_3_eval_validation_65536_in65536_size100_shots2_sampFalsemax100min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mv_8k",
-                "ruler_niah_mv_eval_validation_16384_in16384_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mv_16k",
-                "ruler_niah_mv_eval_validation_32768_in32768_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mv_32k",
-                "ruler_niah_mv_eval_validation_65536_in65536_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-            (
-                "ruler_niah_mv_64k",
-                "ruler_niah_mv_eval_validation_8192_in8192_size100_shots2_sampFalsemax50min0t0.0p1.0_chatFalse_42.json.score",
-                "ruler_recall",
-            ),
-        ],
-        "rerank": [
-            (
-                "8k",
-                "msmarco_rerank_psg_eval_test_reranking_data_k50_dep3_in8192_size100_shots2_sampFalsemax200min0t0.0p1.0_chatFalse_42.json.score",
-                "NDCG@10",
-            ),
-            (
-                "16k",
-                "msmarco_rerank_psg_eval_test_reranking_data_k130_dep3_in16384_size100_shots2_sampFalsemax200min0t0.0p1.0_chatFalse_42.json.score",
-                "NDCG@10",
-            ),
-            (
-                "32k",
-                "msmarco_rerank_psg_eval_test_reranking_data_k285_dep3_in32768_size100_shots2_sampFalsemax200min0t0.0p1.0_chatFalse_42.json.score",
-                "NDCG@10",
-            ),
-        ],
-        "summ": [
-            (
-                "infbench_8k",
-                "infbench_sum_eng_6792_eval__in8192_size100_shots2_sampFalsemax1200min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_16k",
-                "infbench_sum_eng_14984_eval__in16384_size100_shots2_sampFalsemax1200min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "infbench_32k",
-                "infbench_sum_eng_31368_eval__in32768_size100_shots2_sampFalsemax1200min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "lexsum_8k",
-                "multi_lexsum_7492_eval__in8192_size100_shots2_sampFalsemax400min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "lexsum_16k",
-                "multi_lexsum_15684_eval__in16384_size100_shots2_sampFalsemax400min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-            (
-                "lexsum_32k",
-                "multi_lexsum_32068_eval__in32768_size100_shots2_sampFalsemax400min0t0.0p1.0_chatFalse_42.json.score",
-                "rougeL_recall",
-            ),
-        ],
-    }
+    global bench_name_to_score_files
 
     eval_file_base = os.path.join(checkpoint_path, "helmet_eval_short", task_name)
     eval_files = bench_name_to_score_files[task_name]
@@ -399,10 +398,14 @@ def read_long_benchmark_metric(checkpoint_path: str, task_name: str) -> str:
     for task_slug, eval_file, metric_name in eval_files:
         full_eval_file = os.path.join(eval_file_base, eval_file)
 
+        if not os.path.exists(full_eval_file):
+            bench_results.append((task_slug, ""))
+            continue
+
         with open(full_eval_file) as f:
             data = json.load(f)
 
-        bench_results.append((task_slug, data[metric_name]))
+        bench_results.append((task_slug, f"{data[metric_name]:.2f}"))
 
     return bench_results
 
@@ -489,15 +492,19 @@ def build_table(
         # print(row["experiment"])
         if model_filter is not None and model_filter.lower() not in row["experiment"].lower():
             continue
-        if eos_tokens_filter is not None and isinstance(row["eos_tokens"], int) and row["eos_tokens"] != eos_tokens_filter:
-            continue
+        if eos_tokens_filter is not None:
+            if not isinstance(row["eos_tokens"], int):
+                continue
+            if row["eos_tokens"] != eos_tokens_filter:
+                continue
         if row_predicate is not None and not row_predicate(row):
             continue
 
         values = row_to_base_values(row, training_mapping)
         for task in benchmarks:
-            metric = read_benchmark_metric(row["full_path"], task)
-            values.append(metric)
+            metrics = read_benchmark_metric(row["full_path"], task)
+            for m in metrics:
+                values.append(m[1])
         table_rows.append(values)
 
     table_rows = sorted(
@@ -919,7 +926,12 @@ def main() -> None:
     else:
         raise ValueError(f"Invalid benchmarks: {args.benchmarks}")
 
-    headers = ["#EOS", "Training", "Experiment"] + benchmarks
+    benchmarks_columns = []
+    for bn in benchmarks:
+        for subtask_name, _, _ in bench_name_to_score_files[bn]:
+            benchmarks_columns.append(bn + " " + subtask_name)
+
+    headers = ["#EOS", "Training", "Experiment"] + benchmarks_columns
 
     # Full table: all benchmarks (CLI filters apply only here)
     full_table_rows = build_table(

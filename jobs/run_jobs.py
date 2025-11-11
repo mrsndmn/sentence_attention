@@ -116,6 +116,11 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
 
         resume_from_checkpoint = exp.pop("resume_from_checkpoint", None)
 
+        moe_special_embeddings_layer_idx = exp.pop("moe_special_embeddings_layer_idx", None)
+        moe_num_experts = exp.pop("moe_num_experts", None)
+
+        assert (moe_special_embeddings_layer_idx is None) == (moe_num_experts is None)
+
         if len(exp.keys()) > 0:
             raise ValueError(f"unknown parsms:{exp}")
 
@@ -184,6 +189,11 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--use_liger_kernel 1 "
             # f"--remove_unused_columns 0 "
         )
+
+        if moe_special_embeddings_layer_idx is not None:
+            script_str += (
+                f" --moe_special_embeddings_layer_idx {moe_special_embeddings_layer_idx} --moe_num_experts {moe_num_experts} "
+            )
 
         print(f"\n\n{script_str}\n\n")
 
@@ -258,6 +268,8 @@ def run_training_experiments(
     fsdp: bool = False,
     test: bool = False,
     resume_from_checkpoint: str = None,
+    moe_special_embeddings_layer_idx=None,
+    moe_num_experts=None,
     **kwargs: Dict,
 ) -> None:
 
@@ -267,6 +279,8 @@ def run_training_experiments(
         # Model
         "model_type": model_type,
         "model_checkpoint": model_checkpoint,
+        "moe_num_experts": moe_num_experts,
+        "moe_special_embeddings_layer_idx": moe_special_embeddings_layer_idx,
         "dataset": dataset,
         "limit_dataset_shards": limit_dataset_shards,
         "offset_dataset_shards": offset_dataset_shards,
@@ -581,6 +595,8 @@ def run_group_eos_only_my_recall(
     in_progress_jobs: List[Dict],
     model: str,
     niddle_type: Literal["numbers", "strings"] = "numbers",
+    moe_num_experts=None,
+    moe_special_embeddings_layer_idx=None,
 ):
 
     models_checkpoints = [
@@ -606,6 +622,8 @@ def run_group_eos_only_my_recall(
         ngpus=4,
         learning_rate=0.001,
         models_checkpoints=models_checkpoints,
+        moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+        moe_num_experts=moe_num_experts,
     )
 
 
@@ -618,15 +636,20 @@ def run_group_eos_only(
     in_progress_jobs: List[Dict],
     model: str,
     models_checkpoints=None,
+    moe_special_embeddings_layer_idx=None,
+    moe_num_experts=None,
 ) -> None:
     return _run_group_eos_only(
         dry=dry,
+        dataset="fineweb_edu",
         num_eos_tokens=num_eos_tokens,
         test=test,
         force=force,
         in_progress_jobs=in_progress_jobs,
         model=model,
         models_checkpoints=models_checkpoints,
+        moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+        moe_num_experts=moe_num_experts,
     )
 
 
@@ -648,6 +671,8 @@ def _run_group_eos_only(
     learning_rate=0.0001,
     ngpus=4,
     models_checkpoints=None,
+    moe_special_embeddings_layer_idx=None,
+    moe_num_experts=None,
 ) -> None:
     n_nodes = 1
     num_train_epochs = 1
@@ -684,6 +709,9 @@ def _run_group_eos_only(
 
             model_checkpoint_slug = exp_config.get("model_slug", model_checkpoint.split("/")[-1])
             gradient_accumulation_steps = math.ceil(global_batch_size / ngpus / n_nodes / local_per_device_train_batch_size)
+
+            if moe_num_experts is not None:
+                extra_exp_suffix = f"_moe_exp_{moe_num_experts}_moe_layer_{moe_special_embeddings_layer_idx}" + extra_exp_suffix
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}{extra_exp_suffix}"
 
@@ -728,6 +756,8 @@ def _run_group_eos_only(
                 job_description=job_description,
                 test=test,
                 save_safetensors=save_safetensors,
+                moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+                moe_num_experts=moe_num_experts,
                 **extra_kwargs,
             )
 
@@ -743,6 +773,8 @@ def run_group_full_4k(
     ft_with_bos_token: bool = False,
     resume_from_checkpoint: bool = None,
     force: bool = False,
+    moe_num_experts=None,
+    moe_special_embeddings_layer_idx=None,
 ) -> None:
     ngpus = 8
     num_nodes = 2
@@ -848,6 +880,8 @@ def run_group_full_4k(
             ft_with_bos_token="1" if ft_with_bos_token else "0",
             test=test,
             resume_from_checkpoint=resume_from_checkpoint,
+            moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+            moe_num_experts=moe_num_experts,
             **extra_kwargs,
         )
 
@@ -863,6 +897,8 @@ def run_group_full_4k_my_recall(
     ft_with_bos_token: bool = False,
     resume_from_checkpoint: bool = None,
     force: bool = False,
+    moe_num_experts=None,
+    moe_special_embeddings_layer_idx=None,
 ) -> None:
     ngpus = 8
     num_nodes = 2
@@ -967,6 +1003,8 @@ def run_group_full_4k_my_recall(
             ft_with_bos_token="1" if ft_with_bos_token else "0",
             test=test,
             resume_from_checkpoint=resume_from_checkpoint,
+            moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+            moe_num_experts=moe_num_experts,
             **extra_kwargs,
         )
 
@@ -982,6 +1020,8 @@ def run_group_full_4k_colddown(
     test: bool = False,
     resume_from_checkpoint: bool = None,
     force: bool = False,
+    moe_num_experts=None,
+    moe_special_embeddings_layer_idx=None,
 ) -> None:
     ngpus = 8
     num_nodes = 1
@@ -1087,6 +1127,8 @@ def run_group_full_4k_colddown(
             ft_with_bos_token="1" if ft_with_bos_token else "0",
             test=test,
             resume_from_checkpoint=resume_from_checkpoint,
+            moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+            moe_num_experts=moe_num_experts,
             **extra_kwargs,
         )
 
@@ -1102,6 +1144,8 @@ def run_group_full_16k_colddown(
     test: bool = False,
     resume_from_checkpoint: bool = None,
     force: bool = False,
+    moe_num_experts=None,
+    moe_special_embeddings_layer_idx=None,
 ) -> None:
     ngpus = 4
     num_nodes = 2
@@ -1208,6 +1252,8 @@ def run_group_full_16k_colddown(
             ft_with_bos_token="1" if ft_with_bos_token else "0",
             test=test,
             resume_from_checkpoint=resume_from_checkpoint,
+            moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+            moe_num_experts=moe_num_experts,
             **extra_kwargs,
         )
 
@@ -1221,6 +1267,8 @@ def run_group_lora(
     model: str,
     resume_from_checkpoint: bool = None,
     force: bool = False,
+    moe_num_experts=None,
+    moe_special_embeddings_layer_idx=None,
 ) -> None:
     ngpus = 4
     num_nodes = 1
@@ -1292,6 +1340,8 @@ def run_group_lora(
             job_description=job_description,
             test=test,
             resume_from_checkpoint=resume_from_checkpoint,
+            moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+            moe_num_experts=moe_num_experts,
         )
 
 
@@ -1328,6 +1378,8 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--model", type=str, help="Model checkpoint filter")
     parser.add_argument("--niddle_type", type=str, help="Niddle type", default="numbers", choices=["numbers", "strings"])
     parser.add_argument("--resume_from_checkpoint", type=str, help="Resume from checkpoint", default=None)
+    parser.add_argument("--moe_special_embeddings_layer_idx", type=int, default=None)
+    parser.add_argument("--moe_num_experts", type=int, default=None)
 
     return parser
 
@@ -1369,6 +1421,8 @@ def main() -> None:
             model=args.model,
             test=args.test,
             force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
     elif args.group == "eos-only-my-recall":
         run_group_eos_only_my_recall(
@@ -1379,6 +1433,8 @@ def main() -> None:
             test=args.test,
             force=args.force,
             niddle_type=args.niddle_type,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
     elif args.group == "full_4k_my_recall":
         run_group_full_4k_my_recall(
@@ -1388,6 +1444,8 @@ def main() -> None:
             model=args.model,
             test=args.test,
             force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
     elif args.group == "full_4k":
         run_group_full_4k(
@@ -1398,6 +1456,8 @@ def main() -> None:
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
     elif args.group == "full_4k_colddown":
         run_group_full_4k_colddown(
@@ -1408,6 +1468,8 @@ def main() -> None:
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
     elif args.group == "full_16k_colddown":
         run_group_full_16k_colddown(
@@ -1418,6 +1480,8 @@ def main() -> None:
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
     elif args.group == "lora":
         run_group_lora(
@@ -1428,6 +1492,8 @@ def main() -> None:
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
     elif args.group == "full-flexible-eos-tokens":
         run_group_full_4k(
@@ -1439,6 +1505,8 @@ def main() -> None:
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
     elif args.group == "ft-with-bos-token":
         run_group_full_4k(
@@ -1450,6 +1518,8 @@ def main() -> None:
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
         )
 
     return
