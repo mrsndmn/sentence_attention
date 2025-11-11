@@ -642,6 +642,7 @@ def run_group_eos_only(
     return _run_group_eos_only(
         dry=dry,
         dataset="fineweb_edu",
+        limit_dataset_shards=10,
         num_eos_tokens=num_eos_tokens,
         test=test,
         force=force,
@@ -676,7 +677,7 @@ def _run_group_eos_only(
 ) -> None:
     n_nodes = 1
     num_train_epochs = 1
-    save_steps = 1000
+    save_steps = 5000
     # lr_scheduler_type = "constant"
 
     max_steps = -1
