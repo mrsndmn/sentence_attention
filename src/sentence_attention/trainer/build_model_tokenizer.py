@@ -126,6 +126,13 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
             )
             model.add_adapter(lora_config, adapter_name="lora_1")
 
+    # Always unfreeze MoE parameters if they exist
+    if training_args.moe_special_embeddings_layer_idx is not None:
+        if hasattr(model.model, "gist_moe") and model.model.gist_moe is not None:
+            for p in model.model.gist_moe.parameters():
+                p.requires_grad = True
+            print("Unfrozen MoE parameters (gist_moe)")
+
     print("model", type(model))
     print("model", model)
     print("num trainable model parameters:", sum(p.numel() for p in model.parameters() if p.requires_grad))
