@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from transformers import GenerationConfig, Trainer
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 from transformers.trainer import EvalLoopContainer, IterableDatasetShard, _is_peft_model, find_batch_size, logger, nested_detach
+from transformers.trainer_pt_utils import distributed_concat
 from transformers.trainer_utils import EvalLoopOutput, denumpify_detensorize, has_length
 
 
@@ -109,12 +110,17 @@ class SentenceTrainer(Trainer):
             # We don't use .loss here since the model may return tuples instead of ModelOutput.
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
 
-        moe_loss = torch.tensor(0.0).to(loss.device)
+        moe_loss = torch.tensor(0.0, device=loss.device, dtype=loss.dtype)
         lm_loss = loss.detach()
         if outputs.moe_aux_loss is not None:
-            # print("loss", loss.item())
-            # print("moe aux loss", outputs.moe_aux_loss.item())
-            moe_loss = outputs.moe_aux_loss * self.args.moe_aux_loss_weight
+            # Ensure moe_aux_loss is on the same device as loss
+            moe_aux_loss = outputs.moe_aux_loss
+            if isinstance(moe_aux_loss, torch.Tensor):
+                moe_aux_loss = moe_aux_loss.to(device=loss.device, dtype=loss.dtype)
+            else:
+                # Convert scalar to tensor if needed
+                moe_aux_loss = torch.tensor(moe_aux_loss, device=loss.device, dtype=loss.dtype)
+            moe_loss = moe_aux_loss * self.args.moe_aux_loss_weight
             loss += moe_loss
 
         if self.args.average_tokens_across_devices and (self.model_accepts_loss_kwargs or self.compute_loss_func):
@@ -122,11 +128,62 @@ class SentenceTrainer(Trainer):
 
         outputs.loss = loss
 
-        metrics = {"lm_loss": lm_loss, "moe_loss": moe_loss.detach()}
-        for k, v in metrics.items():
-            metrics[k] = v.detach()
+        # Convert to scalars to avoid device issues during distributed gathering
+        # The transformers library will handle scalar metrics properly
+        lm_loss_value = lm_loss.detach()
+        moe_loss_value = moe_loss.detach()
+
+        metrics = {"lm_loss": lm_loss_value, "moe_loss": moe_loss_value}
 
         return (loss, outputs) if return_outputs else (loss, metrics)
+
+    def _nested_gather(self, tensors, name: str | None = None):
+        """
+        Gather arbitrary nested structures across processes, ensuring tensors are on the accelerator device.
+
+        This avoids NCCL errors when attempting to all_gather CPU tensors by moving any tensors/scalars
+        to `self.args.device` prior to using distributed collectives.
+        """
+        # Local import to avoid hard dependency if not using distributed
+        import torch.distributed as dist
+
+        # Fast path: no distributed initialized or single process
+        if not dist.is_available() or not dist.is_initialized() or dist.get_world_size() == 1:
+            return tensors
+
+        device = (
+            getattr(self.args, "device", None)
+            or getattr(self.accelerator, "device", None)
+            or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        )
+
+        def to_device_tensor(x: Any) -> torch.Tensor:
+            if isinstance(x, torch.Tensor):
+                t = x
+            else:
+                try:
+                    t = torch.tensor(x)
+                except Exception:
+                    # If it can't be tensorized, return as-is (will not be gathered)
+                    return x  # type: ignore[return-value]
+            if t.device != device:
+                t = t.to(device)
+            # Ensure at least 1D for concatenation semantics
+            if t.dim() == 0:
+                t = t.view(1)
+            return t
+
+        if isinstance(tensors, dict):
+            return type(tensors)({k: self._nested_gather(v) for k, v in tensors.items()})
+        if isinstance(tensors, (list, tuple)):
+            gathered_list = [self._nested_gather(v) for v in tensors]
+            return type(tensors)(gathered_list)
+
+        # Base case: attempt to gather a tensor; if not tensorizable, return as-is
+        t = to_device_tensor(tensors)
+        if not isinstance(t, torch.Tensor):
+            return tensors
+        return distributed_concat(t)
 
     def update_eval_set_kwargs_containers(self, model, inputs):
 
