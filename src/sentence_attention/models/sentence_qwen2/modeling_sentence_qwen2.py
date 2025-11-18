@@ -335,7 +335,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
     def __init__(self, config: Qwen2Config):
         super().__init__(config)
 
-        self.config._attn_implementation = "sentence_attention"
+        self.config._attn_implementation = "sentence_attention_flex"
 
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size

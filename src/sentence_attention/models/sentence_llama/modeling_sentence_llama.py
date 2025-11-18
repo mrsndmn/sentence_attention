@@ -181,6 +181,8 @@ def sentence_attention_forward_flex(
     key = key.contiguous()
     value = value.contiguous()
 
+    torch.cuda.synchronize()
+
     # attn_output = torch.nn.functional.flex_attention.flex_attention(
     attn_output = compile_friendly_flex_attention(
         # attn_output = torch.nn.attention.flex_attention.flex_attention(
@@ -196,6 +198,9 @@ def sentence_attention_forward_flex(
         # For simplification, we thus always return it as no additional computations are introduced.
         return_lse=False,
     )
+
+    torch.cuda.synchronize()
+
     # attention_weights = attention_weights.to(value.dtype)
     attn_output = attn_output.transpose(1, 2).contiguous()
 

@@ -187,6 +187,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--dataloader_num_workers 4 "
             f"{resume_from_checkpoint_s} "
             f"--use_liger_kernel 1 "
+            # f"--use_liger_kernel 0 "
             # f"--remove_unused_columns 0 "
         )
 
@@ -213,6 +214,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
                 # "CLEARML_CONFIG_FILE": f"{workdir_prefix}/configs/clearml.conf",
                 # "CLEARML_PROJECT": "sentence_attention",
                 # "CLEARML_LOG_MODEL": "FALSE",
+                # "CUDA_LAUNCH_BLOCKING": '1',
+                # "TORCH_USE_CUDA_DSA": '1',
                 "WANDB_MODE": "offline",
                 # Always make sure PYTHONPATH and HF_HOME are set
                 # "PYTHONPATH": f"{workdir_prefix}/src:{workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src:/workspace-SR004.nfs2/d.tarasov/lighteval/src",
@@ -648,8 +651,8 @@ def run_group_eos_only(
         force=force,
         in_progress_jobs=in_progress_jobs,
         model=model,
-        ngpus=4,
-        n_nodes=2,
+        ngpus=1,
+        n_nodes=1,
         models_checkpoints=models_checkpoints,
         moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
         moe_num_experts=moe_num_experts,
@@ -779,8 +782,8 @@ def run_group_full_4k(
     moe_num_experts=None,
     moe_special_embeddings_layer_idx=None,
 ) -> None:
-    ngpus = 8
-    num_nodes = 2
+    ngpus = 1
+    num_nodes = 6
 
     num_train_epochs = 1
     save_steps = 1000
