@@ -648,6 +648,8 @@ def run_group_eos_only(
         force=force,
         in_progress_jobs=in_progress_jobs,
         model=model,
+        ngpus=4,
+        n_nodes=2,
         models_checkpoints=models_checkpoints,
         moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
         moe_num_experts=moe_num_experts,
@@ -671,11 +673,11 @@ def _run_group_eos_only(
     save_safetensors="1",
     learning_rate=0.0001,
     ngpus=4,
+    n_nodes=1,
     models_checkpoints=None,
     moe_special_embeddings_layer_idx=None,
     moe_num_experts=None,
 ) -> None:
-    n_nodes = 1
     num_train_epochs = 1
     save_steps = 5000
     # lr_scheduler_type = "constant"
