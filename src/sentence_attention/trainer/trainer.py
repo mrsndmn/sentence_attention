@@ -71,6 +71,7 @@ class SentenceTrainer(Trainer):
         fused_linear_cross_entropy = True
 
         torch.compiler.cudagraph_mark_step_begin()
+        # breakpoint()
         outputs = model(
             fused_linear_cross_entropy=fused_linear_cross_entropy,
             labels=labels,
@@ -112,7 +113,7 @@ class SentenceTrainer(Trainer):
 
         moe_loss = torch.tensor(0.0, device=loss.device, dtype=loss.dtype)
         lm_loss = loss.detach()
-        if outputs.moe_aux_loss is not None:
+        if self.args.moe_special_embeddings_layer_idx is not None and outputs.moe_aux_loss is not None:
             # Ensure moe_aux_loss is on the same device as loss
             moe_aux_loss = outputs.moe_aux_loss
             if isinstance(moe_aux_loss, torch.Tensor):

@@ -1157,7 +1157,7 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
         )
 
         hidden_states = outputs[0]
-        print("fused_linear_cross_entropy", fused_linear_cross_entropy)
+
         if fused_linear_cross_entropy:
             labels = nn.functional.pad(labels, (0, 1), value=-100)
             shift_labels = labels[..., 1:].contiguous()
@@ -1179,8 +1179,6 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
             loss = liger_lce(self.lm_head.weight, hidden_2d, shift_labels)
 
             loss = loss / num_items_in_batch
-
-            breakpoint()
 
             return SentenceCausalLMOutputWithPast(
                 loss=loss,

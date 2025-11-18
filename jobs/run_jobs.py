@@ -642,7 +642,7 @@ def run_group_eos_only(
     return _run_group_eos_only(
         dry=dry,
         dataset="fineweb_edu",
-        limit_dataset_shards=10,
+        limit_dataset_shards=1,
         num_eos_tokens=num_eos_tokens,
         test=test,
         force=force,
