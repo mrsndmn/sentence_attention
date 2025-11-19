@@ -14,6 +14,19 @@ if __name__ == "__main__":
     parser.add_argument("--pretrained_model_name", type=str, required=True)
     parser.add_argument("--with_eos_token", action="store_true")
     parser.add_argument("--num_eos_tokens", type=int, default=1)
+    parser.add_argument(
+        "--gist_placement",
+        type=str,
+        default="sentence",
+        choices=["sentence", "uniform"],
+        help="Placement strategy for gist tokens. 'sentence' appends at sentence ends; 'uniform' inserts uniformly.",
+    )
+    parser.add_argument(
+        "--uniform_interval_tokens",
+        type=int,
+        default=40,
+        help="Interval (in tokens) for uniform gist insertion when --gist_placement=uniform.",
+    )
     parser.add_argument("--max_length", type=int, default=1024)
     parser.add_argument("--num_proc", type=int, default=16)
     parser.add_argument("--num_shards", type=int, default=1)
@@ -34,6 +47,10 @@ if __name__ == "__main__":
 
     if args.with_eos_token:
         suffix = f"{suffix}_with_eos_token_num_{num_eos_tokens}_merged"
+        if args.gist_placement == "uniform":
+            suffix = f"{suffix}_uniform_interval_{args.uniform_interval_tokens}"
+        else:
+            suffix = f"{suffix}_sentence"
 
     target_dir = f"./artifacts/data/fineweb_edu_tokenized_{pretrained_model_name_short}{suffix}"
     if args.num_shards > 1:
@@ -56,7 +73,16 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
 
-    tokenizer = tokenizer_class.from_pretrained(pretrained_model_name, num_eos_tokens=num_eos_tokens)
+    # Build tokenizer with optional gist placement arguments for EOS-enabled tokenizers
+    if args.with_eos_token:
+        tokenizer = tokenizer_class.from_pretrained(
+            pretrained_model_name,
+            num_eos_tokens=num_eos_tokens,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+        )
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name)
     assert tokenizer.num_eos_tokens == num_eos_tokens, "tokenizer num eos tokens set correctly"
 
     tokenizer.padding_side = "left"

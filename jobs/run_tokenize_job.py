@@ -18,6 +18,9 @@ if __name__ == "__main__":
 
     num_processing_shards = 200
 
+    extra_params = "--gist_placement=uniform --uniform_interval_tokens=40"
+    extra_params = ""
+
     for seq_length in [4096]:
         # for num_eos_tokens in [1, 2, 4, 8, 16]:
         for num_eos_tokens in [8]:
@@ -25,10 +28,10 @@ if __name__ == "__main__":
             for shard_index in range(60):
                 # for pretrained_model_name in ["unsloth/llama-3-8b", "Qwen/Qwen2.5-1.5B"]:
                 # for pretrained_model_name in ["unsloth/Llama-3.2-1B", "Qwen/Qwen2.5-1.5B"]:
-                # for pretrained_model_name in ["unsloth/Llama-3.2-1B"]:
-                for pretrained_model_name in ["Qwen/Qwen2.5-1.5B"]:
+                for pretrained_model_name in ["unsloth/Llama-3.2-1B"]:
+                    # for pretrained_model_name in ["Qwen/Qwen2.5-1.5B"]:
 
-                    script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin/python scripts/tokenization/tokenize_fineweb_edu.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --num_shards {num_processing_shards} --shard_index {shard_index}'"
+                    script = f"bash -c 'cd {workdir} && /workspace-SR004.nfs2/d.tarasov/envs/sentence_attention/bin/python scripts/tokenization/tokenize_fineweb_edu.py --pretrained_model_name {pretrained_model_name} --with_eos_token --num_eos_tokens {num_eos_tokens} --max_length {seq_length} --num_shards {num_processing_shards} --shard_index {shard_index} {extra_params} '"
                     print("\n\n", script)
                     if dry:
                         print("Skip running job")
