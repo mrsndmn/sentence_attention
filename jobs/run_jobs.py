@@ -54,6 +54,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         model_type = exp.pop("model_type", "pretrained")  # pretrained_checkpoint
         model_checkpoint = exp.pop("model_checkpoint", '""')
         number_of_eos_tokens = exp.pop("number_of_eos_tokens", 1)
+        gist_placement = exp.pop("gist_placement", "sentence")
+        uniform_interval_tokens = exp.pop("uniform_interval_tokens", 40)
 
         learning_rate = exp.pop("learning_rate", 1e-4)
         lr_scheduler_type = exp.pop("lr_scheduler_type", "cosine_with_min_lr")
@@ -180,6 +182,8 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--dataset {dataset} "
             f"--limit_dataset_shards {limit_dataset_shards} --offset_dataset_shards {offset_dataset_shards} "
             f"--number_of_eos_tokens {number_of_eos_tokens} "
+            f"--gist_placement {gist_placement} "
+            f"--uniform_interval_tokens {uniform_interval_tokens} "
             f"--flexible_eos_tokens {flexible_eos_tokens} "
             f"--ft_with_bos_token {ft_with_bos_token} "
             f"--max_steps {max_steps} "
@@ -273,6 +277,8 @@ def run_training_experiments(
     resume_from_checkpoint: str = None,
     moe_special_embeddings_layer_idx=None,
     moe_num_experts=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
     **kwargs: Dict,
 ) -> None:
 
@@ -319,6 +325,8 @@ def run_training_experiments(
         "fsdp": fsdp,
         "resume_from_checkpoint": resume_from_checkpoint,
         "save_safetensors": save_safetensors,
+        "gist_placement": gist_placement,
+        "uniform_interval_tokens": uniform_interval_tokens,
     }
 
     experiments = []
@@ -600,6 +608,10 @@ def run_group_eos_only_my_recall(
     niddle_type: Literal["numbers", "strings"] = "numbers",
     moe_num_experts=None,
     moe_special_embeddings_layer_idx=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
+    ngpus: int | None = None,
+    num_nodes: int | None = None,
 ):
 
     models_checkpoints = [
@@ -622,11 +634,14 @@ def run_group_eos_only_my_recall(
         global_batch_size=16,
         per_device_train_batch_size=1,
         save_safetensors="0",
-        ngpus=4,
+        ngpus=(4 if ngpus is None else ngpus),
         learning_rate=0.001,
+        n_nodes=(1 if num_nodes is None else num_nodes),
         models_checkpoints=models_checkpoints,
         moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
         moe_num_experts=moe_num_experts,
+        gist_placement=gist_placement,
+        uniform_interval_tokens=uniform_interval_tokens,
     )
 
 
@@ -641,6 +656,10 @@ def run_group_eos_only(
     models_checkpoints=None,
     moe_special_embeddings_layer_idx=None,
     moe_num_experts=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
+    ngpus: int | None = None,
+    num_nodes: int | None = None,
 ) -> None:
     return _run_group_eos_only(
         dry=dry,
@@ -651,11 +670,13 @@ def run_group_eos_only(
         force=force,
         in_progress_jobs=in_progress_jobs,
         model=model,
-        ngpus=4,
-        n_nodes=1,
+        ngpus=(4 if ngpus is None else ngpus),
+        n_nodes=(1 if num_nodes is None else num_nodes),
         models_checkpoints=models_checkpoints,
         moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
         moe_num_experts=moe_num_experts,
+        gist_placement=gist_placement,
+        uniform_interval_tokens=uniform_interval_tokens,
     )
 
 
@@ -680,6 +701,8 @@ def _run_group_eos_only(
     models_checkpoints=None,
     moe_special_embeddings_layer_idx=None,
     moe_num_experts=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
 ) -> None:
     num_train_epochs = 1
     save_steps = 5000
@@ -720,6 +743,8 @@ def _run_group_eos_only(
                 extra_exp_suffix = f"_moe_exp_{moe_num_experts}_moe_layer_{moe_special_embeddings_layer_idx}" + extra_exp_suffix
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}{extra_exp_suffix}"
+            if gist_placement != "sentence":
+                model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
 
             if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
                 print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -764,6 +789,8 @@ def _run_group_eos_only(
                 save_safetensors=save_safetensors,
                 moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
                 moe_num_experts=moe_num_experts,
+                gist_placement=gist_placement,
+                uniform_interval_tokens=uniform_interval_tokens,
                 **extra_kwargs,
             )
 
@@ -781,9 +808,13 @@ def run_group_full_4k(
     force: bool = False,
     moe_num_experts=None,
     moe_special_embeddings_layer_idx=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
+    ngpus: int | None = None,
+    num_nodes: int | None = None,
 ) -> None:
-    ngpus = 1
-    num_nodes = 6
+    ngpus = 1 if ngpus is None else ngpus
+    num_nodes = 6 if num_nodes is None else num_nodes
 
     num_train_epochs = 1
     save_steps = 1000
@@ -837,6 +868,10 @@ def run_group_full_4k(
             model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
+        if gist_placement != "sentence":
+            model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
+        if gist_placement != "sentence":
+            model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -888,6 +923,8 @@ def run_group_full_4k(
             resume_from_checkpoint=resume_from_checkpoint,
             moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
             moe_num_experts=moe_num_experts,
+            gist_placement=gist_placement,
+            uniform_interval_tokens=uniform_interval_tokens,
             **extra_kwargs,
         )
 
@@ -905,9 +942,13 @@ def run_group_full_4k_my_recall(
     force: bool = False,
     moe_num_experts=None,
     moe_special_embeddings_layer_idx=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
+    ngpus: int | None = None,
+    num_nodes: int | None = None,
 ) -> None:
-    ngpus = 8
-    num_nodes = 2
+    ngpus = 8 if ngpus is None else ngpus
+    num_nodes = 2 if num_nodes is None else num_nodes
 
     num_train_epochs = 1
     save_steps = 1000
@@ -960,6 +1001,8 @@ def run_group_full_4k_my_recall(
             model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
+        if gist_placement != "sentence":
+            model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1011,6 +1054,8 @@ def run_group_full_4k_my_recall(
             resume_from_checkpoint=resume_from_checkpoint,
             moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
             moe_num_experts=moe_num_experts,
+            gist_placement=gist_placement,
+            uniform_interval_tokens=uniform_interval_tokens,
             **extra_kwargs,
         )
 
@@ -1028,9 +1073,13 @@ def run_group_full_4k_colddown(
     force: bool = False,
     moe_num_experts=None,
     moe_special_embeddings_layer_idx=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
+    ngpus: int | None = None,
+    num_nodes: int | None = None,
 ) -> None:
-    ngpus = 8
-    num_nodes = 1
+    ngpus = 8 if ngpus is None else ngpus
+    num_nodes = 1 if num_nodes is None else num_nodes
 
     num_train_epochs = 1
     save_steps = 250
@@ -1084,6 +1133,8 @@ def run_group_full_4k_colddown(
             model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
+        if gist_placement != "sentence":
+            model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1135,6 +1186,8 @@ def run_group_full_4k_colddown(
             resume_from_checkpoint=resume_from_checkpoint,
             moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
             moe_num_experts=moe_num_experts,
+            gist_placement=gist_placement,
+            uniform_interval_tokens=uniform_interval_tokens,
             **extra_kwargs,
         )
 
@@ -1152,9 +1205,13 @@ def run_group_full_16k_colddown(
     force: bool = False,
     moe_num_experts=None,
     moe_special_embeddings_layer_idx=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
+    ngpus: int | None = None,
+    num_nodes: int | None = None,
 ) -> None:
-    ngpus = 4
-    num_nodes = 2
+    ngpus = 4 if ngpus is None else ngpus
+    num_nodes = 2 if num_nodes is None else num_nodes
 
     # ngpus = 6
     # num_nodes = 1
@@ -1260,6 +1317,8 @@ def run_group_full_16k_colddown(
             resume_from_checkpoint=resume_from_checkpoint,
             moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
             moe_num_experts=moe_num_experts,
+            gist_placement=gist_placement,
+            uniform_interval_tokens=uniform_interval_tokens,
             **extra_kwargs,
         )
 
@@ -1275,9 +1334,13 @@ def run_group_lora(
     force: bool = False,
     moe_num_experts=None,
     moe_special_embeddings_layer_idx=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
+    ngpus: int | None = None,
+    num_nodes: int | None = None,
 ) -> None:
-    ngpus = 4
-    num_nodes = 1
+    ngpus = 4 if ngpus is None else ngpus
+    num_nodes = 1 if num_nodes is None else num_nodes
     num_train_epochs = 1
     save_steps = 1000
     optimized_params = "lora"
@@ -1348,6 +1411,8 @@ def run_group_lora(
             resume_from_checkpoint=resume_from_checkpoint,
             moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
             moe_num_experts=moe_num_experts,
+            gist_placement=gist_placement,
+            uniform_interval_tokens=uniform_interval_tokens,
         )
 
 
@@ -1386,6 +1451,10 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--resume_from_checkpoint", type=str, help="Resume from checkpoint", default=None)
     parser.add_argument("--moe_special_embeddings_layer_idx", type=int, default=None)
     parser.add_argument("--moe_num_experts", type=int, default=None)
+    parser.add_argument("--gist_placement", type=str, default="sentence", choices=["sentence", "uniform"])
+    parser.add_argument("--uniform_interval_tokens", type=int, default=40)
+    parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
+    parser.add_argument("--num_nodes", type=int, default=None, help="Override number of nodes/workers")
 
     return parser
 
@@ -1429,6 +1498,10 @@ def main() -> None:
             force=args.force,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
     elif args.group == "eos-only-my-recall":
         run_group_eos_only_my_recall(
@@ -1441,6 +1514,10 @@ def main() -> None:
             niddle_type=args.niddle_type,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
     elif args.group == "full_4k_my_recall":
         run_group_full_4k_my_recall(
@@ -1452,6 +1529,10 @@ def main() -> None:
             force=args.force,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
     elif args.group == "full_4k":
         run_group_full_4k(
@@ -1464,6 +1545,10 @@ def main() -> None:
             force=args.force,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
     elif args.group == "full_4k_colddown":
         run_group_full_4k_colddown(
@@ -1476,6 +1561,10 @@ def main() -> None:
             force=args.force,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
     elif args.group == "full_16k_colddown":
         run_group_full_16k_colddown(
@@ -1488,6 +1577,10 @@ def main() -> None:
             force=args.force,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
     elif args.group == "lora":
         run_group_lora(
@@ -1500,6 +1593,10 @@ def main() -> None:
             force=args.force,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
     elif args.group == "full-flexible-eos-tokens":
         run_group_full_4k(
@@ -1513,6 +1610,10 @@ def main() -> None:
             force=args.force,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
     elif args.group == "ft-with-bos-token":
         run_group_full_4k(
@@ -1526,6 +1627,10 @@ def main() -> None:
             force=args.force,
             moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
             moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
         )
 
     return
