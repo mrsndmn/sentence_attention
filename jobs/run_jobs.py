@@ -651,7 +651,7 @@ def run_group_eos_only(
         force=force,
         in_progress_jobs=in_progress_jobs,
         model=model,
-        ngpus=1,
+        ngpus=4,
         n_nodes=1,
         models_checkpoints=models_checkpoints,
         moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
