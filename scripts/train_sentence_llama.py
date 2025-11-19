@@ -51,28 +51,34 @@ if __name__ == "__main__":
             max_length_dataset_suffix = "_max_length_4096"
 
             dataset_suffix = f"_num_{training_args.number_of_eos_tokens}"
+            # Match tokenization output naming: add placement suffix right after `_merged`
+            placement_suffix = (
+                f"_uniform_interval_{training_args.uniform_interval_tokens}"
+                if training_args.gist_placement == "uniform"
+                else "_sentence"
+            )
 
             if training_args.model_type == "sentence_pretrained_checkpoint":
                 # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
                 if "llama" in training_args.model_checkpoint.lower():
                     if training_args.dataset == "fineweb_edu":
-                        dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+                        dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged{placement_suffix}"
                     elif training_args.dataset == "dclm":
-                        dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token{dataset_suffix}_merged"
+                        dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token{dataset_suffix}_merged{placement_suffix}"
                         # dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_8192_with_eos_token{dataset_suffix}_merged"
                     elif training_args.dataset in ("my_recall", "my_recall_numbers"):
                         # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
                         # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
-                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_10000_with_eos_token{dataset_suffix}_merged"
+                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_10000_with_eos_token{dataset_suffix}_merged{placement_suffix}"
                     elif training_args.dataset == "my_recall_strings":
                         dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_strings_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
                     else:
                         raise ValueError(f"Unknown dataset: {training_args.dataset}")
                 elif "qwen2" in training_args.model_checkpoint.lower():
-                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged{placement_suffix}"
                     print("Increase dataset shards for Qwen2.5-1.5B to", dataset_shards_limit)
                 elif "smollm2" in training_args.model_checkpoint.lower():
-                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged"
+                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged{placement_suffix}"
                 else:
                     raise ValueError(f"Unknown model checkpoint: {training_args.model_checkpoint}")
                     # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx_full'

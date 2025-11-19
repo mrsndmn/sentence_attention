@@ -42,8 +42,22 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
         else:
             raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
 
-        print("tokenizer_class", tokenizer_class, "number_of_eos_tokens", number_of_eos_tokens)
-        tokenizer = tokenizer_class.from_pretrained(model_checkpoint, num_eos_tokens=number_of_eos_tokens)
+        print(
+            "tokenizer_class",
+            tokenizer_class,
+            "number_of_eos_tokens",
+            number_of_eos_tokens,
+            "gist_placement",
+            training_args.gist_placement,
+            "uniform_interval_tokens",
+            training_args.uniform_interval_tokens,
+        )
+        tokenizer = tokenizer_class.from_pretrained(
+            model_checkpoint,
+            num_eos_tokens=number_of_eos_tokens,
+            gist_placement=training_args.gist_placement,
+            uniform_interval_tokens=training_args.uniform_interval_tokens,
+        )
 
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
