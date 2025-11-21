@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     num_processing_shards = 200
 
-    extra_params = "--gist_placement=uniform --uniform_interval_tokens=40"
+    extra_params = "--gist_placement=uniform --uniform_interval_tokens=16"
     # extra_params = ""
 
     for seq_length in [4096]:
