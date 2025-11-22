@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+perplexity_plot.png
 __pycache__/
 *.py[codz]
 *$py.class

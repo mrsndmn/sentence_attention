@@ -1,6 +1,8 @@
 import re
 from typing import Any, Dict, List, Union
 
+import torch
+
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 
@@ -93,9 +95,16 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
                     new_special_tokens_mask_batch.append(updated_single.get("special_tokens_mask"))
 
             encodings["input_ids"] = new_input_ids_batch
+
             encodings["attention_mask"] = new_attention_mask_batch
             if new_special_tokens_mask_batch is not None:
                 encodings["special_tokens_mask"] = new_special_tokens_mask_batch
+
+            if kwargs.get("return_tensors", "") == "pt":
+                encodings["input_ids"] = torch.tensor(encodings["input_ids"])
+                encodings["attention_mask"] = torch.tensor(encodings["attention_mask"])
+                if "special_tokens_mask" in encodings:
+                    encodings["special_tokens_mask"] = torch.tensor(encodings["special_tokens_mask"])
 
             # Remove fields that would be out of sync after insertion.
             for removable in ("offset_mapping",):
