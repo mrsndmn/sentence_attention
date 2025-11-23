@@ -143,6 +143,14 @@ if __name__ == "__main__":
     nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     print("train_dataset", train_dataset)
+    if "token_logprobs" in train_dataset.column_names:
+        train_dataset = train_dataset.remove_columns("token_logprobs")
+        print("removed token_logprobs column from train_dataset")
+
+    if "seq_length" in train_dataset.column_names:
+        train_dataset = train_dataset.remove_columns("seq_length")
+        print("removed token_logprobs column from train_dataset")
+
     if "labels_hidden" in train_dataset.column_names:
         train_dataset = train_dataset.remove_columns("labels_hidden")
         print("removed labels_hidden column from train_dataset")
