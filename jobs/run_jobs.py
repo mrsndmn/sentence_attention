@@ -743,8 +743,14 @@ def _run_group_eos_only(
                 extra_exp_suffix = f"_moe_exp_{moe_num_experts}_moe_layer_{moe_special_embeddings_layer_idx}" + extra_exp_suffix
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}{extra_exp_suffix}"
-            if gist_placement != "sentence":
+            if gist_placement == "sentence":
+                pass
+            elif gist_placement == "uniform":
                 model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
+            elif gist_placement == "with_logits":
+                model_dir_prefix = f"{model_dir_prefix}_with_logits"
+            else:
+                raise ValueError("Unhandled gist placement")
 
             if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
                 print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -868,10 +874,14 @@ def run_group_full_4k(
             model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
-        if gist_placement != "sentence":
+        if gist_placement == "sentence":
+            pass
+        elif gist_placement == "uniform":
             model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
-        if gist_placement != "sentence":
-            model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
+        elif gist_placement == "with_logits":
+            model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        else:
+            raise ValueError("Unhandled gist placement")
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1001,8 +1011,14 @@ def run_group_full_4k_my_recall(
             model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
-        if gist_placement != "sentence":
+        if gist_placement == "sentence":
+            pass
+        elif gist_placement == "uniform":
             model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
+        elif gist_placement == "with_logits":
+            model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        else:
+            raise ValueError("Unhandled gist placement")
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1133,8 +1149,14 @@ def run_group_full_4k_colddown(
             model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
-        if gist_placement != "sentence":
+        if gist_placement == "sentence":
+            pass
+        elif gist_placement == "uniform":
             model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
+        elif gist_placement == "with_logits":
+            model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        else:
+            raise ValueError("Unhandled gist placement")
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1451,7 +1473,7 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--resume_from_checkpoint", type=str, help="Resume from checkpoint", default=None)
     parser.add_argument("--moe_special_embeddings_layer_idx", type=int, default=None)
     parser.add_argument("--moe_num_experts", type=int, default=None)
-    parser.add_argument("--gist_placement", type=str, default="sentence", choices=["sentence", "uniform"])
+    parser.add_argument("--gist_placement", type=str, default="sentence", choices=["sentence", "uniform", "with_logits"])
     parser.add_argument("--uniform_interval_tokens", type=int, default=40)
     parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
     parser.add_argument("--num_nodes", type=int, default=None, help="Override number of nodes/workers")

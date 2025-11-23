@@ -58,11 +58,17 @@ if __name__ == "__main__":
                 else "_sentence"
             )
 
+            if training_args.gist_placement == "with_logits":
+                assert training_args.dataset == "fineweb_edu", "only fineweb edu is supported for tokenized with logits"
+
             if training_args.model_type == "sentence_pretrained_checkpoint":
                 # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
                 if "llama" in training_args.model_checkpoint.lower():
                     if training_args.dataset == "fineweb_edu":
-                        dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged{placement_suffix}"
+                        if training_args.gist_placement == "with_logits":
+                            dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_with_logits_Llama-3.2-1B{max_length_dataset_suffix}"
+                        else:
+                            dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged{placement_suffix}"
                     elif training_args.dataset == "dclm":
                         dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token{dataset_suffix}_merged{placement_suffix}"
                         # dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_8192_with_eos_token{dataset_suffix}_merged"

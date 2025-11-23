@@ -26,8 +26,8 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         self.gist_placement: str = kwargs.get("gist_placement", "sentence")
         self.uniform_interval_tokens: int = kwargs.get("uniform_interval_tokens", 40)
 
-        if self.gist_placement not in {"sentence", "uniform"}:
-            raise ValueError("gist_placement must be one of {'sentence','uniform'}")
+        if self.gist_placement not in {"sentence", "uniform", "with_logits"}:
+            raise ValueError("gist_placement must be one of {'sentence','uniform','with_logits'}")
         if not isinstance(self.uniform_interval_tokens, int) or self.uniform_interval_tokens <= 0:
             raise ValueError("uniform_interval_tokens must be a positive integer")
 
@@ -59,11 +59,17 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         encoding = super().encode_plus(text, **kwargs)
         if self.gist_placement == "uniform":
             encoding = self._insert_uniform_gist_into_encoding(encoding)
+        elif self.gist_placement == "with_logits":
+            raise NotImplementedError()
         return encoding
 
     def batch_encode_plus(self, batch_text_or_text_pairs: str, **kwargs):
+        if self.gist_placement == "with_logits":
+            raise NotImplementedError()
+
         batch_text_or_text_pairs = [self.prepare_for_tokenization(x) for x in batch_text_or_text_pairs]
         encodings = super().batch_encode_plus(batch_text_or_text_pairs, **kwargs)
+
         if self.gist_placement == "uniform":
             # Expect lists (no tensors). If tensors are returned, try converting to lists conservatively.
             input_ids_batch = encodings.get("input_ids")
@@ -115,7 +121,7 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
     def prepare_for_tokenization(self, text: str) -> tuple[str, dict[str, Any]]:
 
         # When uniform placement is requested, do not add tokens at sentence boundaries.
-        if self.gist_placement == "uniform":
+        if self.gist_placement in ["uniform", "with_logits"]:
             return text
 
         end_of_sentence_token = "".join(self.end_of_sentence_tokens_list)

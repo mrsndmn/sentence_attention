@@ -13,7 +13,7 @@ class SentenceTrainingArguments(TrainingArguments):
     remove_unused_columns: bool = field(default=False)
 
     number_of_eos_tokens: int = field(default=1)
-    gist_placement: str = field(default="sentence")  # 'sentence' or 'uniform'
+    gist_placement: str = field(default="with_logits")  # 'sentence' or 'uniform'
     uniform_interval_tokens: int = field(default=40)
 
     output_dir: str = field(
