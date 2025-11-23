@@ -1,4 +1,5 @@
 import torch
+from datetime import datetime
 
 
 from datasets import load_dataset, Dataset
@@ -61,11 +62,13 @@ if __name__ == "__main__":
         raise ValueError(f"Invalid tokenizer class: {tokenizer_class}")
 
     num_eos_tokens = args.num_eos_tokens
-    tokenizer = tokenizer_class.from_pretrained(
+    eo_tokenizer = tokenizer_class.from_pretrained(
         pretrained_model_name,
         num_eos_tokens=num_eos_tokens,
-        gist_placement="max_cummulative_nlogits",
+        # gist_placement="max_cummulative_nlogits",
     )
+
+    tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name)
 
     # Only half of data!
     dataset = dataset.shard(num_shards=args.num_shards, index=args.shard_index)
@@ -75,18 +78,18 @@ if __name__ == "__main__":
     logits_dataset = Dataset.load_from_disk(logits_target_dir)
     assert len(logits_dataset) == len(dataset), "logits and base dataset lengths are not the same"
 
-    print("add column token_logprobs")
+    print("add column token_logprobs", datetime.now())
     dataset = dataset.add_column("token_logprobs", logits_dataset["token_logprobs"])
-    print("add column seq_length")
+    print("add column seq_length", datetime.now())
     dataset = dataset.add_column("seq_length", logits_dataset["seq_length"])
 
-    print("shard len", len(dataset))
+    print("shard len", len(dataset), datetime.now())
 
     columns_to_keep = ["input_ids", "attention_mask", "token_logprobs", "seq_length"]
     columns_to_remove = list(set(dataset.column_names) - set(columns_to_keep))
 
     max_cummulative_nlogits_value = args.max_cummulative_nlogits_value
-    list_eos_tokens_ids = tokenizer.end_of_sentence_token_ids
+    list_eos_tokens_ids = eo_tokenizer.end_of_sentence_token_ids
 
     def process_dataset_item(item):
         tokenized_inputs = tokenizer(
@@ -113,6 +116,7 @@ if __name__ == "__main__":
                 logit = token_logprobs[orig_position_i]
                 sum_nlogits -= logit
                 if sum_nlogits > max_cummulative_nlogits_value:
+                    # print("insert new eos tokens")
                     sum_nlogits = 0
                     for gist_token in list_eos_tokens_ids:
                         new_input_ids[0, target_position_i] = gist_token
@@ -131,7 +135,7 @@ if __name__ == "__main__":
         )
 
         return {
-            "input_ids": tokenized_inputs.input_ids[0],
+            "input_ids": new_input_ids[0],
             "attention_mask": tokenized_inputs.attention_mask[0],
             "special_embeddings_mask": special_embeddings_mask[0].numpy().tolist(),
             "clothest_end_of_sentence_token_idx": clothest_end_of_sentence_token_idx[0].numpy().tolist(),
