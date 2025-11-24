@@ -160,7 +160,7 @@ def find_all_checkpoints(experiment_dir: str) -> List[Tuple[int, str]]:
     steps_and_paths: List[Tuple[int, str]] = []
     for ckpt in checkpoint_dirs:
         step = extract_checkpoint_step(ckpt)
-        if step >= 0 and os.path.isdir(os.path.join(ckpt, "evaluation")):
+        if step >= 0 and (os.path.isdir(os.path.join(ckpt, "evaluation")) or os.path.isdir(os.path.join(ckpt, "helmet_eval"))):
             steps_and_paths.append((step, ckpt))
     steps_and_paths.sort(key=lambda x: x[0])
     return steps_and_paths
@@ -192,6 +192,7 @@ def plot_benchmark_over_checkpoints(
 
     for experiment_dir in experiment_dirs:
         checkpoints = find_all_checkpoints(experiment_dir)
+        print("checkpoints", checkpoints)
         if not checkpoints:
             print(f"No checkpoints with evaluations found under: {experiment_dir}")
             continue
@@ -229,6 +230,7 @@ def plot_benchmark_over_checkpoints(
             values: List[float] = []
 
             for step, ckpt_path in data["checkpoints"]:
+                print("ckpt_path", ckpt_path)
                 val = read_benchmark_metric(ckpt_path, benchmark, metric_preference)
                 if val is None:
                     continue

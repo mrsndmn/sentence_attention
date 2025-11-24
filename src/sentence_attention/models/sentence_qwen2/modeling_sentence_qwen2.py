@@ -666,14 +666,14 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
             min_dtype = torch.finfo(dtype).min
             causal_mask = torch.full((sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=device)
             diagonal_attend_mask = torch.arange(target_length, device=device) > cache_position.reshape(-1, 1)
-            if config.sliding_window is not None:
-                # if we have sliding window, we should not attend to tokens beyond sliding window length, so we mask them out also
-                # the check is needed to verify is current checkpoint was trained with sliding window or not
-                if not isinstance(past_key_values, SlidingWindowCache) or sequence_length > target_length:
-                    sliding_attend_mask = torch.arange(target_length, device=device) <= (
-                        cache_position.reshape(-1, 1) - config.sliding_window
-                    )
-                    diagonal_attend_mask.bitwise_or_(sliding_attend_mask)
+            # if config.sliding_window is not None:
+            #     # if we have sliding window, we should not attend to tokens beyond sliding window length, so we mask them out also
+            #     # the check is needed to verify is current checkpoint was trained with sliding window or not
+            #     if not isinstance(past_key_values, SlidingWindowCache) or sequence_length > target_length:
+            #         sliding_attend_mask = torch.arange(target_length, device=device) <= (
+            #             cache_position.reshape(-1, 1) - config.sliding_window
+            #         )
+            #         diagonal_attend_mask.bitwise_or_(sliding_attend_mask)
             causal_mask *= diagonal_attend_mask
             causal_mask = causal_mask[None, None, :, :].expand(batch_size, 1, -1, -1)
             if attention_mask is not None:
@@ -1153,6 +1153,7 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             cache_position=cache_position,
+            num_items_in_batch=num_items_in_batch,
             **kwargs,
         )
 

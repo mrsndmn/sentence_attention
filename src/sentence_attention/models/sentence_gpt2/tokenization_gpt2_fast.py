@@ -186,10 +186,13 @@ class GPT2TokenizerFastEOS(GPT2TokenizerFast):
             special_tokens_mask_batch = encodings.get("special_tokens_mask", None)
             if hasattr(special_tokens_mask_batch, "tolist"):
                 special_tokens_mask_batch = special_tokens_mask_batch.tolist()
+            offset_mapping_batch = encodings.get("offset_mapping", None)
+            # offset_mapping is usually a list of (start, end) tuples; keep as lists/tuples (no tensors)
 
             new_input_ids_batch: List[List[int]] = []
             new_attention_mask_batch: List[List[int]] = []
             new_special_tokens_mask_batch: List[List[int]] | None = [] if special_tokens_mask_batch is not None else None
+            new_offset_mapping_batch: List[List[Tuple[int, int]]] | None = [] if offset_mapping_batch is not None else None
 
             for idx in range(len(input_ids_batch)):
                 single_encoding: Dict[str, Any] = {
@@ -198,21 +201,23 @@ class GPT2TokenizerFastEOS(GPT2TokenizerFast):
                 }
                 if special_tokens_mask_batch is not None:
                     single_encoding["special_tokens_mask"] = special_tokens_mask_batch[idx]
+                if offset_mapping_batch is not None:
+                    single_encoding["offset_mapping"] = offset_mapping_batch[idx]
 
                 updated_single = self._insert_uniform_gist_into_encoding(single_encoding)
                 new_input_ids_batch.append(updated_single["input_ids"])
                 new_attention_mask_batch.append(updated_single["attention_mask"])
                 if new_special_tokens_mask_batch is not None:
                     new_special_tokens_mask_batch.append(updated_single.get("special_tokens_mask"))
+                if new_offset_mapping_batch is not None:
+                    new_offset_mapping_batch.append(updated_single.get("offset_mapping"))
 
             encodings["input_ids"] = new_input_ids_batch
             encodings["attention_mask"] = new_attention_mask_batch
             if new_special_tokens_mask_batch is not None:
                 encodings["special_tokens_mask"] = new_special_tokens_mask_batch
-
-            for removable in ("offset_mapping",):
-                if removable in encodings:
-                    del encodings[removable]
+            if new_offset_mapping_batch is not None:
+                encodings["offset_mapping"] = new_offset_mapping_batch
         return encodings
 
     def prepare_for_tokenization(self, text: str) -> tuple[str, dict[str, Any]]:
@@ -255,6 +260,7 @@ class GPT2TokenizerFastEOS(GPT2TokenizerFast):
         special_tokens_mask: Union[List[int], None] = encoding.get("special_tokens_mask")
         if hasattr(special_tokens_mask, "tolist"):
             special_tokens_mask = special_tokens_mask.tolist()
+        offset_mapping: Union[List[Tuple[int, int]], None] = encoding.get("offset_mapping")
 
         if attention_mask is None:
             attention_mask = [1] * len(input_ids)
@@ -264,16 +270,20 @@ class GPT2TokenizerFastEOS(GPT2TokenizerFast):
         new_input_ids: List[int] = []
         new_attention_mask: List[int] = []
         new_special_tokens_mask: List[int] | None = [] if special_tokens_mask is not None else None
+        new_offset_mapping: List[Tuple[int, int]] | None = []
 
         interval: int = self.uniform_interval_tokens
         gist_ids: List[int] = self.end_of_sentence_token_ids
 
         tokens_since_last_insert = 0
-        for token_id, mask_val in zip(input_ids, attention_mask):
+        for idx, (token_id, mask_val) in enumerate(zip(input_ids, attention_mask)):
             new_input_ids.append(token_id)
             new_attention_mask.append(mask_val)
             if new_special_tokens_mask is not None:
                 new_special_tokens_mask.append(0)
+            if new_offset_mapping is not None:
+                start_end = offset_mapping[idx]
+                new_offset_mapping.append(start_end)
 
             tokens_since_last_insert += 1
             if tokens_since_last_insert >= interval:
@@ -281,6 +291,10 @@ class GPT2TokenizerFastEOS(GPT2TokenizerFast):
                 new_attention_mask.extend([1] * len(gist_ids))
                 if new_special_tokens_mask is not None:
                     new_special_tokens_mask.extend([1] * len(gist_ids))
+                if new_offset_mapping is not None:
+                    # Place inserted gist tokens at a zero-length span at last_char_end
+                    insertion_offsets = [None] * len(gist_ids)
+                    new_offset_mapping.extend(insertion_offsets)
                 tokens_since_last_insert = 0
 
         updated: Dict[str, Any] = dict(encoding)
@@ -288,9 +302,12 @@ class GPT2TokenizerFastEOS(GPT2TokenizerFast):
         updated["attention_mask"] = new_attention_mask
         if new_special_tokens_mask is not None:
             updated["special_tokens_mask"] = new_special_tokens_mask
-        for removable in ("offset_mapping",):
-            if removable in updated:
-                del updated[removable]
+        if new_offset_mapping is not None:
+            updated["offset_mapping"] = new_offset_mapping
+        else:
+            # If we couldn't reliably realign offsets, drop them to avoid inconsistency.
+            if "offset_mapping" in updated:
+                del updated["offset_mapping"]
         return updated
 
 
