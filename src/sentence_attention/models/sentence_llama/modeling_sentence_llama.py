@@ -1234,78 +1234,106 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         # do_sample = kwargs["do_sample"]
         assert "logits_processor" not in kwargs, "logits_processor is not supported for flexible_eos_tokens models"
 
-        generated_tokens = [input_ids.item()]
-        attention_mask_continuation = []
-        special_embeddings_mask_continuation = []
-        current_cache_position = cache_position.clone()
-
-        current_input_ids = input_ids.clone()
-
+        # Preallocate buffers to avoid per-step allocations and concatenations
         device = input_ids.device
+        initial_len = attention_mask.shape[1]
+        total_len = initial_len + max_new_tokens
+
+        full_attention_mask = torch.zeros((1, total_len), device=device, dtype=torch.long)
+        full_attention_mask[:, :initial_len] = attention_mask
+
+        full_special_mask = torch.zeros_like(full_attention_mask)
+        full_special_mask[:, :initial_len] = special_embeddings_mask
+
+        # Initialize closest EOS index for the prefix, then update incrementally
+        num_special_tokens = len(self.config.end_of_sentence_token_ids)
+        prefix_closest = special_token_mask_to_clothest_token_idx_slow(
+            full_special_mask[:, :initial_len], num_special_tokens=num_special_tokens
+        )
+        full_closest_eos_idx = torch.zeros((1, total_len), device=device, dtype=torch.long)
+        if initial_len > 0:
+            full_closest_eos_idx[:, :initial_len] = prefix_closest
+            current_closest_boundary = int(full_closest_eos_idx[0, initial_len - 1].item())
+        else:
+            current_closest_boundary = 0
+
+        # Count trailing specials at the end of the prefix to continue sequence
+        trailing_special_count = 0
+        if initial_len > 0:
+            specials_prefix = full_special_mask[0, :initial_len]
+            idx = initial_len - 1
+            while idx >= 0 and specials_prefix[idx].item() == 1:
+                trailing_special_count += 1
+                idx -= 1
+                if trailing_special_count >= num_special_tokens - 1:
+                    break
+
+        # Generated tokens buffer (include first token per original behavior)
+        generated_tokens_buf = torch.empty(max_new_tokens + 1, device=device, dtype=torch.long)
+        generated_tokens_buf[0] = int(input_ids[:, -1].item())
+        num_generated = 1
+
+        # Cache position and reusable (1,1) input buffer
+        current_cache_position = cache_position.clone()
+        current_input_ids = input_ids[:, -1:].clone()
 
         DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
-        # Forse eager attention for decoding
+        # Force eager attention for decoding
         self.config._attn_implementation = DECODE_DEFAULT_ATTN_IMPLEMENTATION
 
-        for _new_token_id in range(max_new_tokens):
+        for step in range(max_new_tokens):
+            cur_len = initial_len + step  # next position to fill
 
-            attention_mask_cont_t = torch.tensor([attention_mask_continuation], device=device, dtype=torch.long)
-
-            current_attention_mask = torch.cat([attention_mask, attention_mask_cont_t], dim=-1)
-
-            special_embeddings_mask_cont_t = torch.tensor(
-                [special_embeddings_mask_continuation], device=device, dtype=torch.long
-            )
-            current_special_embeddings_mask = torch.cat([special_embeddings_mask, special_embeddings_mask_cont_t], dim=-1)
-
-            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-                current_special_embeddings_mask,
-                num_special_tokens=len(self.config.end_of_sentence_token_ids),
-            )
+            # Views (no cat/alloc): pass masks up to current token inclusive
+            current_attention_mask = full_attention_mask[:, : cur_len + 1]
+            current_special_embeddings_mask = full_special_mask[:, : cur_len + 1]
+            current_closest_idx = full_closest_eos_idx[:, : cur_len + 1]
 
             model_out = self(
                 input_ids=current_input_ids,
                 attention_mask=current_attention_mask,
                 special_embeddings_mask=current_special_embeddings_mask,
-                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+                clothest_end_of_sentence_token_idx=current_closest_idx,
                 past_key_values=past_key_values,
                 cache_position=current_cache_position,
                 output_hidden_states=False,
             )
 
-            current_input_ids = None
-
-            # Logits processing
-            if generated_tokens[-1] in self.config.end_of_sentence_token_ids:
-                prev_token_is_eos_idx = self.config.end_of_sentence_token_ids.index(generated_tokens[-1])
-                if prev_token_is_eos_idx < len(self.config.end_of_sentence_token_ids) - 1:
-                    current_input_ids = torch.tensor(
-                        [[self.config.end_of_sentence_token_ids[prev_token_is_eos_idx + 1]]],
-                        device=input_ids.device,
-                        dtype=torch.long,
-                    )
-
-            if current_input_ids is None:
-                current_input_ids = model_out.logits[:, -1:].argmax(dim=-1)
-
-            next_token_id = current_input_ids.item()
-            generated_tokens.append(next_token_id)
-
-            current_cache_position += 1
-            # print("cache_position", current_cache_position)
-
-            attention_mask_continuation.append(1)
-            if next_token_id in self.config.end_of_sentence_token_ids:
-                special_embeddings_mask_continuation.append(1)
+            # Decide next token
+            last_generated = int(generated_tokens_buf[num_generated - 1].item())
+            if last_generated in self.config.end_of_sentence_token_ids:
+                prev_idx = self.config.end_of_sentence_token_ids.index(last_generated)
+                if prev_idx < len(self.config.end_of_sentence_token_ids) - 1:
+                    current_input_ids[0, 0] = self.config.end_of_sentence_token_ids[prev_idx + 1]
+                else:
+                    # Fall back to model prediction if EOS chain is complete
+                    current_input_ids[0, 0] = int(model_out.logits[:, -1:].argmax(dim=-1).item())
             else:
-                special_embeddings_mask_continuation.append(0)
+                current_input_ids[0, 0] = int(model_out.logits[:, -1:].argmax(dim=-1).item())
 
-            # if next_token_id == 1732:
-            #     breakpoint()
-            #     print("top tokens", model_out.logits[:, -1].argsort(dim=-1, descending=True)[:, :10])
-            #     # SP tokens    : [430, 1364, 374, 264, 1695, 1732, 13, 220, 128256, 128257, 128258, 128259, 8100, 374, 264, 1695, 1732, 1606, 1364, 374, 3169]
-            #     # Decode tokens: [430, 1364, 374, 264, 1695, 1732, 13, 220, 128256, 128257, 128258, 128259, 8100, 374, 264, 1695, 6691, 323, 264, 1695, 7555]
-            #     print("generated_tokens", generated_tokens)
+            next_token_id = int(current_input_ids[0, 0].item())
+            generated_tokens_buf[num_generated] = next_token_id
+            num_generated += 1
+
+            # Update full masks in-place at current position
+            full_attention_mask[0, cur_len] = 1
+            is_special = 1 if next_token_id in self.config.end_of_sentence_token_ids else 0
+            full_special_mask[0, cur_len] = is_special
+
+            # Update closest EOS index incrementally
+            if is_special:
+                trailing_special_count += 1
+                if trailing_special_count == num_special_tokens:
+                    full_closest_eos_idx[0, cur_len] = current_closest_boundary
+                    current_closest_boundary = cur_len
+                    trailing_special_count = 0
+                else:
+                    full_closest_eos_idx[0, cur_len] = current_closest_boundary
+            else:
+                full_closest_eos_idx[0, cur_len] = current_closest_boundary
+
+            # Advance cache position
+            current_cache_position = current_cache_position.add(1)
 
         if prev_attention_implementation is not None:
             self.config._attn_implementation = prev_attention_implementation
@@ -1315,7 +1343,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             #     self.config._attn_implementation,
             # )
 
-        generated_tokens_t = torch.tensor([generated_tokens], device=input_ids.device, dtype=torch.long)
+        generated_tokens_t = generated_tokens_buf[:num_generated].unsqueeze(0)
 
         # print("initial_input_ids", initial_input_ids.shape)
         # print("generated_tokens_t", generated_tokens_t.shape)

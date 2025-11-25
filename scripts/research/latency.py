@@ -324,11 +324,11 @@ def main():
     else:
         print("No end_of_sentence_token_ids detected: running vanilla baseline for decode.")
 
-    print("\n=== Prefill latency (no compression parameter) ===")
-    for L in args.seq_lens:
-        prompt_ids = build_prompt_ids(tokenizer, total_len=L, eos_ids=eos_ids or [], eos_interval=None)
-        mean_ms, std_ms = measure_prefill_latency(model, prompt_ids, device=device, runs=args.runs)
-        print(f"- seq_len={L:5d}: prefill {mean_ms:.2f} ± {std_ms:.2f} ms")
+    # print("\n=== Prefill latency (no compression parameter) ===")
+    # for L in args.seq_lens:
+    #     prompt_ids = build_prompt_ids(tokenizer, total_len=L, eos_ids=eos_ids or [], eos_interval=None)
+    #     mean_ms, std_ms = measure_prefill_latency(model, prompt_ids, device=device, runs=args.runs)
+    #     print(f"- seq_len={L:5d}: prefill {mean_ms:.2f} ± {std_ms:.2f} ms")
 
     if eos_ids and len(eos_ids) > 0:
         print("\n=== Decode latency with compression (generate) ===")
