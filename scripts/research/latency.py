@@ -127,8 +127,8 @@ def measure_decode_latency_with_compression(
     # Prepare sentence-attention metadata
     special_mask, closest_idx = build_special_mask_and_closest_idx(input_ids, eos_ids)
 
-    # Prefill once to get compressed KV cache
-    sc = full_prefill_small_kv_cache(
+    # Prefill once to get reference KV length and warm up generate
+    sc_ref = full_prefill_small_kv_cache(
         model=model,
         input_ids=input_ids,
         attention_mask=attention_mask,
@@ -136,28 +136,48 @@ def measure_decode_latency_with_compression(
         clothest_end_of_sentence_token_idx=closest_idx,
         output_hidden_states=False,
     )
-    kv_len = sc["past_key_values"].get_seq_length()
+    kv_len = sc_ref["past_key_values"].get_seq_length()
 
-    # Inputs for pure decode
-    gen_kwargs = dict(
-        input_ids=sc["input_ids"],
-        attention_mask=sc["attention_mask"],
-        special_embeddings_mask=sc["special_embeddings_mask"],
-        clothest_end_of_sentence_token_idx=sc["clothest_end_of_sentence_token_idx"],
-        past_key_values=sc["past_key_values"],
-        cache_position=sc["cache_position"],
+    # Warmup generate once (adjust cache_position to start right after current KV length)
+    warmup_kwargs = dict(
+        input_ids=sc_ref["input_ids"],
+        attention_mask=sc_ref["attention_mask"],
+        special_embeddings_mask=sc_ref["special_embeddings_mask"],
+        clothest_end_of_sentence_token_idx=sc_ref["clothest_end_of_sentence_token_idx"],
+        past_key_values=sc_ref["past_key_values"],
+        cache_position=torch.arange(kv_len, kv_len + 1, device=device),
         max_new_tokens=new_tokens,
         return_dict_in_generate=False,
     )
-
-    # Warmup
-    _ = model.generate(**gen_kwargs)
+    _ = model.generate(**warmup_kwargs)
     if device.type == "cuda":
         torch.cuda.synchronize()
 
     # Timed runs
     times: List[float] = []
     for _ in range(runs):
+        # Recompute prefill to restore the exact same starting KV state
+        sc = full_prefill_small_kv_cache(
+            model=model,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            special_embeddings_mask=special_mask,
+            clothest_end_of_sentence_token_idx=closest_idx,
+            output_hidden_states=False,
+        )
+        # Ensure cache_position is contiguous with current compressed KV length
+        kv_len_i = sc["past_key_values"].get_seq_length()
+        cache_pos = torch.arange(kv_len_i, kv_len_i + 1, device=device)
+        gen_kwargs = dict(
+            input_ids=sc["input_ids"],
+            attention_mask=sc["attention_mask"],
+            special_embeddings_mask=sc["special_embeddings_mask"],
+            clothest_end_of_sentence_token_idx=sc["clothest_end_of_sentence_token_idx"],
+            past_key_values=sc["past_key_values"],
+            cache_position=cache_pos,
+            max_new_tokens=new_tokens,
+            return_dict_in_generate=False,
+        )
         if device.type == "cuda":
             torch.cuda.synchronize()
         t0 = time.perf_counter()
