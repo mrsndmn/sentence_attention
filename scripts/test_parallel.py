@@ -74,7 +74,7 @@ if __name__ == "__main__":
     # all_durations.append(time.perf_counter() - start_time)
 
     for nw in [8, 16]:
-        dataloader8 = DataLoader(dataset, prefetch_factor=10, batch_size=16, collate_fn=crutch_collator, num_workers=nw)
+        dataloader8 = DataLoader(dataset, prefetch_factor=2, batch_size=16, collate_fn=crutch_collator, num_workers=nw)
 
         start_time = time.perf_counter()
         for _ in tqdm(dataloader8, desc=f"nw={nw}"):

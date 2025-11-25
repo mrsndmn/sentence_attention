@@ -68,31 +68,32 @@ def special_token_mask_to_clothest_token_idx_slow(special_token_mask, num_specia
 
     assert num_special_tokens is not None, "num_special_tokens must be provided"
 
-    special_token_mask_bool = special_token_mask.bool()
-    special_token_mask_bool = special_token_mask_bool.cpu()
+    # Vectorized implementation (device-aware, no Python loops).
+    # For each position, returns the index of the last "boundary" token,
+    # where a boundary is the N-th special token since the previous boundary.
+    is_special = special_token_mask.to(torch.bool)  # [bs, seq_len]
+    batch_size, seq_len = is_special.shape
+    device = special_token_mask.device
 
-    clothest_token_idx = torch.zeros_like(special_token_mask, dtype=torch.long, device="cpu")
+    # Cumulative count of special tokens along sequence
+    cumsum_specials = is_special.to(torch.int64).cumsum(dim=1)  # [bs, seq_len]
 
-    for batch_i in range(special_token_mask_bool.shape[0]):
-        current_clothest_token_idx = 0
-        current_sequrntial_num_special_tokens = 0
-        for seq_len_i in range(special_token_mask_bool.shape[1]):
-            if special_token_mask_bool[batch_i, seq_len_i].item():
-                current_sequrntial_num_special_tokens += 1
+    # Boundary positions are those special tokens where cumsum % N == 0
+    at_boundary = is_special & (cumsum_specials.remainder(num_special_tokens) == 0)  # [bs, seq_len]
 
-            if (
-                special_token_mask_bool[batch_i, seq_len_i].item()
-                and current_sequrntial_num_special_tokens == num_special_tokens
-            ):
-                clothest_token_idx[batch_i, seq_len_i] = current_clothest_token_idx
-                current_clothest_token_idx = seq_len_i
-                current_sequrntial_num_special_tokens = 0
-            else:
-                clothest_token_idx[batch_i, seq_len_i] = current_clothest_token_idx
+    # For cummax trick, place the position index at boundaries, else 0
+    positions = torch.arange(seq_len, device=device, dtype=torch.long).unsqueeze(0).expand(batch_size, -1)
+    boundary_indices = torch.where(at_boundary, positions, torch.zeros_like(positions))  # [bs, seq_len]
 
-    clothest_token_idx = clothest_token_idx.to(special_token_mask.device)
+    # Propagate the last seen boundary index to the right
+    last_boundary_inclusive, _ = torch.cummax(boundary_indices, dim=1)  # [bs, seq_len]
 
-    return clothest_token_idx
+    # The original logic assigns the previous boundary index for the boundary token itself.
+    # Shift by one to use the strictly previous boundary for the current position.
+    last_boundary_prev = torch.roll(last_boundary_inclusive, shifts=1, dims=1)
+    last_boundary_prev[:, 0] = 0
+
+    return last_boundary_prev.to(dtype=torch.long)
 
 
 def sentence_attention_forward(
