@@ -67,7 +67,7 @@ def build_prompt_ids(
 
 
 @torch.inference_mode()
-def measure_prefill_latency(model, input_ids: torch.LongTensor, device: torch.device, runs: int = 3) -> float:
+def measure_prefill_latency(model, input_ids: torch.LongTensor, device: torch.device, runs: int = 3) -> Tuple[float, float]:
     attention_mask = torch.ones_like(input_ids, dtype=torch.long, device=device)
     input_ids = input_ids.to(device)
 
@@ -85,7 +85,13 @@ def measure_prefill_latency(model, input_ids: torch.LongTensor, device: torch.de
         if device.type == "cuda":
             torch.cuda.synchronize()
         times.append((time.perf_counter() - t0) * 1000.0)
-    return sum(times) / len(times)
+    mean_ms = sum(times) / len(times)
+    if len(times) > 1:
+        var = sum((x - mean_ms) ** 2 for x in times) / (len(times) - 1)
+        std_ms = var**0.5
+    else:
+        std_ms = 0.0
+    return mean_ms, std_ms
 
 
 def build_special_mask_and_closest_idx(input_ids: torch.LongTensor, eos_ids: List[int]) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -105,13 +111,13 @@ def measure_decode_latency_with_compression(
     device: torch.device,
     new_tokens: int = 32,
     runs: int = 3,
-) -> Tuple[float, int]:
+) -> Tuple[float, float, int]:
     """
     Measure pure decode latency (excluding prefill) by:
     1) Building a prompt with uniform EOS insertion controlling effective compression.
     2) Running scrooge full prefill to precompress KV cache.
     3) Calling model.generate starting from the returned single-token input with populated KV.
-    Returns (avg_ms_per_token, kv_len_after_prefill).
+    Returns (avg_ms_per_token, std_ms_per_token, kv_len_after_prefill).
     """
     eos_ids: List[int] = getattr(model.config, "end_of_sentence_token_ids", None)
     if not eos_ids or len(eos_ids) == 0:
@@ -187,7 +193,89 @@ def measure_decode_latency_with_compression(
         total_ms = (time.perf_counter() - t0) * 1000.0
         times.append(total_ms / float(new_tokens))
 
-    return sum(times) / len(times), kv_len
+    mean_ms = sum(times) / len(times)
+    if len(times) > 1:
+        var = sum((x - mean_ms) ** 2 for x in times) / (len(times) - 1)
+        std_ms = var**0.5
+    else:
+        std_ms = 0.0
+    return mean_ms, std_ms, kv_len
+
+
+@torch.inference_mode()
+def measure_decode_latency_vanilla(
+    model,
+    tokenizer,
+    total_len: int,
+    device: torch.device,
+    new_tokens: int = 32,
+    runs: int = 3,
+) -> Tuple[float, float, int]:
+    """
+    Baseline decode latency for vanilla models (no sentence attention).
+    1) Prefill the whole prompt to get past_key_values.
+    2) Start generate with a single next token and the populated KV cache.
+    Returns (avg_ms_per_token, std_ms_per_token, kv_len_after_prefill).
+    """
+    # Build prompt without EOS insertions
+    input_ids = build_prompt_ids(tokenizer, total_len=total_len, eos_ids=[], eos_interval=None).to(device)
+    attention_mask = torch.ones_like(input_ids, dtype=torch.long, device=device)
+
+    def kv_length(pkv) -> int:
+        if hasattr(pkv, "get_seq_length"):
+            return int(pkv.get_seq_length())
+        # Legacy tuple format: ((k0, v0), (k1, v1), ...)
+        k0 = pkv[0][0]
+        return int(k0.shape[-2])
+
+    # Prefill once and warmup generate
+    outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True, return_dict=True)
+    past = outputs.past_key_values
+    kv_len = kv_length(past)
+    next_input_ids = outputs.logits[:, -1:].argmax(dim=-1)
+    warmup_kwargs = dict(
+        input_ids=next_input_ids,
+        attention_mask=torch.ones((1, kv_len + 1), device=device, dtype=torch.long),
+        past_key_values=past,
+        cache_position=torch.arange(kv_len, kv_len + 1, device=device),
+        max_new_tokens=new_tokens,
+        return_dict_in_generate=False,
+    )
+    _ = model.generate(**warmup_kwargs)
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+
+    # Timed runs (recompute prefill before each run to keep consistent starting state)
+    times: List[float] = []
+    for _ in range(runs):
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True, return_dict=True)
+        past_i = outputs.past_key_values
+        kv_len_i = kv_length(past_i)
+        next_ids_i = outputs.logits[:, -1:].argmax(dim=-1)
+        gen_kwargs = dict(
+            input_ids=next_ids_i,
+            attention_mask=torch.ones((1, kv_len_i + 1), device=device, dtype=torch.long),
+            past_key_values=past_i,
+            cache_position=torch.arange(kv_len_i, kv_len_i + 1, device=device),
+            max_new_tokens=new_tokens,
+            return_dict_in_generate=False,
+        )
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        _ = model.generate(**gen_kwargs)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        total_ms = (time.perf_counter() - t0) * 1000.0
+        times.append(total_ms / float(new_tokens))
+
+    mean_ms = sum(times) / len(times)
+    if len(times) > 1:
+        var = sum((x - mean_ms) ** 2 for x in times) / (len(times) - 1)
+        std_ms = var**0.5
+    else:
+        std_ms = 0.0
+    return mean_ms, std_ms, kv_len
 
 
 def main():
@@ -231,34 +319,58 @@ def main():
     print(f"Device: {device}")
     print(f"Checkpoint: {args.checkpoint}")
     eos_ids = getattr(model.config, "end_of_sentence_token_ids", None)
-    if eos_ids is None:
-        raise ValueError("Model has no end_of_sentence_token_ids configured.")
-    print(f"num_eos_tokens: {len(eos_ids)}")
+    if eos_ids:
+        print(f"num_eos_tokens: {len(eos_ids)}")
+    else:
+        print("No end_of_sentence_token_ids detected: running vanilla baseline for decode.")
 
     print("\n=== Prefill latency (no compression parameter) ===")
     for L in args.seq_lens:
-        prompt_ids = build_prompt_ids(tokenizer, total_len=L, eos_ids=eos_ids, eos_interval=None)
-        ms = measure_prefill_latency(model, prompt_ids, device=device, runs=args.runs)
-        print(f"- seq_len={L:5d}: prefill {ms:.2f} ms")
+        prompt_ids = build_prompt_ids(tokenizer, total_len=L, eos_ids=eos_ids or [], eos_interval=None)
+        mean_ms, std_ms = measure_prefill_latency(model, prompt_ids, device=device, runs=args.runs)
+        print(f"- seq_len={L:5d}: prefill {mean_ms:.2f} ± {std_ms:.2f} ms")
 
-    print("\n=== Decode latency with compression (generate) ===")
-    print(f"(Per-token latency over {args.decode_new_tokens} new tokens)")
-    for L in args.seq_lens:
-        print(f"\nseq_len={L}")
-        for r in args.compression_rates:
+    if eos_ids and len(eos_ids) > 0:
+        print("\n=== Decode latency with compression (generate) ===")
+        print(f"(Per-token latency over {args.decode_new_tokens} new tokens)")
+        for L in args.seq_lens:
+            print(f"\nseq_len={L}")
+            for r in args.compression_rates:
+                try:
+                    per_token_ms, per_token_std, kv_len = measure_decode_latency_with_compression(
+                        model=model,
+                        tokenizer=tokenizer,
+                        total_len=L,
+                        compression_rate=r,
+                        device=device,
+                        new_tokens=args.decode_new_tokens,
+                        runs=args.runs,
+                    )
+                    print(
+                        f"- compression={r}x: kv_len_after_prefill={kv_len:5d}, "
+                        f"decode {per_token_ms:.3f} ± {per_token_std:.3f} ms/token"
+                    )
+                except Exception as e:
+                    print(f"- compression={r}x: FAILED ({e})")
+    else:
+        print("\n=== Decode latency (vanilla generate) ===")
+        print(f"(Per-token latency over {args.decode_new_tokens} new tokens)")
+        for L in args.seq_lens:
             try:
-                per_token_ms, kv_len = measure_decode_latency_with_compression(
+                per_token_ms, per_token_std, kv_len = measure_decode_latency_vanilla(
                     model=model,
                     tokenizer=tokenizer,
                     total_len=L,
-                    compression_rate=r,
                     device=device,
                     new_tokens=args.decode_new_tokens,
                     runs=args.runs,
                 )
-                print(f"- compression={r}x: kv_len_after_prefill={kv_len:5d}, decode {per_token_ms:.3f} ms/token")
+                print(
+                    f"- seq_len={L:5d}: kv_len_after_prefill={kv_len:5d}, "
+                    f"decode {per_token_ms:.3f} ± {per_token_std:.3f} ms/token"
+                )
             except Exception as e:
-                print(f"- compression={r}x: FAILED ({e})")
+                print(f"- seq_len={L:5d}: FAILED ({e})")
 
 
 if __name__ == "__main__":
