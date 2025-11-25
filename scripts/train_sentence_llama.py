@@ -7,13 +7,15 @@ import torch
 import torch.profiler
 import transformers
 from accelerate import PartialState
-from datasets import Dataset, load_dataset
-from sentence_attention.artifacts.experiments import WORKDIR_PREFIX
+from datasets import load_dataset
 from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 from sentence_attention.trainer.trainer import SentenceTrainer
-from transformers import DataCollatorForLanguageModeling, TrainerCallback
+from transformers import TrainerCallback
 from transformers.loss.loss_utils import ForCausalLMLossFusedLinearCE
+
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import special_token_mask_to_clothest_token_idx_slow
+
 
 # print("Setting inductor config for flex sentence attention")
 # inductor_config.max_autotune = True
@@ -44,93 +46,21 @@ if __name__ == "__main__":
 
         dataset_shards_limit = training_args.limit_dataset_shards
 
-        if training_args.add_end_of_sentence_token:
-            print("Loading fineweb edu tokenized with eos tokenizer")
-            datasets_path_prefix = WORKDIR_PREFIX + "/artifacts/data"
+        fineweb_dataset = load_dataset("HuggingFaceFW/fineweb-edu", "sample-10BT", num_proc=16, split="train")
 
-            max_length_dataset_suffix = "_max_length_4096"
+        TOTAL_SHARDS = 50  # CONSTANT
+        dataset_shards = []
 
-            dataset_suffix = f"_num_{training_args.number_of_eos_tokens}"
-            # Match tokenization output naming: add placement suffix right after `_merged`
-            placement_suffix = (
-                f"_uniform_interval_{training_args.uniform_interval_tokens}"
-                if training_args.gist_placement == "uniform"
-                else ""
-            )
+        for i in range(TOTAL_SHARDS):
+            if i < training_args.offset_dataset_shards or i >= training_args.offset_dataset_shards + dataset_shards_limit:
+                continue
+            dataset_shards.append(fineweb_dataset.shard(index=i, num_shards=TOTAL_SHARDS))
+            print(f"loading shard {i}")
 
-            if training_args.gist_placement == "with_logits":
-                assert training_args.dataset == "fineweb_edu", "only fineweb edu is supported for tokenized with logits"
+        print(f"loaded {len(dataset_shards)} shards")
+        fineweb_dataset = datasets.concatenate_datasets(dataset_shards)
 
-            if training_args.model_type == "sentence_pretrained_checkpoint":
-                # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx'
-                if "llama" in training_args.model_checkpoint.lower():
-                    if training_args.dataset == "fineweb_edu":
-                        if training_args.gist_placement == "with_logits":
-                            dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_with_logits_Llama-3.2-1B{max_length_dataset_suffix}"
-                        else:
-                            dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged{placement_suffix}"
-                    elif training_args.dataset == "dclm":
-                        dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token{dataset_suffix}_merged{placement_suffix}"
-                        # dataset_path = f"{datasets_path_prefix}/dclm_tokenized_Llama-3.2-1B_max_length_8192_with_eos_token{dataset_suffix}_merged"
-                    elif training_args.dataset in ("my_recall", "my_recall_numbers"):
-                        # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
-                        # dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
-                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_max_length_4096_num_samples_10000_with_eos_token{dataset_suffix}_merged{placement_suffix}"
-                    elif training_args.dataset == "my_recall_strings":
-                        dataset_path = f"{datasets_path_prefix}/synthetic_niah_tokenized_Llama-3.2-1B_strings_max_length_4096_num_samples_100000_with_eos_token{dataset_suffix}_merged_with_labels_on_answer"
-                    else:
-                        raise ValueError(f"Unknown dataset: {training_args.dataset}")
-                elif "qwen2" in training_args.model_checkpoint.lower():
-                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Qwen2.5-1.5B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged{placement_suffix}"
-                    print("Increase dataset shards for Qwen2.5-1.5B to", dataset_shards_limit)
-                elif "smollm2" in training_args.model_checkpoint.lower():
-                    dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_SmolLM2-1.7B{max_length_dataset_suffix}_with_eos_token{dataset_suffix}_merged{placement_suffix}"
-                else:
-                    raise ValueError(f"Unknown model checkpoint: {training_args.model_checkpoint}")
-                    # dataset_path = f'{current_dir}/fineweb_edu_tokenized_gpt2_with_special_embedding_mask_clothest_eos_token_idx_full'
-            else:
-                dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_gpt2_eos"
-
-            # dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_max_length_8196_with_eos_token_num_4_merged_shard_0_of_1000/"
-            # dataset_path = f"{datasets_path_prefix}/fineweb_edu_tokenized_Llama-3.2-1B_max_length_16384_with_eos_token_num_4_merged_shard_0_of_1000/"
-
-            print("Loading dataset from", dataset_path)
-            fineweb_dataset = Dataset.load_from_disk(dataset_path)
-
-            if "labels" in fineweb_dataset.column_names:
-                fineweb_dataset = fineweb_dataset.rename_column("labels", "labels_hidden")
-
-            TOTAL_SHARDS = 50  # CONSTANT
-            dataset_shards = []
-
-            for i in range(TOTAL_SHARDS):
-                if i < training_args.offset_dataset_shards or i >= training_args.offset_dataset_shards + dataset_shards_limit:
-                    continue
-                dataset_shards.append(fineweb_dataset.shard(index=i, num_shards=TOTAL_SHARDS))
-                print(f"loading shard {i}")
-
-            print(f"loaded {len(dataset_shards)} shards")
-            fineweb_dataset = datasets.concatenate_datasets(dataset_shards)
-
-            print("dataset len", len(fineweb_dataset))
-
-        else:
-            data_files = []
-            for i in range(6):
-                for j in range(10):
-                    data_files.append(f"sample/100BT/{i:03}_{j:05}.parquet")
-
-            fineweb_dataset = load_dataset("HuggingFaceFW/fineweb-edu", data_files=data_files, num_proc=48)
-            fineweb_dataset = fineweb_dataset["train"]
-
-            def tokenize_function(examples):
-                text = examples["text"]
-
-                tokenized_inputs = tokenizer(text, truncation=True, padding="max_length", max_length=1024, return_tensors="pt")
-
-                return tokenized_inputs
-
-            fineweb_dataset = fineweb_dataset.map(tokenize_function, batched=True, num_proc=48)
+        print("dataset len", len(fineweb_dataset))
 
         print("training_args.select_train_dataset_items", training_args.select_train_dataset_items)
         if training_args.select_train_dataset_items > 0:
@@ -140,35 +70,45 @@ if __name__ == "__main__":
         train_dataset = fineweb_dataset
         eval_dataset = fineweb_dataset.select(range(min(10, len(fineweb_dataset))))
 
-    nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    # nested_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    print("train_dataset", train_dataset)
-    if "token_logprobs" in train_dataset.column_names:
-        train_dataset = train_dataset.remove_columns("token_logprobs")
-        print("removed token_logprobs column from train_dataset")
-
-    if "seq_length" in train_dataset.column_names:
-        train_dataset = train_dataset.remove_columns("seq_length")
-        print("removed token_logprobs column from train_dataset")
-
-    if "labels_hidden" in train_dataset.column_names:
-        train_dataset = train_dataset.remove_columns("labels_hidden")
-        print("removed labels_hidden column from train_dataset")
+    special_token_ids = tokenizer.end_of_sentence_token_ids
+    num_eos_tokens = training_args.number_of_eos_tokens
+    max_sequence_length = training_args.max_sequence_length
 
     def crutch_collator(examples):
-        collate_dummy = nested_data_collator(examples)
+        tokenized_text = tokenizer(
+            [e["text"] for e in examples],
+            truncation=True,
+            max_length=training_args.max_sequence_length,
+            padding="max_length",
+            return_tensors="pt",
+        )
 
-        if len(collate_dummy["attention_mask"].shape) == 3:
-            collate_dummy["attention_mask"] = collate_dummy["attention_mask"].squeeze(1)
+        if len(tokenized_text["attention_mask"].shape) == 3:
+            tokenized_text["attention_mask"] = tokenized_text["attention_mask"].squeeze(1)
 
-        assert "special_embeddings_mask" in collate_dummy
-        assert "clothest_end_of_sentence_token_idx" in collate_dummy
+        input_ids = tokenized_text.input_ids
 
-        if "labels_hidden" in collate_dummy:
-            collate_dummy["labels"] = collate_dummy["labels_hidden"].squeeze(1)
-            del collate_dummy["labels_hidden"]
+        special_embeddings_mask = torch.zeros(input_ids.shape, dtype=torch.bool, device=input_ids.device)
 
-        return collate_dummy
+        for special_token_id in special_token_ids:
+            special_embeddings_mask = special_embeddings_mask | (input_ids == special_token_id)
+
+        clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
+            special_embeddings_mask, num_special_tokens=num_eos_tokens
+        )
+
+        labels = input_ids.clone()
+        if tokenizer.pad_token_id is not None:
+            labels[labels == tokenizer.pad_token_id] = -100
+
+        return {
+            **tokenized_text,
+            "special_embeddings_mask": special_embeddings_mask,
+            "clothest_end_of_sentence_token_idx": clothest_end_of_sentence_token_idx,
+            "labels": labels,
+        }
 
     data_collator = crutch_collator
 

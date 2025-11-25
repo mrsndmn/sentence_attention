@@ -59,6 +59,7 @@ class SentenceTrainingArguments(TrainingArguments):
     dataloader_prefetch_factor: int = field(default=8)
 
     dataset: str = field(default="fineweb_edu")  # fineweb_edu | dclm | my_recall
+    max_sequence_length: int = 4096
 
     bf16: bool = field(default=False)
 
