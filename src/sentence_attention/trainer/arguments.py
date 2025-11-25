@@ -55,7 +55,8 @@ class SentenceTrainingArguments(TrainingArguments):
     report_to: str = field(default="tensorboard")  # clearml | wandb | none | tensorboard
     logging_steps: int = field(default=100)
     dataloader_drop_last: bool = field(default=True)
-    dataloader_num_workers: int = field(default=0)
+    dataloader_num_workers: int = field(default=16)
+    dataloader_prefetch_factor: int = field(default=8)
 
     dataset: str = field(default="fineweb_edu")  # fineweb_edu | dclm | my_recall
 

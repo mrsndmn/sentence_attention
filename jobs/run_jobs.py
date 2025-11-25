@@ -188,7 +188,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--ft_with_bos_token {ft_with_bos_token} "
             f"--max_steps {max_steps} "
             f"--save_safetensors {save_safetensors} "
-            f"--dataloader_num_workers 4 "
+            f"--dataloader_num_workers 16 "
             f"{resume_from_checkpoint_s} "
             f"--use_liger_kernel 1 "
             # f"--use_liger_kernel 0 "

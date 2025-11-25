@@ -32,7 +32,7 @@ if __name__ == "__main__":
 
     dataset_name = "HuggingFaceFW/fineweb-edu"
     dataset = load_dataset(dataset_name, "sample-10BT", num_proc=16, split="train")
-    dataset = dataset.shard(num_shards=1000, index=0)
+    dataset = dataset.shard(num_shards=500, index=0)
 
     special_token_ids = tokenizer.end_of_sentence_token_ids
 
@@ -62,22 +62,13 @@ if __name__ == "__main__":
 
     dataloader = DataLoader(dataset, batch_size=1, collate_fn=crutch_collator)
 
-    # for i, _ in tqdm(enumerate(dataloader)):
-    #     if i == 10:
-    #         break
-
     all_durations = []
 
-    # start_time = time.perf_counter()
-    # for _ in tqdm(dataloader):
-    #     pass
-    # all_durations.append(time.perf_counter() - start_time)
-
     for nw in [8, 16]:
-        dataloader8 = DataLoader(dataset, prefetch_factor=2, batch_size=16, collate_fn=crutch_collator, num_workers=nw)
+        dataloader = DataLoader(dataset, prefetch_factor=8, batch_size=1, collate_fn=crutch_collator, num_workers=nw)
 
         start_time = time.perf_counter()
-        for _ in tqdm(dataloader8, desc=f"nw={nw}"):
+        for _ in tqdm(dataloader, desc=f"nw={nw}"):
             pass
         all_durations.append(time.perf_counter() - start_time)
 
