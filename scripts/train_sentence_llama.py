@@ -55,7 +55,7 @@ if __name__ == "__main__":
             placement_suffix = (
                 f"_uniform_interval_{training_args.uniform_interval_tokens}"
                 if training_args.gist_placement == "uniform"
-                else "_sentence"
+                else ""
             )
 
             if training_args.gist_placement == "with_logits":

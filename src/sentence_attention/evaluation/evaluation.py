@@ -17,7 +17,7 @@ task_to_default_batch_size = {
     "piqa": 64,
     "siqa": 256,
     "openbookqa": 256,
-    "winogrande": 512,
+    "winogrande": 256,
 }
 
 

@@ -7,8 +7,10 @@ from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
     special_token_mask_to_clothest_token_idx_slow,
 )
+from sentence_attention.models.sentence_qwen2.modeling_sentence_qwen2 import SentenceQwen2ForCausalLM
 from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache, scrooge_prefill
 from transformers import AutoTokenizer, DynamicCache
+
 
 # from transformers import LlamaForCausalLM
 
@@ -41,13 +43,17 @@ def test_generate_country():
 
 
 def test_generate_number():
-    checkpoint = os.path.join(
-        ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067"
-    )
+    # checkpoint = os.path.join(
+    #     ARTIFACTS_PREFIX, "./experiments/eos_4/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_4_KS38WK9A/checkpoint-9067"
+    # )
+    # model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
 
     save_maps = False
 
-    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_8/sentence_Qwen2.5-1.5B_ft_4k_full_num_eos_tokens_8_NUL4ISCJ/checkpoint-21542/"
+    )
+    model = SentenceQwen2ForCausalLM.from_pretrained(checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
     device = "cpu"
@@ -124,7 +130,7 @@ def test_generate_number():
             generated_outputs = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                max_new_tokens=5,
+                max_new_tokens=10,
                 use_cache=False,
             )
 
@@ -133,14 +139,14 @@ def test_generate_number():
 
             generated_output_text = generated_output_text.strip().removesuffix(".")
 
-            if generated_output_text.endswith("2368710"):
+            if "uninterested-cashier mentioned in the provided text is 2368710." in generated_output_text:
                 print(f"\033[92mTest passed for {task_type}\033[0m")
             else:
                 print(f"\033[91mTest failed for {task_type}\033[0m")
                 failed.append(task_type)
 
         # assert len(failed) == 0, f"Failed tests: {failed}"
-    # breakpoint()
+    breakpoint()
 
 
 def test_generate_summary():

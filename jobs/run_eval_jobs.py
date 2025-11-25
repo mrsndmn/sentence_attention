@@ -51,12 +51,20 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     helmet_workdir_prefix = "/workspace-SR004.nfs2/d.tarasov/HELMET"
 
+    pretrained_model_artifacts_path = pretrained_model
+
+    if (
+        pretrained_model_artifacts_path
+        == "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_0/AutoCompressor-Llama-2-7b-6k/checkpoint-0"
+    ):
+        pretrained_model = "princeton-nlp/AutoCompressor-Llama-2-7b-6k"
+
     if ruler_mode == "tiny":
-        output_dir = os.path.join(pretrained_model, "helmet_eval", benchmark)  # tiny eval
+        output_dir = os.path.join(pretrained_model_artifacts_path, "helmet_eval", benchmark)  # tiny eval
     elif ruler_mode == "short":
-        output_dir = os.path.join(pretrained_model, "helmet_eval_short", benchmark)  # short eval
+        output_dir = os.path.join(pretrained_model_artifacts_path, "helmet_eval_short", benchmark)  # short eval
     elif ruler_mode == "long":
-        output_dir = os.path.join(pretrained_model, "helmet_eval_long", benchmark)  # long eval
+        output_dir = os.path.join(pretrained_model_artifacts_path, "helmet_eval_long", benchmark)  # long eval
     else:
         raise ValueError(f"Invalid ruler_mode: {ruler_mode}")
 
@@ -71,11 +79,15 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
 
     current_env_bin_path = env_bin_path
     python_path_prefix_dirs = f"{helmet_workdir_prefix}/src:{helmet_workdir_prefix}/../sentence_attention/src:{helmet_workdir_prefix}/../transformers_adaptive_fan_in_fan_out/src"
-    if "sepcache" in pretrained_model.lower():
+    if "sepcache" in pretrained_model_artifacts_path.lower():
         current_env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/sepcache/bin"
         python_path_prefix_dirs = f"{helmet_workdir_prefix}/src"
 
-    use_chat_template = "instruct" in pretrained_model.lower()
+    if "autocompressor" in pretrained_model_artifacts_path.lower():
+        current_env_bin_path = "/workspace-SR004.nfs2/d.tarasov/envs/autocompressors2/bin"
+        python_path_prefix_dirs = f"{python_path_prefix_dirs}:../AutoCompressors"
+
+    use_chat_template = "instruct" in pretrained_model_artifacts_path.lower()
     script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {current_env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template {use_chat_template} --no_torch_compile --output_dir {output_dir} --limit_max_length 33000 '"
 
     print(f"\n\n{script_str}\n")
