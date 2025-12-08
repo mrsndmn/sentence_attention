@@ -823,7 +823,7 @@ def run_group_full_4k(
     num_nodes = 6 if num_nodes is None else num_nodes
 
     num_train_epochs = 1
-    save_steps = 1000
+    save_steps = 2000
     optimized_params = "full"
     max_grad_norm = "2.0"
     # lr_scheduler_type = "constant_with_warmup"

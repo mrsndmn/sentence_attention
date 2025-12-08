@@ -1,7 +1,11 @@
 import os
+import random
+
+from datasets import load_dataset
 
 import pytest
 import torch
+import evaluate
 from sentence_attention.artifacts.experiments import ARTIFACTS_PREFIX
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     SentenceLlamaForCausalLM,
@@ -147,6 +151,110 @@ def test_generate_number():
 
         # assert len(failed) == 0, f"Failed tests: {failed}"
     breakpoint()
+
+
+def test_generate_from_compression():
+
+    checkpoint = os.path.join(
+        ARTIFACTS_PREFIX, "./experiments/eos_8/sentence_Llama-3.2-3B_ft_4k_full_num_eos_tokens_8_EIXX178Z/checkpoint-19747"
+    )
+    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint)
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+    base_tokenizer = AutoTokenizer.from_pretrained("unsloth/Llama-3.2-3B")
+
+    # emb = model.get_input_embeddings().weight
+    # print(emb[-1, :].norm(2), emb[-2, :].norm(2), emb[-3, :].norm(2), emb[-4, :].norm(2))
+    # print(emb[100, :].norm(2), emb[200, :].norm(2))
+    # breakpoint()
+
+    device = "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Device", device)
+
+    model.to(device)
+
+    texts = [
+        # ("instruction", "Repeat numbers only, do not repeat current text. 1 2 3."),
+        ("instruction16", "Remember following sentence: {text}. The previous sentence was:", 16),
+        ("instruction32", "Remember following sentence: {text}. The previous sentence was:", 32),
+        ("instruction64", "Remember following sentence: {text}. The previous sentence was:", 64),
+        # ("instruction_separate", "Repeat following sentence. 1 2 3."),
+    ]
+
+    with torch.no_grad():
+
+        dataset = load_dataset("mrsndmn/pg19", split="test")
+
+        for task_type, task_prefix, max_tokens in texts:
+            references = []
+            generations = []
+            num_tokens = []
+            for item in dataset:
+
+                result_sentence = None
+                line = item["text"].replace("\n", " ").strip()
+                for sentence in line.split("."):
+                    sentence_strip = sentence.strip()
+                    if (
+                        "http" in sentence.lower()
+                        or "----" in sentence
+                        or "copyright" in sentence.lower()
+                        or "CHAPTER" in sentence.upper()
+                    ):
+                        continue
+                    # sentence_strip = sentence.replace('.', ';')
+                    if result_sentence is None or (len(sentence_strip) > len(result_sentence)):
+                        result_sentence = sentence_strip
+                        while "  " in result_sentence:
+                            result_sentence = result_sentence.replace("  ", " ")
+                        if random.random() > 0.95:
+                            break
+
+                if result_sentence is None:
+                    result_sentence = item["text"]
+
+                # print(len(base_tokenizer.encode(result_sentence, add_special_tokens=False)), "result_sentence", result_sentence)
+                dataset_item = base_tokenizer.encode(
+                    result_sentence, truncation=True, max_length=max_tokens, add_special_tokens=False
+                )
+
+                input_ids = tokenizer.encode(
+                    task_prefix.format(text=base_tokenizer.decode(dataset_item)),
+                    return_tensors="pt",
+                )
+                input_ids = input_ids.to(device)
+                # print("input_ids", input_ids.shape[1])
+
+                attention_mask = torch.ones_like(input_ids).to(device)
+
+                generated_outputs = model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    max_new_tokens=len(dataset_item),
+                    use_cache=False,
+                )
+
+                generated_output_text = tokenizer.decode(generated_outputs[0][input_ids.shape[1] :], skip_special_tokens=True)
+                reference = base_tokenizer.decode(dataset_item)
+                generation = generated_output_text[1:]
+                # print("!!! Generated outputs:", generation)
+                # print("!!! Target text      :", reference)
+
+                references.append(reference)
+                generations.append(generation)
+                num_tokens.append(len(dataset_item))
+
+            bleu_metric = evaluate.load("sacrebleu")
+            rouge_metric = evaluate.load("rouge")
+
+            # sacrebleu expects list of list references
+            bleu = bleu_metric.compute(predictions=generations, references=[[ref] for ref in references])
+            rouge = rouge_metric.compute(predictions=generations, references=references)
+
+            print(task_type, "BLEU:", bleu)
+            print(task_type, "ROUGE:", rouge)
+            print(task_type, "mean tokens:", torch.tensor(num_tokens).float().mean())
+            print("=========")
 
 
 def test_generate_summary():

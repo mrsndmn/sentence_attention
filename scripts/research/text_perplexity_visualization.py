@@ -63,10 +63,11 @@ def _compute_arrays(
         segment_sum += cs_ppl
         y[i] = segment_sum
         # if token-wise ppl exceeds threshold, start a new segment next step
-        if cs_ppl > reset_on_max_value:
+        if segment_sum > reset_on_max_value:
             segment_sum = 0.0
 
     print("y", y)
+    # breakpoint()
 
     return y
 
@@ -90,10 +91,10 @@ def _plot(
     import matplotlib.pyplot as plt  # noqa: PLC0415
 
     fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(x, y, label="perplexity", color="tab:blue")
+    ax.plot(x, y, color="tab:blue")
     ax.set_xlabel("Token index")
-    ax.set_ylabel("Perplexity")
-    ax.set_title(title)
+    ax.set_ylabel("CE")
+    # ax.set_title(title)
     ax.grid(True, alpha=0.3)
 
     if ylim is not None:
@@ -105,7 +106,7 @@ def _plot(
         max_labels = 128
         if n <= max_labels:
             ax.set_xticks(x)
-            ax.set_xticklabels(tokens_text, rotation=90, fontsize=7)
+            ax.set_xticklabels(tokens_text, rotation=90, fontsize=6)
         else:
             step = int(math.ceil(n / max_labels))
             tick_positions = x[::step]
