@@ -200,7 +200,7 @@ def evaluate_synthetic_my_recall(
             inputs_ids = prompt_tokens
         else:
             inputs = tokenizer(sample, return_tensors="pt").to(device)
-            # print("inputs.input_ids.shape", inputs["input_ids"].shape)
+            print("inputs.input_ids.shape", inputs["input_ids"].shape)
             outputs = model.generate(**inputs, max_new_tokens=20)
             inputs_ids = inputs["input_ids"]
 
@@ -211,11 +211,11 @@ def evaluate_synthetic_my_recall(
             if len(predicted_numbers) > 0:
                 predicted_number = predicted_numbers[0]
                 # print("prediction", prediction)
-                # print("predicted_number", predicted_number)
-                # print("answer", answer)
+                print("predicted_number", predicted_number)
+                print("answer", answer)
                 prediction_scores.append(int(predicted_number) == answer)
             else:
-                # print("No numbers found in prediction", prediction)
+                print("No numbers found in prediction", prediction)
                 prediction_scores.append(False)
         elif niddle_type == "strings":
             predicted_string = prediction.strip().split(": ")[0].split(".")[0]

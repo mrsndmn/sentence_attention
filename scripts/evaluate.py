@@ -79,6 +79,7 @@ if __name__ == "__main__":
             results.append(result)
         # Save plots for accuracy vs query_words_count
         plt.plot(query_words_count_list, [result["accuracy"] for result in results])
+        plt.scatter(query_words_count_list, [result["accuracy"] for result in results])
         plt.xlabel("Query words count")
         plt.ylabel("Accuracy")
         plt.ylim(0, 1)
@@ -106,6 +107,7 @@ if __name__ == "__main__":
 
         # Save plots for accuracy vs value_max_number
         plt.plot(value_max_number_exponent_list, [result["accuracy"] for result in results])
+        plt.scatter(value_max_number_exponent_list, [result["accuracy"] for result in results])
         plt.xlabel("Value max number exponent")
         plt.ylabel("Accuracy")
         plt.ylim(0, 1)
