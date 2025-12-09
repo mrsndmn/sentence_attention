@@ -56,7 +56,7 @@ class SentenceTrainingArguments(TrainingArguments):
     logging_steps: int = field(default=100)
     dataloader_drop_last: bool = field(default=True)
     dataloader_num_workers: int = field(default=16)
-    dataloader_prefetch_factor: int = field(default=8)
+    # dataloader_prefetch_factor: Optional[int] = field(default=8)
 
     dataset: str = field(default="fineweb_edu")  # fineweb_edu | dclm | my_recall
     max_sequence_length: int = 4096

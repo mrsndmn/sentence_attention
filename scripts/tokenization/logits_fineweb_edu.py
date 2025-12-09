@@ -19,6 +19,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    # device = 'cpu'
 
     pretrained_model_name = args.pretrained_model_name  # HuggingFaceTB/SmolLM2-1.7B / unsloth/Llama-3.2-1B
     max_length = args.max_length
@@ -82,6 +83,8 @@ if __name__ == "__main__":
             per_token_logits.append(token_logprobs)
 
     ds = Dataset.from_dict({"token_logprobs": per_token_logits, "seq_length": seq_length})
+
+    breakpoint()
 
     ds.save_to_disk(target_dir)
     print("Saved to", target_dir)
