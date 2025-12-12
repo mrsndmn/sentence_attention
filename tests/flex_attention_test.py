@@ -90,27 +90,29 @@ def test_flex_attention_sentence_mask():
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             [1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
             [1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-            [0, 1, 1, 1, 1, 0, 0, 0, 0, 0],
-            [0, 1, 1, 1, 1, 1, 0, 0, 0, 0],
-            [0, 1, 1, 0, 1, 1, 1, 0, 0, 0],
-            [0, 1, 1, 0, 1, 1, 1, 1, 0, 0],
-            [0, 1, 1, 0, 1, 1, 1, 1, 1, 0],
-            [0, 1, 1, 0, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+            [1, 1, 1, 0, 1, 1, 1, 0, 0, 0],
+            [1, 1, 1, 0, 1, 1, 1, 1, 0, 0],
+            [1, 1, 1, 0, 1, 1, 1, 1, 1, 0],
+            [1, 1, 1, 0, 1, 1, 1, 1, 1, 1],
         ]
     )
     expected_mask = torch.where(expected_mask.bool(), 1, -float("inf"))
 
-    def custom_mask(b, h, q_idx, kv_idx):
+    def mask_mod(b, h, q_idx, kv_idx):
+        q_valid = attention_mask_bool[b, q_idx]
         eos_token_idx = clothest_eos_token_idx[b, q_idx]
 
-        causal_mask = (kv_idx <= q_idx) & attention_mask_bool[b, q_idx] & attention_mask_bool[b, kv_idx]
-        eos_sync_tokens = causal_mask & special_embeddings_mask[b, kv_idx]
-        causal_triu_mask = causal_mask & (kv_idx >= eos_token_idx)
+        base_causal = (kv_idx <= q_idx) & attention_mask_bool[b, kv_idx]
+        eos_sync_tokens = special_embeddings_mask[b, kv_idx] & base_causal
+        causal_triu_mask = base_causal & (kv_idx >= eos_token_idx)
+        allow_first_token = kv_idx == 0
 
-        return causal_triu_mask | eos_sync_tokens
+        return q_valid & (allow_first_token | causal_triu_mask | eos_sync_tokens)
 
-    generated_mask_bool = create_mask(custom_mask, B=None, H=None, Q_LEN=seq_len, KV_LEN=seq_len, device="cpu")[0, 0]
+    generated_mask_bool = create_mask(mask_mod, B=None, H=None, Q_LEN=seq_len, KV_LEN=seq_len, device="cpu")[0, 0]
     generated_mask = torch.where(generated_mask_bool, 1, -float("inf"))
 
     assert (expected_mask == generated_mask).all()
