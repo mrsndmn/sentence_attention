@@ -889,6 +889,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 batch_size=input_tensor.shape[0],
                 clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
                 special_embeddings_mask=special_embeddings_mask,
+                ft_with_bos_token=self.config.ft_with_bos_token,
             )
         else:
             # In case the provided `attention` mask is 2D, we generate a causal mask here (4D).
@@ -927,22 +928,41 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         batch_size: int,
         clothest_end_of_sentence_token_idx: torch.Tensor,
         special_embeddings_mask: torch.Tensor,
+        ft_with_bos_token=False,
     ):
 
         attention_mask_bool = attention_mask.bool()
         special_embeddings_mask = special_embeddings_mask.bool()
 
+        assert attention_mask_bool[:, 0].all().item(), "attention_mask is expected to be right-padded (first token unmasked)"
+
         # [ bs, seq_len ]
         assert len(attention_mask_bool.shape) == 2
 
-        def mask_mod(b, h, q_idx, kv_idx):
-            eos_token_idx = clothest_end_of_sentence_token_idx[b, q_idx]
+        if ft_with_bos_token:
 
-            causal_mask = (kv_idx <= q_idx) & attention_mask_bool[b, q_idx] & attention_mask_bool[b, kv_idx]
-            eos_sync_tokens = causal_mask & special_embeddings_mask[b, kv_idx]
-            causal_triu_mask = causal_mask & (kv_idx >= eos_token_idx)
+            def mask_mod(b, h, q_idx, kv_idx):
+                q_valid = attention_mask_bool[b, q_idx]
+                eos_token_idx = clothest_end_of_sentence_token_idx[b, q_idx]
 
-            return causal_triu_mask | eos_sync_tokens
+                base_causal = (kv_idx <= q_idx) & attention_mask_bool[b, kv_idx]
+                eos_sync_tokens = special_embeddings_mask[b, kv_idx] & base_causal
+                causal_triu_mask = base_causal & (kv_idx >= eos_token_idx)
+                allow_first_token = kv_idx == 0
+
+                return q_valid & (allow_first_token | causal_triu_mask | eos_sync_tokens)
+
+        else:
+
+            def mask_mod(b, h, q_idx, kv_idx):
+                q_valid = attention_mask_bool[b, q_idx]
+                eos_token_idx = clothest_end_of_sentence_token_idx[b, q_idx]
+
+                base_causal = (kv_idx <= q_idx) & attention_mask_bool[b, kv_idx]
+                eos_sync_tokens = special_embeddings_mask[b, kv_idx] & base_causal
+                causal_triu_mask = base_causal & (kv_idx >= eos_token_idx)
+
+                return q_valid & (causal_triu_mask | eos_sync_tokens)
 
         batch_size = attention_mask.shape[0]
         q_idx = sequence_length
@@ -1137,7 +1157,8 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         # breakpoint()
         # torch.save(final_mask, "final_mask_partial.pt")
         if ft_with_bos_token:
-            # TODO assert tokenizer is right padded
+            # TODO assert tokenizer is right-padded
+            assert (attention_mask[:, 0] == 1).all(), "attention mask is expected to be right-padded"
             final_mask[:, :, :, 0] = 0
 
         # torch.set_printoptions(profile='full', linewidth=10000)

@@ -191,6 +191,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--dataloader_num_workers 16 "
             f"{resume_from_checkpoint_s} "
             f"--use_liger_kernel 1 "
+            f"--sentence_attention_implementation sentence_attention_flex "
             # f"--use_liger_kernel 0 "
             # f"--remove_unused_columns 0 "
         )
@@ -829,7 +830,7 @@ def run_group_full_4k(
     # lr_scheduler_type = "constant_with_warmup"
     lr_scheduler_type = "cosine_with_min_lr"
 
-    default_limit_shards = 49
+    default_limit_shards = 7
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -844,6 +845,7 @@ def run_group_full_4k(
 
         local_limit_shards = exp_config.get("limit_dataset_shards", default_limit_shards)
 
+        # print("model_checkpoint", model_checkpoint)
         extra_kwargs = {}
         fsdp = None
         local_torch_compile = None
@@ -861,6 +863,7 @@ def run_group_full_4k(
         local_save_steps = exp_config.get("save_steps", save_steps)
 
         if model is not None and model.lower() not in model_checkpoint.lower():
+            # print("Model not match")
             continue
 
         if int(number_of_eos_tokens) not in num_eos_tokens:
@@ -1475,6 +1478,7 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--moe_num_experts", type=int, default=None)
     parser.add_argument("--gist_placement", type=str, default="sentence", choices=["sentence", "uniform", "with_logits"])
     parser.add_argument("--uniform_interval_tokens", type=int, default=40)
+    parser.add_argument("--ft_with_bos_token", action="store_true", help="Enable fine-tuning with BOS token")
     parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
     parser.add_argument("--num_nodes", type=int, default=None, help="Override number of nodes/workers")
 
@@ -1553,6 +1557,7 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
@@ -1569,6 +1574,7 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
@@ -1585,6 +1591,7 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
@@ -1601,6 +1608,7 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
@@ -1634,6 +1642,7 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
