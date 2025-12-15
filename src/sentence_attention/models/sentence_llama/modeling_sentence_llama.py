@@ -939,30 +939,37 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         # [ bs, seq_len ]
         assert len(attention_mask_bool.shape) == 2
 
-        if ft_with_bos_token:
+        if sequence_length == target_length:
+            if ft_with_bos_token:
 
-            def mask_mod(b, h, q_idx, kv_idx):
-                q_valid = attention_mask_bool[b, q_idx]
-                eos_token_idx = clothest_end_of_sentence_token_idx[b, q_idx]
+                def mask_mod(b, h, q_idx, kv_idx):
+                    q_valid = attention_mask_bool[b, q_idx]
+                    eos_token_idx = clothest_end_of_sentence_token_idx[b, q_idx]
 
-                base_causal = (kv_idx <= q_idx) & attention_mask_bool[b, kv_idx]
-                eos_sync_tokens = special_embeddings_mask[b, kv_idx] & base_causal
-                causal_triu_mask = base_causal & (kv_idx >= eos_token_idx)
-                allow_first_token = kv_idx == 0
+                    base_causal = (kv_idx <= q_idx) & attention_mask_bool[b, kv_idx]
+                    eos_sync_tokens = special_embeddings_mask[b, kv_idx] & base_causal
+                    causal_triu_mask = base_causal & (kv_idx >= eos_token_idx)
+                    allow_first_token = kv_idx == 0
 
-                return q_valid & (allow_first_token | causal_triu_mask | eos_sync_tokens)
+                    return q_valid & (allow_first_token | causal_triu_mask | eos_sync_tokens)
+
+            else:
+
+                def mask_mod(b, h, q_idx, kv_idx):
+                    q_valid = attention_mask_bool[b, q_idx]
+                    eos_token_idx = clothest_end_of_sentence_token_idx[b, q_idx]
+
+                    base_causal = (kv_idx <= q_idx) & attention_mask_bool[b, kv_idx]
+                    eos_sync_tokens = special_embeddings_mask[b, kv_idx] & base_causal
+                    causal_triu_mask = base_causal & (kv_idx >= eos_token_idx)
+
+                    return q_valid & (causal_triu_mask | eos_sync_tokens)
 
         else:
 
             def mask_mod(b, h, q_idx, kv_idx):
-                q_valid = attention_mask_bool[b, q_idx]
-                eos_token_idx = clothest_end_of_sentence_token_idx[b, q_idx]
-
-                base_causal = (kv_idx <= q_idx) & attention_mask_bool[b, kv_idx]
-                eos_sync_tokens = special_embeddings_mask[b, kv_idx] & base_causal
-                causal_triu_mask = base_causal & (kv_idx >= eos_token_idx)
-
-                return q_valid & (causal_triu_mask | eos_sync_tokens)
+                # always true
+                return q_idx >= -1
 
         batch_size = attention_mask.shape[0]
         q_idx = sequence_length
@@ -977,12 +984,10 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             kv_idx,
             device=attention_mask.device,
             # BLOCK_SIZE=256,
-            BLOCK_SIZE=128,
             # BLOCK_SIZE=64,
             # BLOCK_SIZE=32,
         )
-
-        # print("block_mask", block_mask)
+        # breakpoint()
 
         return block_mask
 
@@ -1299,8 +1304,8 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         current_cache_position = cache_position.clone()
         current_input_ids = input_ids[:, -1:].clone()
 
-        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
-        # DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+        # DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
+        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
         # Force eager attention for decoding
         self.config._attn_implementation = DECODE_DEFAULT_ATTN_IMPLEMENTATION
 
@@ -1308,10 +1313,11 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             cur_len = initial_len + step  # next position to fill
 
             # Views (no cat/alloc): pass masks up to current token inclusive
-            current_attention_mask = full_attention_mask[:, : cur_len + 1]
-            current_special_embeddings_mask = full_special_mask[:, : cur_len + 1]
-            current_closest_idx = full_closest_eos_idx[:, : cur_len + 1]
+            current_attention_mask = full_attention_mask[:, :cur_len]
+            current_special_embeddings_mask = full_special_mask[:, :cur_len]
+            current_closest_idx = full_closest_eos_idx[:, :cur_len]
 
+            # breakpoint()
             model_out = self(
                 input_ids=current_input_ids,
                 attention_mask=current_attention_mask,
@@ -1321,6 +1327,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                 cache_position=current_cache_position,
                 output_hidden_states=False,
             )
+            # print("past_key_values", past_key_values.get_seq_length())
 
             # Decide next token
             last_generated = int(generated_tokens_buf[num_generated - 1].item())
