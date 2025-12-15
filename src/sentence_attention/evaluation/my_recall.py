@@ -201,6 +201,7 @@ def evaluate_synthetic_my_recall(
         else:
             inputs = tokenizer(sample, return_tensors="pt").to(device)
             print("inputs.input_ids.shape", inputs["input_ids"].shape)
+            # outputs = model.generate_no_kv_cache(**inputs, max_new_tokens=20)
             outputs = model.generate(**inputs, max_new_tokens=20)
             inputs_ids = inputs["input_ids"]
 

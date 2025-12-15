@@ -4,7 +4,12 @@ from transformers import DynamicCache
 
 
 def full_prefill_small_kv_cache(
-    model, input_ids, attention_mask, special_embeddings_mask, clothest_end_of_sentence_token_idx, output_hidden_states=False
+    model,
+    input_ids,
+    attention_mask,
+    special_embeddings_mask,
+    clothest_end_of_sentence_token_idx,
+    output_hidden_states=False,
 ):
 
     assert clothest_end_of_sentence_token_idx.shape[0] == 1, "only single size batch is supported"
@@ -37,6 +42,10 @@ def full_prefill_small_kv_cache(
     len_last_normal_tokens = input_ids.shape[1] - (last_eos_token_idx + 1)
 
     special_embeddings_mask_kv_cache[:, last_eos_token_idx:] = 1
+
+    if model.config.ft_with_bos_token:
+        print("ft_with_bos_token", model.config.ft_with_bos_token)
+        special_embeddings_mask_kv_cache[:, 0] = 1
 
     # print("full_prefill_small_kv_cache special_embeddings_mask_kv_cache", special_embeddings_mask_kv_cache)
 

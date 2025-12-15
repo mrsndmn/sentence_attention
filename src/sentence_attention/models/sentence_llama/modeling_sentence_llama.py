@@ -1064,7 +1064,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         4. **Padding** – the classical 2-D `attention_mask` is honoured for both query and key positions.
 
         The resulting tensor has shape ``(batch_size, 1, sequence_length, target_length)`` and contains
-        ``1`` for visible positions and ``-inf`` (the minimum of ``dtype``) for masked positions, matching the
+        ``0`` for visible positions and ``-inf`` (the minimum of ``dtype``) for masked positions, matching the
         heuristics that were previously produced by the Python triple-nested loop.
         """
 
@@ -1156,13 +1156,13 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         # breakpoint()
         # torch.save(final_mask, "final_mask_partial.pt")
-        if ft_with_bos_token:
+        if ft_with_bos_token and final_mask.shape[2] > 1:
             # TODO assert tokenizer is right-padded
             assert (attention_mask[:, 0] == 1).all(), "attention mask is expected to be right-padded"
             final_mask[:, :, :, 0] = 0
 
         # torch.set_printoptions(profile='full', linewidth=10000)
-        # print("final_mask", final_mask == 0)
+        # print("final_mask", (final_mask == 0)[:, :, :100, :100].long())
         # print("final_mask", final_mask.shape)
         # breakpoint()
 
@@ -1233,8 +1233,8 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
             from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache
 
-            # PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
-            PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
+            PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+            # PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
             self.config._attn_implementation = PREFILL_DEFAULT_ATTN_IMPLEMENTATION
 
             scrooge_prefill_outputs = full_prefill_small_kv_cache(
@@ -1300,6 +1300,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         current_input_ids = input_ids[:, -1:].clone()
 
         DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
+        # DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
         # Force eager attention for decoding
         self.config._attn_implementation = DECODE_DEFAULT_ATTN_IMPLEMENTATION
 
@@ -1378,6 +1379,62 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             }
 
         return concatenated_tokens
+
+    def generate_no_kv_cache(self, *args, **kwargs):
+
+        input_ids = kwargs["input_ids"]
+        assert input_ids.shape[0] == 1, "only batch size == 1 is supported"
+
+        initial_input_ids = input_ids.clone()
+
+        max_new_tokens = kwargs.get("max_new_tokens", 10)
+        # do_sample = kwargs["do_sample"]
+        assert "logits_processor" not in kwargs, "logits_processor is not supported for flexible_eos_tokens models"
+
+        # Generated tokens buffer (include first token per original behavior)
+        current_input_ids = initial_input_ids.clone()
+
+        prev_attention_implementation = self.config._attn_implementation
+        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+        self.config._attn_implementation = DECODE_DEFAULT_ATTN_IMPLEMENTATION
+
+        for _ in range(max_new_tokens):
+
+            attention_mask = torch.ones_like(current_input_ids)
+
+            special_embeddings_mask = torch.zeros_like(attention_mask)
+            if self.config.end_of_sentence_token_ids is not None:
+                for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
+                    special_embeddings_mask[current_input_ids == end_of_sentence_token_id] = 1
+
+            current_closest_idx = special_token_mask_to_clothest_token_idx_slow(
+                special_embeddings_mask,
+                num_special_tokens=len(self.config.end_of_sentence_token_ids),
+            )
+
+            model_out = self(
+                input_ids=current_input_ids,
+                attention_mask=attention_mask,
+                special_embeddings_mask=special_embeddings_mask,
+                clothest_end_of_sentence_token_idx=current_closest_idx,
+                output_hidden_states=False,
+            )
+
+            new_token = int(model_out.logits[:, -1:].argmax(dim=-1).item())
+
+            current_input_ids = torch.cat(
+                [current_input_ids, torch.tensor([[new_token]], device=current_input_ids.device)], dim=-1
+            )
+
+        if prev_attention_implementation is not None:
+            self.config._attn_implementation = prev_attention_implementation
+
+        if kwargs.get("return_dict_in_generate", False):
+            return {
+                "sequences": current_input_ids,
+            }
+
+        return current_input_ids
 
     def prepare_inputs_for_generation(
         self,
