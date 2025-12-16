@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Optional
+from typing import Optional, cast
 from transformers.activations import ACT2FN
 
 import math
@@ -11,6 +11,10 @@ import copy
 from dataclasses import dataclass
 
 from xlstm.xlstm_large.model import mLSTMLayer, mLSTMLayerConfig, mLSTMLayerStateType, soft_cap, mLSTMBackendConfig
+
+from transformers import AutoTokenizer
+from datasets import load_dataset
+import nltk
 
 
 class MaskState:
@@ -45,10 +49,60 @@ class MaskState:
             else:
                 return x[self.mask]
 
+    def selective_put(self, x, out, inv=False):
+        # try to avoid sync through nonzero on index
+        if inv:
+            if self.all():
+                return
+            elif not self.any():
+                out.copy_(x)
+            else:
+                out[self.inv_mask] = x
+        else:
+            if self.all():
+                out.copy_(x)
+            elif not self.any():
+                return
+            else:
+                out[self.mask] = x
+
+    def selective_add(self, x, out, inv=False):
+        # try to avoid sync through nonzero on index
+        if inv:
+            if self.all():
+                return
+            elif not self.any():
+                out.add_(x)
+            else:
+                out[self.inv_mask] += x
+        else:
+            if self.all():
+                out.add_(x)
+            elif not self.any():
+                return
+            else:
+                out[self.mask] += x
+
 
 @dataclass
 class BolmoConfig:
-    # TODO
+    # Model architecture
+    hidden_size: int = 1024
+    num_local_heads: int = 16
+    num_local_encoder_layers: int = 12
+
+    # MLP configuration
+    intermediate_size: int = 4096
+    local_intermediate_size: int = 2048
+    hidden_act: str = "silu"
+
+    # Normalization
+    rms_norm_eps: float = 1e-6
+    local_rms_norm_eps: float = 1e-6
+
+    # Boundary prediction
+    boundary_threshold: str = "sample:0"
+    boundary_predictor_lookahead: int = 1
     balance_boundary_loss: bool = True
 
 
@@ -324,7 +378,7 @@ class BolmoLocalEncoder(nn.Module):
         embeddings = self.subword_embedding(input_ids)
 
         h = embeddings
-        for i, block in enumerate(self.layers):
+        for _, block in enumerate(self.layers):
             h = block(h)
 
         boundary_logprobs, boundary_mask = self.boundary_predictor_module(h)
@@ -365,37 +419,155 @@ class BolmoBoundaryPredictor(nn.Module):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Pretrain boundaries model")
+    parser.add_argument(
+        "--model_checkpoint",
+        type=str,
+        required=True,
+        help="Path or name of the model checkpoint to use",
+    )
+    parser.add_argument(
+        "--max_sequence_length",
+        type=int,
+        default=4096,
+        help="Maximum sequence length for tokenization",
+    )
+    parser.add_argument(
+        "--dataset_name",
+        type=str,
+        default="HuggingFaceFW/fineweb-edu",
+        help="Dataset name to load",
+    )
+    parser.add_argument(
+        "--dataset_config",
+        type=str,
+        default="sample-10BT",
+        help="Dataset configuration name",
+    )
+    parser.add_argument(
+        "--cache_dir",
+        type=str,
+        default="/workspace-SR004.nfs2/d.tarasov/HF_CACHE",
+        help="Cache directory for datasets",
+    )
+    parser.add_argument(
+        "--num_proc",
+        type=int,
+        default=16,
+        help="Number of processes for dataset processing",
+    )
+    args = parser.parse_args()
 
     model_checkpoint = args.model_checkpoint
 
-    # TODO use vocabulary from model_checkpoint
+    # TODO use vocabulary from model_checkpoint in Bolmo model
 
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+    tokenizer.pad_token = tokenizer.eos_token
 
     fineweb_dataset = load_dataset(
-        "HuggingFaceFW/fineweb-edu",
-        "sample-10BT",
-        num_proc=16,
+        args.dataset_name,
+        args.dataset_config,
+        num_proc=args.num_proc,
         split="train",
-        cache_dir="/workspace-SR004.nfs2/d.tarasov/HF_CACHE",
+        cache_dir=args.cache_dir,
     )
+
+    # Download nltk punkt tokenizer if not already downloaded
+    try:
+        nltk.data.find("tokenizers/punkt")
+    except LookupError:
+        nltk.download("punkt", quiet=True)
 
     # Load dataloader.
 
     def data_collator(examples):
+        texts = [e["text"] for e in examples]
+
+        # Tokenize with offset mapping to map character positions to token positions
         tokenized_text = tokenizer(
-            [e["text"] for e in examples],
+            texts,
             truncation=True,
-            max_length=training_args.max_sequence_length,
+            max_length=args.max_sequence_length,
             padding="max_length",
             return_tensors="pt",
+            return_offsets_mapping=True,
         )
 
-        # TODO consider boundaries from sent_tokenize
-        # create "label" field in result with 1 values that corresponds for end of sentence tokens
-        # and 0 in other cases
+        input_ids: torch.Tensor = tokenized_text["input_ids"]
+        attention_mask = tokenized_text["attention_mask"]
+        offset_mappings = tokenized_text["offset_mapping"]
+
+        # Create boundary labels: 1 at end of sentence positions, 0 elsewhere
+        boundary_labels = torch.zeros_like(input_ids, dtype=torch.long)
+
+        for batch_idx, text in enumerate(texts):
+            # Find sentence boundaries using nltk
+            sentences = nltk.sent_tokenize(text)
+            if not sentences:
+                continue
+
+            # Calculate cumulative character positions where sentences end
+            # We need to find the exact character positions in the original text
+            sentence_end_chars = []
+            char_pos = 0
+            for sentence in sentences:
+                # Find where this sentence appears in the original text
+                sentence_start = text.find(sentence, char_pos)
+                if sentence_start == -1:
+                    # Fallback: use cumulative length
+                    char_pos += len(sentence)
+                    sentence_end_chars.append(char_pos)
+                    # Skip whitespace
+                    while char_pos < len(text) and text[char_pos].isspace():
+                        char_pos += 1
+                else:
+                    # Found the sentence, mark its end position
+                    sentence_end = sentence_start + len(sentence)
+                    sentence_end_chars.append(sentence_end)
+                    char_pos = sentence_end
+                    # Skip whitespace after sentence
+                    while char_pos < len(text) and text[char_pos].isspace():
+                        char_pos += 1
+
+            # Map character positions to token positions using offset mapping
+            offsets = offset_mappings[batch_idx]
+            seq_length = attention_mask[batch_idx].sum().item()
+
+            for end_char_pos in sentence_end_chars:
+                # Find the token that contains or is closest to the sentence end character
+                # Only consider tokens within the actual sequence (not padding)
+                best_token_idx = None
+                for token_idx in range(seq_length):
+                    start_char, end_char = offsets[token_idx]
+                    # Skip special tokens (offset is (0, 0))
+                    if start_char == 0 and end_char == 0:
+                        continue
+
+                    # Check if this token contains the sentence end position
+                    if start_char <= end_char_pos < end_char:
+                        best_token_idx = token_idx
+                        break
+                    # If we've passed the sentence end, use the previous valid token
+                    elif end_char > end_char_pos and token_idx > 0:
+                        prev_start, prev_end = offsets[token_idx - 1]
+                        if prev_start != 0 or prev_end != 0:
+                            best_token_idx = token_idx - 1
+                        break
+
+                # Mark the boundary token
+                if best_token_idx is not None and best_token_idx < args.max_sequence_length:
+                    boundary_labels[batch_idx, best_token_idx] = 1
+
+        # Remove offset_mapping from return dict as it's not needed downstream
+        tokenized_text.pop("offset_mapping")
+
+        # Add boundary labels to the return dict
+        tokenized_text["boundary_labels"] = boundary_labels
 
         return tokenized_text
 
-    # Create dataloader with tokenization and boundaries labels collator
-    # Learn boundaries predictor model with nltk sentence tokenization target.
+    # Initialize simple boundary predictor model and  write training cycle
+    # For sentence boundaries prediction.
