@@ -100,7 +100,13 @@ if __name__ == "__main__":
 
             dataset_shards_limit = training_args.limit_dataset_shards
 
-            fineweb_dataset = load_dataset("HuggingFaceFW/fineweb-edu", "sample-10BT", num_proc=16, split="train")
+            fineweb_dataset = load_dataset(
+                "HuggingFaceFW/fineweb-edu",
+                "sample-10BT",
+                num_proc=16,
+                split="train",
+                cache_dir="/workspace-SR004.nfs2/d.tarasov/HF_CACHE",
+            )
 
             TOTAL_SHARDS = 50  # CONSTANT
             dataset_shards = []

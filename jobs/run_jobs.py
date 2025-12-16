@@ -849,7 +849,7 @@ def run_group_full_4k(
         extra_kwargs = {}
         fsdp = None
         local_torch_compile = None
-        local_learning_rate = 0.0001
+        local_learning_rate = 0.0003
         if "Llama-3.1-8B" in model_checkpoint:
             fsdp = "1"
             local_torch_compile = "0"
