@@ -1,4 +1,6 @@
 import os
+import random
+import string
 
 import torch
 import torch.nn as nn
@@ -649,88 +651,59 @@ if __name__ == "__main__":
     def data_collator(examples):
         texts = [e["text"] for e in examples]
 
-        # Tokenize with offset mapping to map character positions to token positions
-        tokenized_text = tokenizer(
-            texts,
-            truncation=True,
-            max_length=args.max_sequence_length,
-            padding="max_length",
-            return_tensors="pt",
-            return_offsets_mapping=True,
-        )
+        all_input_ids = []
+        all_attention = []
+        all_boundary = []
 
-        input_ids: torch.Tensor = tokenized_text["input_ids"]
-        attention_mask = tokenized_text["attention_mask"]
-        offset_mappings = tokenized_text["offset_mapping"]
-
-        # Create boundary labels: 1 at end of sentence positions, 0 elsewhere
-        boundary_labels = torch.zeros_like(input_ids, dtype=torch.long)
-
-        for batch_idx, text in enumerate(texts):
-            # Find sentence boundaries using nltk
+        for text in texts:
             sentences = nltk.sent_tokenize(text)
-            if not sentences:
-                continue
+            tokens: list[int] = []
+            boundaries: list[int] = []
 
-            # Calculate cumulative character positions where sentences end
-            # We need to find the exact character positions in the original text
-            sentence_end_chars = []
-            char_pos = 0
             for sentence in sentences:
-                # Find where this sentence appears in the original text
-                sentence_start = text.find(sentence, char_pos)
-                if sentence_start == -1:
-                    # Fallback: use cumulative length
-                    char_pos += len(sentence)
-                    sentence_end_chars.append(char_pos)
-                    # Skip whitespace
-                    while char_pos < len(text) and text[char_pos].isspace():
-                        char_pos += 1
-                else:
-                    # Found the sentence, mark its end position
-                    sentence_end = sentence_start + len(sentence)
-                    sentence_end_chars.append(sentence_end)
-                    char_pos = sentence_end
-                    # Skip whitespace after sentence
-                    while char_pos < len(text) and text[char_pos].isspace():
-                        char_pos += 1
-
-            # Map character positions to token positions using offset mapping
-            offsets = offset_mappings[batch_idx]
-            seq_length = attention_mask[batch_idx].sum().item()
-
-            for end_char_pos in sentence_end_chars:
-                # Find the token that contains or is closest to the sentence end character
-                # Only consider tokens within the actual sequence (not padding)
-                best_token_idx = None
-                for token_idx in range(seq_length):
-                    start_char, end_char = offsets[token_idx]
-                    # Skip special tokens (offset is (0, 0))
-                    if start_char == 0 and end_char == 0:
+                if sentence and random.random() < 0.5:
+                    sentence = sentence.rstrip()
+                    sentence = sentence.rstrip(string.punctuation)
+                    if not sentence:
                         continue
 
-                    # Check if this token contains the sentence end position
-                    if start_char <= end_char_pos < end_char:
-                        best_token_idx = token_idx
-                        break
-                    # If we've passed the sentence end, use the previous valid token
-                    elif end_char > end_char_pos and token_idx > 0:
-                        prev_start, prev_end = offsets[token_idx - 1]
-                        if prev_start != 0 or prev_end != 0:
-                            best_token_idx = token_idx - 1
-                        break
+                sent_ids = tokenizer(sentence, add_special_tokens=False)["input_ids"]
+                if not sent_ids:
+                    continue
 
-                # Mark the boundary token
-                if best_token_idx is not None and best_token_idx < args.max_sequence_length:
-                    boundary_labels[batch_idx, best_token_idx] = 1
+                # If adding this sentence would overflow, stop early
+                if len(tokens) + len(sent_ids) > args.max_sequence_length:
+                    break
 
-        # Remove offset_mapping from return dict as it's not needed downstream
-        tokenized_text.pop("offset_mapping")
+                tokens.extend(sent_ids)
+                # mark boundary at the last token of the sentence
+                if len(sent_ids) == 1:
+                    boundaries.append(1)
+                else:
+                    boundaries.extend([0] * (len(sent_ids) - 1) + [1])
 
-        # Add boundary labels to the return dict
-        tokenized_text["boundary_labels"] = boundary_labels
+            # Truncate to max length if needed
+            tokens = tokens[: args.max_sequence_length]
+            boundaries = boundaries[: args.max_sequence_length]
 
-        return tokenized_text
+            seq_len = len(tokens)
+            pad_len = args.max_sequence_length - seq_len
+
+            tokens.extend([tokenizer.pad_token_id] * pad_len)
+            boundaries.extend([0] * pad_len)
+
+            attention = [1] * seq_len + [0] * pad_len
+
+            all_input_ids.append(tokens)
+            all_boundary.append(boundaries)
+            all_attention.append(attention)
+
+        batch = {
+            "input_ids": torch.tensor(all_input_ids, dtype=torch.long),
+            "attention_mask": torch.tensor(all_attention, dtype=torch.long),
+            "boundary_labels": torch.tensor(all_boundary, dtype=torch.long),
+        }
+        return batch
 
     # Initialize simple boundary predictor model and  write training cycle
     # For sentence boundaries prediction.
