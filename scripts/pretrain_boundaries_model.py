@@ -1,7 +1,10 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from tqdm.auto import tqdm
 
@@ -11,11 +14,11 @@ from transformers.activations import ACT2FN
 import math
 import copy
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 from xlstm.xlstm_large.model import mLSTMLayer, mLSTMLayerConfig, mLSTMLayerStateType, soft_cap, mLSTMBackendConfig
 
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModel
 from datasets import load_dataset
 import nltk
 
@@ -428,7 +431,9 @@ def boundary_logprobs_to_logits(boundary_logprobs: torch.Tensor) -> torch.Tensor
     return logits
 
 
-def batch_fscore(pred_mask: torch.Tensor, labels: torch.Tensor, attention_mask: torch.Tensor) -> float:
+def batch_precision_recall_fscore(
+    pred_mask: torch.Tensor, labels: torch.Tensor, attention_mask: torch.Tensor
+) -> tuple[float, float, float]:
     valid_tokens = attention_mask.bool()
     preds = pred_mask & valid_tokens
     gold = labels.bool() & valid_tokens
@@ -440,7 +445,7 @@ def batch_fscore(pred_mask: torch.Tensor, labels: torch.Tensor, attention_mask: 
     precision = true_pos / (predicted_pos + 1e-8)
     recall = true_pos / (gold_pos + 1e-8)
     f1 = 2 * precision * recall / (precision + recall + 1e-8)
-    return f1
+    return precision, recall, f1
 
 
 def train_boundary_predictor(
@@ -450,11 +455,15 @@ def train_boundary_predictor(
     device: torch.device,
     log_interval: int,
     balance_boundary_loss: bool,
+    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
+    writer: SummaryWriter | None = None,
+    global_step_offset: int = 0,
 ):
     model.train()
-    global_step = 0
     running_loss = 0.0
     running_f1 = 0.0
+    running_precision = 0.0
+    running_recall = 0.0
     running_batches = 0
 
     pbar = tqdm(dataloader, desc="train", leave=False)
@@ -482,20 +491,42 @@ def train_boundary_predictor(
         loss = (loss * attention_mask).sum() / attention_mask.sum().clamp(min=1)
         loss.backward()
         optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
 
         with torch.no_grad():
-            f1 = batch_fscore(boundary_mask, boundary_labels, attention_mask)
+            precision, recall, f1 = batch_precision_recall_fscore(boundary_mask, boundary_labels, attention_mask)
 
         running_loss += loss.item()
         running_f1 += f1
+        running_precision += precision
+        running_recall += recall
         running_batches += 1
 
         if global_step % log_interval == 0:
             avg_loss = running_loss / running_batches
             avg_f1 = running_f1 / running_batches
-            pbar.set_postfix(loss=f"{avg_loss:.4f}", f1=f"{avg_f1:.4f}")
+            avg_precision = running_precision / running_batches
+            avg_recall = running_recall / running_batches
+            lr_val = scheduler.get_last_lr()[0] if scheduler is not None else optimizer.param_groups[0]["lr"]
+            pbar.set_postfix(
+                loss=f"{avg_loss:.4f}",
+                f1=f"{avg_f1:.4f}",
+                prec=f"{avg_precision:.4f}",
+                rec=f"{avg_recall:.4f}",
+                lr=f"{lr_val:.2e}",
+            )
+            if writer is not None:
+                step = global_step_offset + global_step
+                writer.add_scalar("train/loss", avg_loss, step)
+                writer.add_scalar("train/f1", avg_f1, step)
+                writer.add_scalar("train/precision", avg_precision, step)
+                writer.add_scalar("train/recall", avg_recall, step)
+                writer.add_scalar("train/lr", lr_val, step)
             running_loss = 0.0
             running_f1 = 0.0
+            running_precision = 0.0
+            running_recall = 0.0
             running_batches = 0
 
 
@@ -569,9 +600,30 @@ if __name__ == "__main__":
         default=0,
         help="Limit training samples for a quick run (0 for all)",
     )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=4,
+        help="Number of workers for the training DataLoader",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=None,
+        help="Where to save the trained boundary predictor",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Use torch.compile on the model for speed",
+    )
     args = parser.parse_args()
 
     model_checkpoint = args.model_checkpoint
+    checkpoint_name = model_checkpoint.replace("/", "__")
+
+    output_dir = args.output_dir or os.path.join("artifacts", "experiments", "bp", checkpoint_name)
+    os.makedirs(output_dir, exist_ok=True)
 
     # TODO use vocabulary from model_checkpoint in Bolmo model
 
@@ -687,10 +739,21 @@ if __name__ == "__main__":
     print(f"Training on device: {device}")
 
     config = BolmoConfig()
-    subword_embedding = nn.Embedding(tokenizer.vocab_size, config.hidden_size)
+
+    with torch.no_grad():
+        base_model = AutoModel.from_pretrained(model_checkpoint)
+        base_embedding_weight = base_model.get_input_embeddings().weight.detach().clone()
+        del base_model
+        subword_embedding = nn.Embedding.from_pretrained(base_embedding_weight, freeze=True)
+
+    config.hidden_size = subword_embedding.weight.shape[1]
+
     model = BolmoLocalEncoder(config, subword_embedding).to(device)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     tqdm.write(f"Trainable parameters: {trainable_params:,}")
+
+    if args.compile:
+        model = torch.compile(model)
 
     train_dataset = fineweb_dataset
     if args.max_train_samples and args.max_train_samples > 0:
@@ -703,12 +766,26 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=True,
         collate_fn=data_collator,
+        num_workers=args.num_workers,
+        pin_memory=device.type == "cuda",
+        persistent_workers=args.num_workers > 0,
+        prefetch_factor=2 if args.num_workers > 0 else None,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    steps_per_epoch = max(len(dataloader), 1)
+    total_steps = max(1, steps_per_epoch * args.num_epochs)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=total_steps,
+        eta_min=5e-5,
+    )
+
+    writer = SummaryWriter(log_dir=os.path.join(output_dir, "tb"))
+    print("writer", writer)
 
     epoch_iter = tqdm(range(args.num_epochs), desc="epochs")
-    for _ in epoch_iter:
+    for epoch_idx in epoch_iter:
         train_boundary_predictor(
             model=model,
             dataloader=dataloader,
@@ -716,4 +793,19 @@ if __name__ == "__main__":
             device=device,
             log_interval=args.log_interval,
             balance_boundary_loss=config.balance_boundary_loss,
+            scheduler=scheduler,
+            writer=writer,
+            global_step_offset=epoch_idx * steps_per_epoch,
         )
+        writer.add_scalar("train/epoch", epoch_idx + 1, (epoch_idx + 1) * steps_per_epoch)
+
+    save_path = os.path.join(output_dir, "model.pt")
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "config": asdict(config),
+        },
+        save_path,
+    )
+    tqdm.write(f"Saved boundary model to {save_path}")
+    writer.close()
