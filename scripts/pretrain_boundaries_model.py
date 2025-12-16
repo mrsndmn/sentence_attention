@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
+
+from tqdm.auto import tqdm
 
 from typing import Optional, cast
 from transformers.activations import ACT2FN
@@ -87,18 +90,18 @@ class MaskState:
 @dataclass
 class BolmoConfig:
     # Model architecture
-    hidden_size: int = 1024
+    hidden_size: int = 2048
     num_local_heads: int = 16
-    num_local_encoder_layers: int = 12
+    num_local_encoder_layers: int = 2
 
     # MLP configuration
-    intermediate_size: int = 4096
-    local_intermediate_size: int = 2048
+    intermediate_size: int = 8192
+    local_intermediate_size: int = 2816
     hidden_act: str = "silu"
 
     # Normalization
     rms_norm_eps: float = 1e-6
-    local_rms_norm_eps: float = 1e-6
+    local_rms_norm_eps: float = 1e-5
 
     # Boundary prediction
     boundary_threshold: str = "sample:0"
@@ -418,6 +421,84 @@ class BolmoBoundaryPredictor(nn.Module):
         return boundary_logprobs, boundary_mask
 
 
+def boundary_logprobs_to_logits(boundary_logprobs: torch.Tensor) -> torch.Tensor:
+    probs = torch.exp(torch.clamp(boundary_logprobs, max=0))
+    probs = probs.clamp(min=1e-6, max=1 - 1e-6)
+    logits = torch.log(probs) - torch.log1p(-probs)
+    return logits
+
+
+def batch_fscore(pred_mask: torch.Tensor, labels: torch.Tensor, attention_mask: torch.Tensor) -> float:
+    valid_tokens = attention_mask.bool()
+    preds = pred_mask & valid_tokens
+    gold = labels.bool() & valid_tokens
+
+    true_pos = (preds & gold).sum().item()
+    predicted_pos = preds.sum().item()
+    gold_pos = gold.sum().item()
+
+    precision = true_pos / (predicted_pos + 1e-8)
+    recall = true_pos / (gold_pos + 1e-8)
+    f1 = 2 * precision * recall / (precision + recall + 1e-8)
+    return f1
+
+
+def train_boundary_predictor(
+    model: BolmoLocalEncoder,
+    dataloader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+    log_interval: int,
+    balance_boundary_loss: bool,
+):
+    model.train()
+    global_step = 0
+    running_loss = 0.0
+    running_f1 = 0.0
+    running_batches = 0
+
+    pbar = tqdm(dataloader, desc="train", leave=False)
+    for global_step, batch in enumerate(pbar):
+        optimizer.zero_grad()
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        boundary_labels = batch["boundary_labels"].to(device)
+
+        boundary_logprobs, boundary_mask = model(input_ids)
+        boundary_logits = boundary_logprobs_to_logits(boundary_logprobs)
+
+        pos_weight = None
+        if balance_boundary_loss:
+            pos_count = (boundary_labels * attention_mask).sum()
+            neg_count = ((1 - boundary_labels) * attention_mask).sum()
+            pos_weight = (neg_count / (pos_count + 1e-8)).clamp(min=1.0)
+
+        loss = F.binary_cross_entropy_with_logits(
+            boundary_logits,
+            boundary_labels.float(),
+            pos_weight=pos_weight,
+            reduction="none",
+        )
+        loss = (loss * attention_mask).sum() / attention_mask.sum().clamp(min=1)
+        loss.backward()
+        optimizer.step()
+
+        with torch.no_grad():
+            f1 = batch_fscore(boundary_mask, boundary_labels, attention_mask)
+
+        running_loss += loss.item()
+        running_f1 += f1
+        running_batches += 1
+
+        if global_step % log_interval == 0:
+            avg_loss = running_loss / running_batches
+            avg_f1 = running_f1 / running_batches
+            pbar.set_postfix(loss=f"{avg_loss:.4f}", f1=f"{avg_f1:.4f}")
+            running_loss = 0.0
+            running_f1 = 0.0
+            running_batches = 0
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -457,6 +538,36 @@ if __name__ == "__main__":
         type=int,
         default=16,
         help="Number of processes for dataset processing",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+        help="Training batch size",
+    )
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=1e-4,
+        help="Optimizer learning rate",
+    )
+    parser.add_argument(
+        "--num_epochs",
+        type=int,
+        default=1,
+        help="Number of training epochs",
+    )
+    parser.add_argument(
+        "--log_interval",
+        type=int,
+        default=10,
+        help="Steps between logging loss and f-score",
+    )
+    parser.add_argument(
+        "--max_train_samples",
+        type=int,
+        default=0,
+        help="Limit training samples for a quick run (0 for all)",
     )
     args = parser.parse_args()
 
@@ -571,3 +682,38 @@ if __name__ == "__main__":
 
     # Initialize simple boundary predictor model and  write training cycle
     # For sentence boundaries prediction.
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Training on device: {device}")
+
+    config = BolmoConfig()
+    subword_embedding = nn.Embedding(tokenizer.vocab_size, config.hidden_size)
+    model = BolmoLocalEncoder(config, subword_embedding).to(device)
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    tqdm.write(f"Trainable parameters: {trainable_params:,}")
+
+    train_dataset = fineweb_dataset
+    if args.max_train_samples and args.max_train_samples > 0:
+        max_samples = min(args.max_train_samples, len(train_dataset))
+        train_dataset = train_dataset.select(range(max_samples))
+        print(f"Using {max_samples} samples for training")
+
+    dataloader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        collate_fn=data_collator,
+    )
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    epoch_iter = tqdm(range(args.num_epochs), desc="epochs")
+    for _ in epoch_iter:
+        train_boundary_predictor(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            device=device,
+            log_interval=args.log_interval,
+            balance_boundary_loss=config.balance_boundary_loss,
+        )
