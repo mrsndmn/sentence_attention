@@ -1,6 +1,5 @@
 import os
 import random
-import string
 
 import torch
 import torch.nn as nn
@@ -22,7 +21,6 @@ from xlstm.xlstm_large.model import mLSTMLayer, mLSTMLayerConfig, mLSTMLayerStat
 
 from transformers import AutoTokenizer, AutoModel
 from datasets import load_dataset
-import nltk
 
 
 class MaskState:
@@ -640,13 +638,15 @@ if __name__ == "__main__":
         cache_dir=args.cache_dir,
     )
 
-    # Download nltk punkt tokenizer if not already downloaded
-    try:
-        nltk.data.find("tokenizers/punkt")
-    except LookupError:
-        nltk.download("punkt", quiet=True)
-
     # Load dataloader.
+
+    SENTENCE_ENDINGS = {".", "!", "?"}
+
+    def _last_non_space_index(chars: list[str], end_idx: int | None = None) -> int:
+        idx = len(chars) - 1 if end_idx is None else end_idx
+        while idx >= 0 and chars[idx].isspace():
+            idx -= 1
+        return idx
 
     def data_collator(examples):
         texts = [e["text"] for e in examples]
@@ -656,45 +656,57 @@ if __name__ == "__main__":
         all_boundary = []
 
         for text in texts:
-            sentences = nltk.sent_tokenize(text)
-            tokens: list[int] = []
-            boundaries: list[int] = []
+            processed_chars: list[str] = []
+            boundary_char_positions: list[int] = []
 
-            for sentence in sentences:
-                if sentence and random.random() < 0.5:
-                    sentence = sentence.rstrip()
-                    sentence = sentence.rstrip(string.punctuation)
-                    if not sentence:
-                        continue
+            for ch in text:
+                if ch in SENTENCE_ENDINGS:
+                    drop_punct = random.random() < 0.2
+                    if not drop_punct:
+                        processed_chars.append(ch)
+                        boundary_idx = len(processed_chars) - 1
+                    else:
+                        boundary_idx = len(processed_chars) - 1
 
-                sent_ids = tokenizer(sentence, add_special_tokens=False)["input_ids"]
-                if not sent_ids:
+                    boundary_idx = _last_non_space_index(processed_chars, boundary_idx)
+                    if boundary_idx >= 0:
+                        boundary_char_positions.append(boundary_idx)
                     continue
 
-                # If adding this sentence would overflow, stop early
-                if len(tokens) + len(sent_ids) > args.max_sequence_length:
-                    break
+                processed_chars.append(ch)
 
-                tokens.extend(sent_ids)
-                # mark boundary at the last token of the sentence
-                if len(sent_ids) == 1:
-                    boundaries.append(1)
-                else:
-                    boundaries.extend([0] * (len(sent_ids) - 1) + [1])
+            processed_text = "".join(processed_chars)
 
-            # Truncate to max length if needed
-            tokens = tokens[: args.max_sequence_length]
-            boundaries = boundaries[: args.max_sequence_length]
+            tokenized = tokenizer(
+                processed_text,
+                add_special_tokens=False,
+                truncation=True,
+                max_length=args.max_sequence_length,
+                return_offsets_mapping=True,
+            )
 
-            seq_len = len(tokens)
+            input_ids = tokenized["input_ids"]
+            offsets = tokenized["offset_mapping"]
+
+            boundaries = [0] * len(input_ids)
+            for boundary_char_idx in boundary_char_positions:
+                for token_idx, (start, end) in enumerate(offsets):
+                    if start <= boundary_char_idx < end:
+                        boundaries[token_idx] = 1
+                        break
+
+            seq_len = min(len(input_ids), args.max_sequence_length)
             pad_len = args.max_sequence_length - seq_len
 
-            tokens.extend([tokenizer.pad_token_id] * pad_len)
-            boundaries.extend([0] * pad_len)
+            input_ids = input_ids[: args.max_sequence_length]
+            boundaries = boundaries[: args.max_sequence_length]
 
             attention = [1] * seq_len + [0] * pad_len
 
-            all_input_ids.append(tokens)
+            input_ids.extend([tokenizer.pad_token_id] * pad_len)
+            boundaries.extend([0] * pad_len)
+
+            all_input_ids.append(input_ids)
             all_boundary.append(boundaries)
             all_attention.append(attention)
 
@@ -704,6 +716,33 @@ if __name__ == "__main__":
             "boundary_labels": torch.tensor(all_boundary, dtype=torch.long),
         }
         return batch
+
+    def preview_collator_samples(dataset, num_samples: int = 3):
+        if len(dataset) == 0:
+            return
+
+        RED, RESET = "\033[91m", "\033[0m"
+        sample_indices = list(range(min(num_samples, len(dataset))))
+        sample_batch = data_collator([dataset[i] for i in sample_indices])
+
+        print("\nPreview of collator output (boundaries in red):")
+        for sample_idx in range(sample_batch["input_ids"].shape[0]):
+            input_ids = sample_batch["input_ids"][sample_idx].tolist()
+            attention = sample_batch["attention_mask"][sample_idx].tolist()
+            boundaries = sample_batch["boundary_labels"][sample_idx].tolist()
+            tokens = tokenizer.convert_ids_to_tokens(input_ids)
+
+            pretty_tokens = []
+            for tok, attn, boundary in zip(tokens, attention, boundaries):
+                if not attn:
+                    break
+                display_tok = tok.replace("Ġ", " ")
+                if boundary:
+                    pretty_tokens.append(f"{RED}{display_tok}{RESET}")
+                else:
+                    pretty_tokens.append(display_tok)
+
+            print(f"sample {sample_idx}: {' '.join(pretty_tokens)}")
 
     # Initialize simple boundary predictor model and  write training cycle
     # For sentence boundaries prediction.
@@ -733,6 +772,8 @@ if __name__ == "__main__":
         max_samples = min(args.max_train_samples, len(train_dataset))
         train_dataset = train_dataset.select(range(max_samples))
         print(f"Using {max_samples} samples for training")
+
+    preview_collator_samples(train_dataset)
 
     dataloader = DataLoader(
         train_dataset,
@@ -776,7 +817,9 @@ if __name__ == "__main__":
     torch.save(
         {
             "model_state_dict": model.state_dict(),
+            "model_checkpoint": args.model_checkpoint,
             "config": asdict(config),
+            "cli_args": dict(vars(args)),
         },
         save_path,
     )

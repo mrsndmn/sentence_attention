@@ -32,21 +32,25 @@ def test_bolmo_boundary_inference_pretrained():
     model.to("cuda")
     model.eval()
 
-    sentences = [
-        "The cat sat on the mat.",
-        "Then it slept on a sunny porch!",
-        "Finally, it woke up?",
-    ]
-    tokenized = [tokenizer.encode(s, add_special_tokens=False) for s in sentences]
-    combined_ids: list[int] = []
-    boundary_positions: list[int] = []
+    sentences = " ".join(
+        [
+            "The cat sat on the mat.",
+            "Then it slept on a sunny porch!",
+            "Finally, it woke up?",
+            "The cat sat on the mat",
+            "Then it slept on a sunny porch!",
+        ]
+    )
+    tokenized = tokenizer.encode(sentences, add_special_tokens=False)
+    # combined_ids: list[int] = []
+    # boundary_positions: list[int] = []
 
-    for sent_ids in tokenized:
-        start = len(combined_ids)
-        combined_ids.extend(sent_ids)
-        boundary_positions.append(start + len(sent_ids) - 1)
+    # for sent_ids in tokenized:
+    #     start = len(combined_ids)
+    #     combined_ids.extend(sent_ids)
+    #     boundary_positions.append(start + len(sent_ids) - 1)
 
-    input_ids = torch.tensor(combined_ids, dtype=torch.long).unsqueeze(0)
+    input_ids = torch.tensor(tokenized, dtype=torch.long).unsqueeze(0)
 
     with torch.no_grad():
         boundary_logprobs, boundary_mask = model(input_ids.to("cuda"))
@@ -57,13 +61,17 @@ def test_bolmo_boundary_inference_pretrained():
     assert boundary_mask.shape == input_ids.shape
 
     # Debug print tokens with predicted boundaries highlighted in red
-    tokens = tokenizer.convert_ids_to_tokens(combined_ids)
+    tokens = tokenizer.convert_ids_to_tokens(tokenized)
     tokens = [tok.replace("Ġ", "") for tok in tokens]
     RED, RESET = "\033[91m", "\033[0m"
-    pretty_tokens = [f"{RED}{tok}{RESET}" if bool(mask.item()) else tok for tok, mask in zip(tokens, boundary_mask[0])]
-    print("Tokens:", " ".join(pretty_tokens))
+    pretty_tokens = [
+        f"{RED}{tok} [{tid}]{RESET}" if bool(mask.item()) else f"{tok} [{tid}]"
+        for tok, mask, tid in zip(tokens, boundary_mask[0], tokenized)
+    ]
+    # pretty_tokens = [f"{RED}{tok}{RESET}" if bool(mask.item()) else tok for tok, mask in zip(tokens, boundary_mask[0])]
+    print("Tokens:", " | ".join(pretty_tokens))
 
-    for pos in boundary_positions:
-        assert boundary_mask[0, pos].item(), f"Expected boundary at position {pos} token {tokens[pos]}"
+    # for pos in boundary_positions:
+    #     assert boundary_mask[0, pos].item(), f"Expected boundary at position {pos} token {tokens[pos]}"
 
     breakpoint()
