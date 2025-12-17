@@ -893,8 +893,8 @@ def run_group_full_4k(
             continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
-        # gradient_accumulation_steps = math.ceil(256 / ngpus / num_nodes / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
+        # gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(256 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"

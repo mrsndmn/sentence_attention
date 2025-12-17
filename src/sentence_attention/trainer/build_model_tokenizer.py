@@ -18,15 +18,42 @@ from sentence_attention.trainer.arguments import (
 from transformers import AutoTokenizer
 
 
+from sentence_attention.boundaries.predictor import BolmoConfig, BolmoLocalEncoder
+
+
 def freeze_model(model: nn.Module):
     for p in model.parameters():
         p.requires_grad = False
 
 
-def build_model_tokenizer(training_args: SentenceTrainingArguments):
-    tokenizer = None
-    model_checkpoint = training_args.model_checkpoint
+def _load_boundary_predictor_model(training_args, model, device="cpu", torch_dtype=torch.bfloat16):
+    ckpt = torch.load(training_args.boundary_predictor_model_checkpoint, map_location="cpu")
+    config = BolmoConfig(**ckpt["config"])
 
+    sd = ckpt["model_state_dict"]
+    if any(k.startswith("_orig_mod.") for k in sd.keys()):
+        sd = {k.replace("_orig_mod.", ""): v for k, v in sd.items()}
+
+    del sd["subword_embedding.weight"]
+
+    base_embedding_weight = model.get_input_embeddings().weight.clone()
+    bp_model = BolmoLocalEncoder(config, base_embedding_weight)
+    missing_keys, extra_keys = bp_model.load_state_dict(sd)
+    missing_keys = [x for x in missing_keys if missing_keys != "subword_embedding.weight"]
+
+    assert len(missing_keys) == 0, f"found missing keys: {missing_keys}"
+    assert len(extra_keys) == 0, f"found extra keys: {extra_keys}"
+
+    bp_model.to(device)
+    bp_model.to(torch_dtype)
+    bp_model.eval()
+
+    return bp_model
+
+
+def _build_tokenizer(training_args: SentenceTrainingArguments, model, torch_dtype=torch.bfloat16):
+
+    model_checkpoint = training_args.model_checkpoint
     number_of_eos_tokens = training_args.number_of_eos_tokens
 
     if training_args.add_end_of_sentence_token:
@@ -52,11 +79,21 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
             "uniform_interval_tokens",
             training_args.uniform_interval_tokens,
         )
+
+        extra = {}
+        if training_args.gist_placement == "boundary_predictor":
+            device = "cuda"
+            extra["boundary_predictor_model"] = _load_boundary_predictor_model(
+                training_args, model, device=device, torch_dtype=torch_dtype
+            )
+            extra["boundary_predictor_device"] = device
+
         tokenizer = tokenizer_class.from_pretrained(
             model_checkpoint,
             num_eos_tokens=number_of_eos_tokens,
             gist_placement=training_args.gist_placement,
             uniform_interval_tokens=training_args.uniform_interval_tokens,
+            **extra,
         )
 
     else:
@@ -64,6 +101,24 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
 
     print("num_eos_tokens", tokenizer.num_eos_tokens, "end_of_sentence_tokens_list", tokenizer.end_of_sentence_tokens_list)
     print("tokenizer", tokenizer)
+
+    tokenizer.padding_side = "right"
+    # tokenizer.padding_side = "left"
+    tokenizer.pad_token = tokenizer.eos_token
+
+    if training_args.add_end_of_sentence_token and model.config.vocab_size != len(tokenizer):
+        # breakpoint()
+        model.resize_token_embeddings(len(tokenizer))
+        print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
+        model.config.end_of_sentence_token_ids = tokenizer.end_of_sentence_token_ids
+        print("model.config.end_of_sentence_token_ids", model.config.end_of_sentence_token_ids)
+
+    return tokenizer
+
+
+def build_model_tokenizer(training_args: SentenceTrainingArguments):
+    tokenizer = None
+    model_checkpoint = training_args.model_checkpoint
 
     torch_dtype = torch.bfloat16
 
@@ -91,17 +146,6 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
         torch.set_default_dtype(torch.float32)
 
     print("model.config._attn_implementation", model.config._attn_implementation)
-
-    tokenizer.padding_side = "right"
-    # tokenizer.padding_side = "left"
-    tokenizer.pad_token = tokenizer.eos_token
-
-    if training_args.add_end_of_sentence_token and model.config.vocab_size != len(tokenizer):
-        # breakpoint()
-        model.resize_token_embeddings(len(tokenizer))
-        print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
-        model.config.end_of_sentence_token_ids = tokenizer.end_of_sentence_token_ids
-        print("model.config.end_of_sentence_token_ids", model.config.end_of_sentence_token_ids)
 
     model.config.flexible_eos_tokens = training_args.flexible_eos_tokens
     model.config.ft_with_bos_token = training_args.ft_with_bos_token
@@ -151,5 +195,7 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
     print("model", model)
     print("num trainable model parameters:", sum(p.numel() for p in model.parameters() if p.requires_grad))
     print("num freezed model parameters:", sum(p.numel() for p in model.parameters() if not p.requires_grad))
+
+    tokenizer = _build_tokenizer(training_args, model, torch_dtype=torch_dtype)
 
     return model, tokenizer

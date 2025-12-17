@@ -34,11 +34,15 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         self.max_cummulative_nlogits_value: float = kwargs.get("max_cummulative_nlogits_value", 50.0)
         self.logits_model_name: str = kwargs.get("logits_model_name", "unsloth/Llama-3.2-1B")
         self.logits_chunk_size: int = kwargs.get("logits_chunk_size", 1024)
+        self.boundary_predictor_model: Optional[torch.nn.Module] = kwargs.get("boundary_predictor_model", None)
+        self.boundary_predictor_device: Optional[str] = kwargs.get("boundary_predictor_device", None)
 
-        if self.gist_placement not in {"sentence", "uniform", "with_logits"}:
-            raise ValueError("gist_placement must be one of {'sentence','uniform','with_logits'}")
+        if self.gist_placement not in {"sentence", "uniform", "with_logits", "boundary_predictor"}:
+            raise ValueError("gist_placement must be one of {'sentence','uniform','with_logits', 'boundary_predictor}")
         if not isinstance(self.uniform_interval_tokens, int) or self.uniform_interval_tokens <= 0:
             raise ValueError("uniform_interval_tokens must be a positive integer")
+        if self.gist_placement == "boundary_predictor" and self.boundary_predictor_model is None:
+            raise ValueError("boundary_predictor_model must be provided when gist_placement='boundary_predictor'")
 
         if self.num_eos_tokens >= 1:
             self.end_of_sentence_tokens_list = [f"<end_of_sentence_{i}>" for i in range(self.num_eos_tokens)]
@@ -81,6 +85,10 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
             self._logits_tokenizer.pad_token = self._logits_tokenizer.eos_token
         return self._logits_model, self._logits_tokenizer, self._logits_device
 
+    def _get_boundary_predictor_model(self):
+        """Get the boundary predictor model and device."""
+        return self.boundary_predictor_model, self.boundary_predictor_device
+
     def encode_plus(self, text: str, **kwargs):
         text = self.prepare_for_tokenization(text)
         encoding = super().encode_plus(text, **kwargs)
@@ -88,6 +96,8 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
             encoding = self._insert_uniform_gist_into_encoding(encoding)
         elif self.gist_placement == "with_logits":
             encoding = self._insert_with_logits_gist_into_encoding(text, encoding, **kwargs)
+        elif self.gist_placement == "boundary_predictor":
+            encoding = self._insert_boundary_predictor_gist_into_encoding(encoding)
         return encoding
 
     def batch_encode_plus(self, batch_text_or_text_pairs: str, **kwargs):
@@ -160,7 +170,7 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
                 encodings["seq_length"] = torch.tensor(encodings["seq_length"])
                 if "special_tokens_mask" in encodings:
                     encodings["special_tokens_mask"] = torch.tensor(encodings["special_tokens_mask"])
-        elif self.gist_placement == "uniform":
+        elif self.gist_placement in ["uniform", "boundary_predictor"]:
             # Expect lists (no tensors). If tensors are returned, try converting to lists conservatively.
             input_ids_batch = encodings.get("input_ids")
             if hasattr(input_ids_batch, "tolist"):
@@ -177,7 +187,11 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
             new_attention_mask_batch: List[List[int]] = []
             new_special_tokens_mask_batch: List[List[int]] | None = [] if special_tokens_mask_batch is not None else None
             new_offset_mapping_batch: List[List[Tuple[int, int]]] | None = [] if offset_mapping_batch is not None else None
-
+            insert_fn = (
+                self._insert_uniform_gist_into_encoding
+                if self.gist_placement == "uniform"
+                else self._insert_boundary_predictor_gist_into_encoding
+            )
             for idx in range(len(input_ids_batch)):
                 single_encoding: Dict[str, Any] = {
                     "input_ids": input_ids_batch[idx],
@@ -188,7 +202,7 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
                 if offset_mapping_batch is not None:
                     single_encoding["offset_mapping"] = offset_mapping_batch[idx]
 
-                updated_single = self._insert_uniform_gist_into_encoding(single_encoding)
+                updated_single = insert_fn(single_encoding)
                 new_input_ids_batch.append(updated_single["input_ids"])
                 new_attention_mask_batch.append(updated_single["attention_mask"])
                 if new_special_tokens_mask_batch is not None:
@@ -214,7 +228,7 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
     def prepare_for_tokenization(self, text: str) -> tuple[str, dict[str, Any]]:
 
         # When uniform placement is requested, do not add tokens at sentence boundaries.
-        if self.gist_placement in ["uniform", "with_logits"]:
+        if self.gist_placement in ["uniform", "with_logits", "boundary_predictor"]:
             return text
 
         end_of_sentence_token = "".join(self.end_of_sentence_tokens_list)
@@ -477,3 +491,88 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
             return encoding.__class__(updated, encoding=encodings_attr)
         except Exception:
             return updated
+
+    def _insert_boundary_predictor_gist_into_encoding(self, encoding: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Insert end-of-sentence (gist) tokens at positions predicted by the boundary predictor model.
+        Expects and returns plain python lists.
+
+        Note: The boundary predictor model expects token IDs from the base model tokenizer
+        (boundary_predictor_base_model), but we're using the current tokenizer token IDs.
+        This may cause incorrect predictions if the tokenizers differ significantly.
+        """
+        input_ids: List[int] = encoding.get("input_ids", [])
+        if hasattr(input_ids, "tolist"):
+            input_ids = input_ids.tolist()
+        if len(input_ids) > 0 and isinstance(input_ids[0], list):
+            input_ids = input_ids[0]
+
+        attention_mask: Union[List[int], None] = encoding.get("attention_mask")
+        if hasattr(attention_mask, "tolist"):
+            attention_mask = attention_mask.tolist()
+        if attention_mask is not None and len(attention_mask) > 0 and isinstance(attention_mask[0], list):
+            attention_mask = attention_mask[0]
+
+        special_tokens_mask: Union[List[int], None] = encoding.get("special_tokens_mask")
+        if hasattr(special_tokens_mask, "tolist"):
+            special_tokens_mask = special_tokens_mask.tolist()
+        if special_tokens_mask is not None and len(special_tokens_mask) > 0 and isinstance(special_tokens_mask[0], list):
+            special_tokens_mask = special_tokens_mask[0]
+        offset_mapping: Union[List[Tuple[int, int]], None] = encoding.get("offset_mapping")
+        if hasattr(offset_mapping, "tolist"):
+            offset_mapping = offset_mapping.tolist()
+        if offset_mapping is not None and len(offset_mapping) > 0 and isinstance(offset_mapping[0], list):
+            offset_mapping = offset_mapping[0]
+
+        if attention_mask is None:
+            attention_mask = [1] * len(input_ids)
+        if special_tokens_mask is not None and len(special_tokens_mask) != len(input_ids):
+            special_tokens_mask = None
+
+        model, device = self._get_boundary_predictor_model()
+
+        input_ids_tensor = torch.tensor([input_ids], dtype=torch.long).to(device)
+        with torch.no_grad():
+            boundary_logprobs, boundary_mask = model(input_ids_tensor)
+
+        boundary_mask[0, 0] = 0
+
+        boundary_positions = boundary_mask[0].cpu().nonzero(as_tuple=True)[0].tolist()
+
+        new_input_ids: List[int] = []
+        new_attention_mask: List[int] = []
+        new_special_tokens_mask: List[int] | None = [] if special_tokens_mask is not None else None
+        new_offset_mapping: List[Tuple[int, int]] | None = []
+
+        gist_ids: List[int] = self.end_of_sentence_token_ids
+        boundary_set = set(boundary_positions)
+
+        for idx, (token_id, mask_val) in enumerate(zip(input_ids, attention_mask)):
+            new_input_ids.append(token_id)
+            new_attention_mask.append(mask_val)
+            if new_special_tokens_mask is not None:
+                new_special_tokens_mask.append(0)
+            if new_offset_mapping is not None:
+                start_end = offset_mapping[idx] if offset_mapping is not None else None
+                new_offset_mapping.append(start_end)
+
+            if idx in boundary_set:
+                new_input_ids.extend(gist_ids)
+                new_attention_mask.extend([1] * len(gist_ids))
+                if new_special_tokens_mask is not None:
+                    new_special_tokens_mask.extend([1] * len(gist_ids))
+                if new_offset_mapping is not None:
+                    insertion_offsets = [None] * len(gist_ids)
+                    new_offset_mapping.extend(insertion_offsets)
+
+        updated: Dict[str, Any] = dict(encoding)
+        updated["input_ids"] = new_input_ids
+        updated["attention_mask"] = new_attention_mask
+        if new_special_tokens_mask is not None:
+            updated["special_tokens_mask"] = new_special_tokens_mask
+        if new_offset_mapping is not None:
+            updated["offset_mapping"] = new_offset_mapping
+        else:
+            if "offset_mapping" in updated:
+                del updated["offset_mapping"]
+        return updated
