@@ -830,7 +830,8 @@ def run_group_full_4k(
     # lr_scheduler_type = "constant_with_warmup"
     lr_scheduler_type = "cosine_with_min_lr"
 
-    default_limit_shards = 7
+    # default_limit_shards = 7
+    default_limit_shards = 14
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -849,7 +850,8 @@ def run_group_full_4k(
         extra_kwargs = {}
         fsdp = None
         local_torch_compile = None
-        local_learning_rate = 0.0003
+        # local_learning_rate = 0.0001
+        local_learning_rate = 0.0002
         if "Llama-3.1-8B" in model_checkpoint:
             fsdp = "1"
             local_torch_compile = "0"
@@ -891,6 +893,7 @@ def run_group_full_4k(
             continue
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
+        # gradient_accumulation_steps = math.ceil(256 / ngpus / num_nodes / per_device_train_batch_size)
         gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
