@@ -4,7 +4,7 @@ import torch.nn as nn
 import pytest
 from transformers import AutoTokenizer, AutoModel
 
-from scripts.pretrain_boundaries_model import BolmoConfig, BolmoLocalEncoder
+from sentence_attention.boundaries.predictor import BolmoConfig, BolmoLocalEncoder
 
 
 CKPT_PATH = "artifacts/experiments/bp/unsloth__Llama-3.2-1B/model.pt"
