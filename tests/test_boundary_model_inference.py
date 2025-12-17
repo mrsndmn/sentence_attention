@@ -34,11 +34,7 @@ def test_bolmo_boundary_inference_pretrained():
 
     sentences = " ".join(
         [
-            "The cat sat on the mat.",
-            "Then it slept on a sunny porch!",
-            "Finally, it woke up?",
-            "The cat sat on the mat",
-            "Then it slept on a sunny porch!",
+            "Elizabeth’s refusal of Mr. Collins offer of marriage showed an independence seldom seen in heroines of the day. Her refusal of Mr. Darcy while triggered by anger showed a level of independence that left him shocked and stunned.",
         ]
     )
     tokenized = tokenizer.encode(sentences, add_special_tokens=False)
@@ -65,13 +61,18 @@ def test_bolmo_boundary_inference_pretrained():
     tokens = [tok.replace("Ġ", "") for tok in tokens]
     RED, RESET = "\033[91m", "\033[0m"
     pretty_tokens = [
-        f"{RED}{tok} [{tid}]{RESET}" if bool(mask.item()) else f"{tok} [{tid}]"
+        # f"{RED}{tok} [{tid}]{RESET}" if bool(mask.item()) else f"{tok} [{tid}]"
+        f"{RED}{tok}{RESET}" if bool(mask.item()) else f"{tok}"
         for tok, mask, tid in zip(tokens, boundary_mask[0], tokenized)
     ]
     # pretty_tokens = [f"{RED}{tok}{RESET}" if bool(mask.item()) else tok for tok, mask in zip(tokens, boundary_mask[0])]
-    print("Tokens:", " | ".join(pretty_tokens))
+    print("Tokens:", " ".join(pretty_tokens))
 
     # for pos in boundary_positions:
     #     assert boundary_mask[0, pos].item(), f"Expected boundary at position {pos} token {tokens[pos]}"
 
     breakpoint()
+
+
+if __name__ == "__main__":
+    test_bolmo_boundary_inference_pretrained()
