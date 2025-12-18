@@ -14,6 +14,7 @@ class SentenceTrainingArguments(TrainingArguments):
 
     number_of_eos_tokens: int = field(default=1)
     gist_placement: str = field(default="with_logits")  # 'sentence', 'uniform', 'boundary_predictor'
+    gist_initialization: str = field(default="mvnormal")  # mvnormal, normal
     uniform_interval_tokens: int = field(default=40)
 
     boundary_predictor_model_checkpoint: str = field(default="")

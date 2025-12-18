@@ -111,8 +111,16 @@ def _build_tokenizer(training_args: SentenceTrainingArguments, model, torch_dtyp
     tokenizer.pad_token = tokenizer.eos_token
 
     if training_args.add_end_of_sentence_token and model.config.vocab_size != len(tokenizer):
-        # breakpoint()
-        model.resize_token_embeddings(len(tokenizer))
+        mean_resizing = True
+        if training_args.gist_initialization == "mvnormal":
+            mean_resizing = True
+        elif training_args.gist_initialization == "normal":
+            mean_resizing = False
+        else:
+            raise ValueError(f"unsupported `gist_initialization`={training_args.gist_initialization}")
+
+        print("mean_resizing", mean_resizing)
+        model.resize_token_embeddings(len(tokenizer), mean_resizing=mean_resizing)
         print(f"Resized model embeddings to vocabulary size: {len(tokenizer)}")
         model.config.end_of_sentence_token_ids = tokenizer.end_of_sentence_token_ids
         print("model.config.end_of_sentence_token_ids", model.config.end_of_sentence_token_ids)

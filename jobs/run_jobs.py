@@ -61,6 +61,9 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         lr_scheduler_type = exp.pop("lr_scheduler_type", "cosine_with_min_lr")
         max_grad_norm = exp.pop("max_grad_norm", 1)
         max_steps = exp.pop("max_steps", -1)
+
+        gist_initialization = exp.pop("gist_initialization", "mvnormal")
+
         assert float(max_grad_norm) > 0
 
         optim = exp.pop("optim", "")
@@ -192,6 +195,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"{resume_from_checkpoint_s} "
             f"--use_liger_kernel 1 "
             f"--sentence_attention_implementation sentence_attention_flex "
+            f"--gist_initialization {gist_initialization} "
             # f"--use_liger_kernel 0 "
             # f"--remove_unused_columns 0 "
         )
@@ -256,6 +260,7 @@ def run_training_experiments(
     experiment_prefix_base_name: str = "adaptive_llama31_8B",
     gradient_accumulation_steps: int = 4,
     gradient_checkpointing: bool = False,
+    gist_initialization: str = "mvnormal",
     adam_beta1: str = "0.9",
     adam_beta2: str = "0.98",
     save_safetensors: str = "1",
@@ -328,6 +333,7 @@ def run_training_experiments(
         "save_safetensors": save_safetensors,
         "gist_placement": gist_placement,
         "uniform_interval_tokens": uniform_interval_tokens,
+        "gist_initialization": gist_initialization,
     }
 
     experiments = []
@@ -658,6 +664,7 @@ def run_group_eos_only(
     moe_special_embeddings_layer_idx=None,
     moe_num_experts=None,
     gist_placement: str = "sentence",
+    gist_initialization: str = "mvnormal",
     uniform_interval_tokens: int = 40,
     ngpus: int | None = None,
     num_nodes: int | None = None,
@@ -678,6 +685,7 @@ def run_group_eos_only(
         moe_num_experts=moe_num_experts,
         gist_placement=gist_placement,
         uniform_interval_tokens=uniform_interval_tokens,
+        gist_initialization=gist_initialization,
     )
 
 
@@ -695,6 +703,7 @@ def _run_group_eos_only(
     global_batch_size=64,
     per_device_train_batch_size=1,
     optimized_params="only_eos_embedding",
+    gist_initialization="mvnormal",
     save_safetensors="1",
     learning_rate=0.0001,
     ngpus=4,
@@ -709,7 +718,7 @@ def _run_group_eos_only(
     save_steps = 5000
     # lr_scheduler_type = "constant"
 
-    max_steps = -1
+    max_steps = 16000
 
     if models_checkpoints is None:
         models_checkpoints = _models_for_eos_only()
@@ -742,6 +751,9 @@ def _run_group_eos_only(
 
             if moe_num_experts is not None:
                 extra_exp_suffix = f"_moe_exp_{moe_num_experts}_moe_layer_{moe_special_embeddings_layer_idx}" + extra_exp_suffix
+
+            if gist_initialization != "mvnormal":
+                extra_exp_suffix = f"_gist_init_{gist_initialization}_{extra_exp_suffix}"
 
             model_dir_prefix = f"sentence_{model_checkpoint_slug}_ft_{optimized_params}{extra_exp_suffix}"
             if gist_placement == "sentence":
@@ -779,6 +791,7 @@ def _run_group_eos_only(
                 num_train_epochs=num_train_epochs,
                 max_grad_norm="1.0",
                 save_total_limit=100,
+                gist_initialization=gist_initialization,
                 save_steps=save_steps,
                 max_steps=max_steps,
                 instance_type=f"a100.{ngpus}gpu",
@@ -1480,6 +1493,7 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--moe_special_embeddings_layer_idx", type=int, default=None)
     parser.add_argument("--moe_num_experts", type=int, default=None)
     parser.add_argument("--gist_placement", type=str, default="sentence", choices=["sentence", "uniform", "with_logits"])
+    parser.add_argument("--gist_initialization", type=str, default="mvnormal", choices=["mvnormal", "normal"])
     parser.add_argument("--uniform_interval_tokens", type=int, default=40)
     parser.add_argument("--ft_with_bos_token", action="store_true", help="Enable fine-tuning with BOS token")
     parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
@@ -1531,6 +1545,7 @@ def main() -> None:
             uniform_interval_tokens=args.uniform_interval_tokens,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            gist_initialization=args.gist_initialization,
         )
     elif args.group == "eos-only-my-recall":
         run_group_eos_only_my_recall(
