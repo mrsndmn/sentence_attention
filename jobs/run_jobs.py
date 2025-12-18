@@ -124,6 +124,12 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         moe_special_embeddings_layer_idx = exp.pop("moe_special_embeddings_layer_idx", None)
         moe_num_experts = exp.pop("moe_num_experts", None)
 
+        dataloader_num_workers = 16
+
+        boundary_predictor_model_checkpoint = exp.pop("boundary_predictor_model_checkpoint", "")
+        if gist_placement == "boundary_predictor":
+            dataloader_num_workers = 0
+
         assert (moe_special_embeddings_layer_idx is None) == (moe_num_experts is None)
 
         if len(exp.keys()) > 0:
@@ -191,11 +197,12 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--ft_with_bos_token {ft_with_bos_token} "
             f"--max_steps {max_steps} "
             f"--save_safetensors {save_safetensors} "
-            f"--dataloader_num_workers 16 "
+            f"--dataloader_num_workers {dataloader_num_workers} "
             f"{resume_from_checkpoint_s} "
             f"--use_liger_kernel 1 "
             f"--sentence_attention_implementation sentence_attention_flex "
             f"--gist_initialization {gist_initialization} "
+            f"--boundary_predictor_model_checkpoint {boundary_predictor_model_checkpoint} "
             # f"--use_liger_kernel 0 "
             # f"--remove_unused_columns 0 "
         )
@@ -285,6 +292,7 @@ def run_training_experiments(
     moe_num_experts=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    boundary_predictor_model_checkpoint=None,
     **kwargs: Dict,
 ) -> None:
 
@@ -334,6 +342,7 @@ def run_training_experiments(
         "gist_placement": gist_placement,
         "uniform_interval_tokens": uniform_interval_tokens,
         "gist_initialization": gist_initialization,
+        "boundary_predictor_model_checkpoint": boundary_predictor_model_checkpoint,
     }
 
     experiments = []
@@ -844,7 +853,7 @@ def run_group_full_4k(
     lr_scheduler_type = "cosine_with_min_lr"
 
     # default_limit_shards = 7
-    default_limit_shards = 14
+    default_limit_shards = 7
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -864,7 +873,7 @@ def run_group_full_4k(
         fsdp = None
         local_torch_compile = None
         # local_learning_rate = 0.0001
-        local_learning_rate = 0.0002
+        local_learning_rate = 0.0001
         if "Llama-3.1-8B" in model_checkpoint:
             fsdp = "1"
             local_torch_compile = "0"
@@ -907,7 +916,7 @@ def run_group_full_4k(
 
         # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
         # gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
-        gradient_accumulation_steps = math.ceil(256 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
 
         experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
         job_description = f"ST: {experiment_prefix_base_name}"
@@ -1233,6 +1242,150 @@ def run_group_full_4k_colddown(
         )
 
 
+def run_group_full_4k_boundary_predictor(
+    *,
+    dry: bool,
+    num_eos_tokens: List[int],
+    in_progress_jobs: List[Dict],
+    model: str,
+    flexible_eos_tokens: bool = False,
+    ft_with_bos_token: bool = False,
+    test: bool = False,
+    resume_from_checkpoint: bool = None,
+    force: bool = False,
+    moe_num_experts=None,
+    moe_special_embeddings_layer_idx=None,
+    gist_placement: str = "sentence",
+    uniform_interval_tokens: int = 40,
+    ngpus: int | None = None,
+    num_nodes: int | None = None,
+    boundary_predictor_model_checkpoint: str | None = None,
+) -> None:
+    ngpus = 8 if ngpus is None else ngpus
+    num_nodes = 1 if num_nodes is None else num_nodes
+
+    num_train_epochs = 1
+    save_steps = 2000
+    optimized_params = "full"
+    max_grad_norm = "2.0"
+    lr_scheduler_type = "constant_with_warmup"
+    # lr_scheduler_type = "cosine_with_min_lr"
+    # lr_scheduler_type = "linear"
+
+    default_limit_shards = 1
+    max_steps = 1000
+
+    for exp_config in _ft_4k_colddown_checkpoints():
+        # TODO check sucessful experiment has already been processed
+        model_checkpoint = exp_config["model_checkpoint"]
+        model_slug = exp_config["model_slug"]
+        per_device_train_batch_size = exp_config["per_device_train_batch_size"]
+        if per_device_train_batch_size != 1:
+            print("Force per_device_train_batch_size to 1")
+            per_device_train_batch_size = 1
+
+        number_of_eos_tokens = exp_config["number_of_eos_tokens"]
+
+        local_limit_shards = exp_config.get("limit_dataset_shards", default_limit_shards)
+
+        extra_kwargs = {}
+        fsdp = None
+        local_torch_compile = None
+        if "Llama-3.1-8B" in model_checkpoint:
+            fsdp = "1"
+            local_torch_compile = "0"
+
+        if fsdp is not None:
+            extra_kwargs["fsdp"] = fsdp
+
+        if local_torch_compile is not None:
+            extra_kwargs["torch_compile"] = local_torch_compile
+
+        local_save_steps = exp_config.get("save_steps", save_steps)
+
+        if model is not None and model.lower() not in model_checkpoint.lower():
+            continue
+
+        if int(number_of_eos_tokens) not in num_eos_tokens:
+            continue
+
+        model_dir_prefix_mid = "_boundaries_prediction_"
+        if flexible_eos_tokens:
+            model_dir_prefix_mid = f"{model_dir_prefix_mid}flexible_eos_tokens_"
+
+        if ft_with_bos_token:
+            model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
+
+        model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
+        if gist_placement == "sentence":
+            pass
+        elif gist_placement == "boundary_predictor":
+            model_dir_prefix = f"{model_dir_prefix}_boundary_predictor_"
+        elif gist_placement == "uniform":
+            model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
+        elif gist_placement == "with_logits":
+            model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        else:
+            raise ValueError("Unhandled gist placement")
+
+        if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
+            print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
+            continue
+
+        # gradient_accumulation_steps = math.ceil(1024 / ngpus / num_nodes / per_device_train_batch_size)
+        gradient_accumulation_steps = math.ceil(128 / ngpus / num_nodes / per_device_train_batch_size)
+
+        experiment_prefix_base_name = f"{model_dir_prefix}_num_eos_tokens_{number_of_eos_tokens}"
+        job_description = f"ST: {experiment_prefix_base_name}"
+
+        if not force and check_experiment_in_progress(experiment_prefix_base_name, in_progress_jobs):
+            print(f"Experiment {experiment_prefix_base_name} is already in progress")
+            continue
+
+        run_training_experiments(
+            learning_rate=0.00005,
+            lr_scheduler_type=lr_scheduler_type,
+            model_type="sentence_pretrained_checkpoint",
+            # Rertain on EOSo data
+            limit_dataset_shards=local_limit_shards,
+            offset_dataset_shards=7,
+            max_steps=max_steps,
+            number_of_eos_tokens=number_of_eos_tokens,
+            optimized_params=optimized_params,
+            weight_decay="0.01",
+            per_device_train_batch_size=per_device_train_batch_size,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            adam_beta1="0.9",
+            adam_beta2="0.95",
+            optim="adamw_torch_fused",
+            num_train_epochs=num_train_epochs,
+            max_grad_norm=max_grad_norm,
+            save_total_limit=100,
+            save_steps=local_save_steps,
+            instance_type=f"a100.{ngpus}gpu",
+            num_nodes=num_nodes,
+            model_checkpoint=model_checkpoint,
+            select_train_dataset_items=0,
+            adam_epsilon="1e-8",
+            warmup_steps=100,
+            dry=dry,
+            bf16="0",
+            add_end_of_sentence_token=1,
+            experiment_prefix_base_name=experiment_prefix_base_name,
+            job_description=job_description,
+            flexible_eos_tokens="1" if flexible_eos_tokens else "0",
+            ft_with_bos_token="1" if ft_with_bos_token else "0",
+            test=test,
+            resume_from_checkpoint=resume_from_checkpoint,
+            moe_special_embeddings_layer_idx=moe_special_embeddings_layer_idx,
+            moe_num_experts=moe_num_experts,
+            gist_placement=gist_placement,
+            uniform_interval_tokens=uniform_interval_tokens,
+            boundary_predictor_model_checkpoint=boundary_predictor_model_checkpoint,
+            **extra_kwargs,
+        )
+
+
 def run_group_full_16k_colddown(
     *,
     dry: bool,
@@ -1469,6 +1622,7 @@ def _cli() -> argparse.ArgumentParser:
             "full2",
             "full_4k",
             "full_4k_colddown",
+            "full_4k_boundary_predictor",
             "full_16k_colddown",
             "full_4k_distill_from_4eos_tokens",
             "lora",
@@ -1492,10 +1646,13 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--resume_from_checkpoint", type=str, help="Resume from checkpoint", default=None)
     parser.add_argument("--moe_special_embeddings_layer_idx", type=int, default=None)
     parser.add_argument("--moe_num_experts", type=int, default=None)
-    parser.add_argument("--gist_placement", type=str, default="sentence", choices=["sentence", "uniform", "with_logits"])
+    parser.add_argument(
+        "--gist_placement", type=str, default="sentence", choices=["sentence", "uniform", "with_logits", "boundary_predictor"]
+    )
     parser.add_argument("--gist_initialization", type=str, default="mvnormal", choices=["mvnormal", "normal"])
     parser.add_argument("--uniform_interval_tokens", type=int, default=40)
     parser.add_argument("--ft_with_bos_token", action="store_true", help="Enable fine-tuning with BOS token")
+    parser.add_argument("--boundary_predictor_model_checkpoint", default=None)
     parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
     parser.add_argument("--num_nodes", type=int, default=None, help="Override number of nodes/workers")
 
@@ -1612,6 +1769,24 @@ def main() -> None:
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+        )
+    elif args.group == "full_4k_boundary_predictor":
+        run_group_full_4k_boundary_predictor(
+            dry=args.dry,
+            num_eos_tokens=num_eos_tokens,
+            in_progress_jobs=in_progress_jobs,
+            model=args.model,
+            test=args.test,
+            resume_from_checkpoint=args.resume_from_checkpoint,
+            force=args.force,
+            moe_special_embeddings_layer_idx=args.moe_special_embeddings_layer_idx,
+            moe_num_experts=args.moe_num_experts,
+            gist_placement=args.gist_placement,
+            uniform_interval_tokens=args.uniform_interval_tokens,
+            ft_with_bos_token=args.ft_with_bos_token,
+            ngpus=args.ngpus,
+            num_nodes=args.num_nodes,
+            boundary_predictor_model_checkpoint=args.boundary_predictor_model_checkpoint,
         )
     elif args.group == "full_16k_colddown":
         run_group_full_16k_colddown(
