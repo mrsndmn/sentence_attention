@@ -105,7 +105,7 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         elif self.gist_placement == "with_logits":
             encoding = self._insert_with_logits_gist_into_encoding(text, encoding, **kwargs)
         elif self.gist_placement == "boundary_predictor":
-            encoding = self._insert_boundary_predictor_gist_into_encoding(encoding)
+            encoding = self._insert_boundary_predictor_gist_into_encoding(encoding, max_length=kwargs.get("max_length"))
         return encoding
 
     def batch_encode_plus(self, batch_text_or_text_pairs: str, **kwargs):
@@ -200,6 +200,9 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
                 if self.gist_placement == "uniform"
                 else self._insert_boundary_predictor_gist_into_encoding
             )
+            insert_kwargs: Dict[str, Any] = {}
+            if self.gist_placement == "boundary_predictor":
+                insert_kwargs["max_length"] = kwargs.get("max_length")
             for idx in range(len(input_ids_batch)):
                 single_encoding: Dict[str, Any] = {
                     "input_ids": input_ids_batch[idx],
@@ -210,7 +213,7 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
                 if offset_mapping_batch is not None:
                     single_encoding["offset_mapping"] = offset_mapping_batch[idx]
 
-                updated_single = insert_fn(single_encoding)
+                updated_single = insert_fn(single_encoding, **insert_kwargs)
                 new_input_ids_batch.append(updated_single["input_ids"])
                 new_attention_mask_batch.append(updated_single["attention_mask"])
                 if new_special_tokens_mask_batch is not None:
@@ -500,7 +503,9 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         except Exception:
             return updated
 
-    def _insert_boundary_predictor_gist_into_encoding(self, encoding: Dict[str, Any]) -> Dict[str, Any]:
+    def _insert_boundary_predictor_gist_into_encoding(
+        self, encoding: Dict[str, Any], max_length: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
         Insert end-of-sentence (gist) tokens at positions predicted by the boundary predictor model.
         Expects and returns plain python lists.
@@ -508,6 +513,8 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         Note: The boundary predictor model expects token IDs from the base model tokenizer
         (boundary_predictor_base_model), but we're using the current tokenizer token IDs.
         This may cause incorrect predictions if the tokenizers differ significantly.
+        If `max_length` is provided, the returned sequence is truncated to that length
+        after inserting gist tokens so the caller's length constraint is preserved.
         """
         input_ids: List[int] = encoding.get("input_ids", [])
         if hasattr(input_ids, "tolist"):
@@ -572,6 +579,14 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
                 if new_offset_mapping is not None:
                     insertion_offsets = [None] * len(gist_ids)
                     new_offset_mapping.extend(insertion_offsets)
+
+        if max_length is not None and len(new_input_ids) > max_length:
+            new_input_ids = new_input_ids[:max_length]
+            new_attention_mask = new_attention_mask[:max_length]
+            if new_special_tokens_mask is not None:
+                new_special_tokens_mask = new_special_tokens_mask[:max_length]
+            if new_offset_mapping is not None:
+                new_offset_mapping = new_offset_mapping[:max_length]
 
         updated: Dict[str, Any] = dict(encoding)
         updated["input_ids"] = new_input_ids

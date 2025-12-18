@@ -53,6 +53,36 @@ def test_boundary_predictor_inserts_gist_tokens_after_boundaries():
     ]
 
 
+def test_boundary_predictor_honors_max_length():
+    class DummyBoundaryPredictor(nn.Module):
+        def forward(self, input_ids):
+            boundary_mask = torch.zeros((1, input_ids.shape[1]), dtype=torch.long, device=input_ids.device)
+            boundary_mask[0, 1] = 1
+            boundary_mask[0, 3] = 1
+            boundary_logprobs = torch.zeros_like(input_ids, dtype=torch.float32)
+            return boundary_logprobs, boundary_mask
+
+    tokenizer = object.__new__(PreTrainedTokenizerFastEOS)
+    tokenizer.end_of_sentence_token_ids = [101, 102]
+    tokenizer.boundary_predictor_model = DummyBoundaryPredictor()
+    tokenizer.boundary_predictor_device = "cpu"
+
+    encoding = {
+        "input_ids": [10, 11, 12, 13],
+        "attention_mask": [1, 1, 1, 1],
+        "special_tokens_mask": [0, 0, 0, 0],
+        "offset_mapping": [(0, 1), (2, 3), (4, 5), (6, 7)],
+    }
+
+    updated = tokenizer._insert_boundary_predictor_gist_into_encoding(encoding, max_length=5)
+
+    assert updated["input_ids"] == [10, 11, 101, 102, 12]
+    assert updated["attention_mask"] == [1, 1, 1, 1, 1]
+    assert updated["special_tokens_mask"] == [0, 0, 1, 1, 0]
+    assert updated["offset_mapping"] == [(0, 1), (2, 3), None, None, (4, 5)]
+    assert len(updated["input_ids"]) == 5
+
+
 @pytest.mark.skipif(
     not os.path.exists(CKPT_PATH) or not torch.cuda.is_available(),
     reason="checkpoint missing or CUDA unavailable",
