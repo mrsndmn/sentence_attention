@@ -135,7 +135,15 @@ class SentenceTrainer(Trainer):
         lm_loss_value = lm_loss.detach()
         moe_loss_value = moe_loss.detach()
 
-        metrics = {"lm_loss": lm_loss_value, "moe_loss": moe_loss_value}
+        total_tokens = attention_mask.sum().clamp(min=1)
+        gist_tokens = (special_embeddings_mask.bool() & attention_mask.bool()).sum()
+        gist_tokens_percent = (gist_tokens.float() / total_tokens.float()) * 100 / self.args.gradient_accumulation_steps
+
+        metrics = {
+            "lm_loss": lm_loss_value,
+            "moe_loss": moe_loss_value,
+            "gist_tokens_percent": gist_tokens_percent.detach(),
+        }
 
         return (loss, outputs) if return_outputs else (loss, metrics)
 

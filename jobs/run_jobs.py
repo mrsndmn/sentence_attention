@@ -1348,7 +1348,7 @@ def run_group_full_4k_boundary_predictor(
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
             limit_dataset_shards=local_limit_shards,
-            offset_dataset_shards=7,
+            offset_dataset_shards=14,
             max_steps=max_steps,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
@@ -1367,7 +1367,7 @@ def run_group_full_4k_boundary_predictor(
             model_checkpoint=model_checkpoint,
             select_train_dataset_items=0,
             adam_epsilon="1e-8",
-            warmup_steps=100,
+            warmup_steps=200,
             dry=dry,
             bf16="0",
             add_end_of_sentence_token=1,

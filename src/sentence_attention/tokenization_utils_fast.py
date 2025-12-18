@@ -549,8 +549,11 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         input_ids_tensor = torch.tensor([input_ids], dtype=torch.long).to(device)
         with torch.no_grad():
             boundary_logprobs, boundary_mask = model(input_ids_tensor)
+            boundary_mask = boundary_mask.cpu()
 
         boundary_mask[0, 0] = 0
+        # mask pad tokens
+        boundary_mask[0, torch.tensor(attention_mask).bool() == False] = 0  ## noqa E712
 
         boundary_positions = boundary_mask[0].cpu().nonzero(as_tuple=True)[0].tolist()
 
