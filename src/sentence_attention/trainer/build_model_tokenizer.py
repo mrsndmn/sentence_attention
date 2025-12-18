@@ -36,14 +36,15 @@ def _load_boundary_predictor_model(training_args, model, device="cpu", torch_dty
 
     del sd["subword_embedding.weight"]
 
-    base_embedding_weight = model.get_input_embeddings().weight.clone()
+    base_embedding_weight = model.get_input_embeddings()
     bp_model = BolmoLocalEncoder(config, base_embedding_weight)
-    missing_keys, extra_keys = bp_model.load_state_dict(sd)
-    missing_keys = [x for x in missing_keys if missing_keys != "subword_embedding.weight"]
+    missing_keys, extra_keys = bp_model.load_state_dict(sd, strict=False)
+    missing_keys = [x for x in missing_keys if x != "subword_embedding.weight"]
 
     assert len(missing_keys) == 0, f"found missing keys: {missing_keys}"
     assert len(extra_keys) == 0, f"found extra keys: {extra_keys}"
 
+    bp_model.freeze_non_embeddings()
     bp_model.to(device)
     bp_model.to(torch_dtype)
     bp_model.eval()
@@ -81,9 +82,10 @@ def _build_tokenizer(training_args: SentenceTrainingArguments, model, torch_dtyp
         )
 
         extra = {}
+        boundary_predictor_model = None
         if training_args.gist_placement == "boundary_predictor":
             device = "cuda"
-            extra["boundary_predictor_model"] = _load_boundary_predictor_model(
+            boundary_predictor_model = _load_boundary_predictor_model(
                 training_args, model, device=device, torch_dtype=torch_dtype
             )
             extra["boundary_predictor_device"] = device
@@ -96,11 +98,13 @@ def _build_tokenizer(training_args: SentenceTrainingArguments, model, torch_dtyp
             **extra,
         )
 
+        tokenizer.set_boundary_predictor_model(boundary_predictor_model)
+
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 
-    print("num_eos_tokens", tokenizer.num_eos_tokens, "end_of_sentence_tokens_list", tokenizer.end_of_sentence_tokens_list)
     print("tokenizer", tokenizer)
+    print("num_eos_tokens", tokenizer.num_eos_tokens, "end_of_sentence_tokens_list", tokenizer.end_of_sentence_tokens_list)
 
     tokenizer.padding_side = "right"
     # tokenizer.padding_side = "left"

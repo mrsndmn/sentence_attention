@@ -34,15 +34,17 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         self.max_cummulative_nlogits_value: float = kwargs.get("max_cummulative_nlogits_value", 50.0)
         self.logits_model_name: str = kwargs.get("logits_model_name", "unsloth/Llama-3.2-1B")
         self.logits_chunk_size: int = kwargs.get("logits_chunk_size", 1024)
-        self.boundary_predictor_model: Optional[torch.nn.Module] = kwargs.get("boundary_predictor_model", None)
+        self.boundary_predictor_model: Optional[torch.nn.Module] = kwargs.get(
+            "boundary_predictor_model", None
+        )  # can also be set with set_boundary_predictor_model
         self.boundary_predictor_device: Optional[str] = kwargs.get("boundary_predictor_device", None)
 
         if self.gist_placement not in {"sentence", "uniform", "with_logits", "boundary_predictor"}:
             raise ValueError("gist_placement must be one of {'sentence','uniform','with_logits', 'boundary_predictor}")
         if not isinstance(self.uniform_interval_tokens, int) or self.uniform_interval_tokens <= 0:
             raise ValueError("uniform_interval_tokens must be a positive integer")
-        if self.gist_placement == "boundary_predictor" and self.boundary_predictor_model is None:
-            raise ValueError("boundary_predictor_model must be provided when gist_placement='boundary_predictor'")
+        # if self.gist_placement == "boundary_predictor" and self.boundary_predictor_model is None:
+        #     raise ValueError("boundary_predictor_model must be provided when gist_placement='boundary_predictor'")
 
         if self.num_eos_tokens >= 1:
             self.end_of_sentence_tokens_list = [f"<end_of_sentence_{i}>" for i in range(self.num_eos_tokens)]
@@ -85,8 +87,14 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
             self._logits_tokenizer.pad_token = self._logits_tokenizer.eos_token
         return self._logits_model, self._logits_tokenizer, self._logits_device
 
+    def set_boundary_predictor_model(self, boundary_predictor_model):
+        self.boundary_predictor_model = boundary_predictor_model
+
+        return
+
     def _get_boundary_predictor_model(self):
         """Get the boundary predictor model and device."""
+        assert self.boundary_predictor_model is not None
         return self.boundary_predictor_model, self.boundary_predictor_device
 
     def encode_plus(self, text: str, **kwargs):

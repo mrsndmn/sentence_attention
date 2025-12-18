@@ -368,6 +368,13 @@ class BolmoLocalEncoder(nn.Module):
 
         self.boundary_predictor_module = BolmoBoundaryPredictor(config)
 
+    def freeze_non_embeddings(self):
+        for param_name, param in self.named_parameters():
+            if "subword_embedding" in param_name:
+                continue
+
+            param.requires_grad = False
+
     def forward(
         self,
         input_ids,

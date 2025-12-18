@@ -72,6 +72,7 @@ class SentenceTrainer(Trainer):
 
         torch.compiler.cudagraph_mark_step_begin()
         # breakpoint()
+        print("model_kwargs input ids", model_kwargs["input_ids"])
         outputs = model(
             fused_linear_cross_entropy=fused_linear_cross_entropy,
             labels=labels,
