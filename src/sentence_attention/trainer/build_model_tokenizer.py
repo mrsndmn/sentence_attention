@@ -26,8 +26,8 @@ def freeze_model(model: nn.Module):
         p.requires_grad = False
 
 
-def _load_boundary_predictor_model(training_args, model, device="cpu", torch_dtype=torch.bfloat16):
-    ckpt = torch.load(training_args.boundary_predictor_model_checkpoint, map_location="cpu")
+def _load_boundary_predictor_model(boundary_predictor_model_checkpoint, model, device="cpu", torch_dtype=torch.bfloat16):
+    ckpt = torch.load(boundary_predictor_model_checkpoint, map_location="cpu")
     config = BolmoConfig(**ckpt["config"])
 
     sd = ckpt["model_state_dict"]
@@ -86,7 +86,7 @@ def _build_tokenizer(training_args: SentenceTrainingArguments, model, torch_dtyp
         if training_args.gist_placement == "boundary_predictor":
             device = "cuda"
             boundary_predictor_model = _load_boundary_predictor_model(
-                training_args, model, device=device, torch_dtype=torch_dtype
+                training_args.boundary_predictor_model_checkpoint, model, device=device, torch_dtype=torch_dtype
             )
             extra["boundary_predictor_device"] = device
 

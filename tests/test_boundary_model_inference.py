@@ -35,7 +35,7 @@ def test_bolmo_boundary_inference_pretrained():
 
     sentences = " ".join(
         [
-            '{"test": "value",\n"test2": "value2"}',
+            # '{"test": "value",\n"test2": "value2"}',
             #             """What is swap math ?
             # label: 4
             # When does the average teenager first

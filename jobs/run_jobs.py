@@ -681,7 +681,7 @@ def run_group_eos_only(
     return _run_group_eos_only(
         dry=dry,
         dataset="fineweb_edu",
-        limit_dataset_shards=1,
+        limit_dataset_shards=2,
         num_eos_tokens=num_eos_tokens,
         test=test,
         force=force,
@@ -727,7 +727,7 @@ def _run_group_eos_only(
     save_steps = 5000
     # lr_scheduler_type = "constant"
 
-    max_steps = 16000
+    max_steps = -1
 
     if models_checkpoints is None:
         models_checkpoints = _models_for_eos_only()
@@ -1272,8 +1272,8 @@ def run_group_full_4k_boundary_predictor(
     # lr_scheduler_type = "cosine_with_min_lr"
     # lr_scheduler_type = "linear"
 
-    default_limit_shards = 1
-    max_steps = 1000
+    default_limit_shards = 7
+    max_steps = -1
 
     for exp_config in _ft_4k_colddown_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -1343,12 +1343,12 @@ def run_group_full_4k_boundary_predictor(
             continue
 
         run_training_experiments(
-            learning_rate=0.00005,
+            learning_rate=0.0001,
             lr_scheduler_type=lr_scheduler_type,
             model_type="sentence_pretrained_checkpoint",
             # Rertain on EOSo data
             limit_dataset_shards=local_limit_shards,
-            offset_dataset_shards=14,
+            offset_dataset_shards=7,
             max_steps=max_steps,
             number_of_eos_tokens=number_of_eos_tokens,
             optimized_params=optimized_params,
