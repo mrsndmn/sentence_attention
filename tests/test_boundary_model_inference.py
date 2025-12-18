@@ -35,11 +35,12 @@ def test_bolmo_boundary_inference_pretrained():
 
     sentences = " ".join(
         [
-            """What is swap math ?
-label: 4
-When does the average teenager first
-have intercourse ?
-label: 5"""
+            '{"test": "value",\n"test2": "value2"}',
+            #             """What is swap math ?
+            # label: 4
+            # When does the average teenager first
+            # have intercourse ?
+            # label: 5"""
             # "Elizabeth's refusal of Mr. Collins offer of marriage showed an independence seldom seen in heroines of the day. Her refusal of Mr. Darcy while triggered by anger showed a level of independence that left him shocked and stunned.",
         ]
     )
