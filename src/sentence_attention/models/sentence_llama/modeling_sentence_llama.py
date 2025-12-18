@@ -1238,8 +1238,8 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
             from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache
 
-            PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
-            # PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
+            # PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+            PREFILL_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
             self.config._attn_implementation = PREFILL_DEFAULT_ATTN_IMPLEMENTATION
 
             scrooge_prefill_outputs = full_prefill_small_kv_cache(
@@ -1304,8 +1304,8 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         current_cache_position = cache_position.clone()
         current_input_ids = input_ids[:, -1:].clone()
 
-        # DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
-        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
+        # DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
         # Force eager attention for decoding
         self.config._attn_implementation = DECODE_DEFAULT_ATTN_IMPLEMENTATION
 
