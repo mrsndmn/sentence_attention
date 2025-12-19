@@ -1,5 +1,6 @@
+import argparse
+import numpy as np
 import torch
-import matplotlib.pyplot as plt
 from transformers import AutoTokenizer
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     special_token_mask_to_clothest_token_idx_slow,
@@ -8,24 +9,16 @@ from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
 from sentence_attention.trainer.build_model_tokenizer import _load_boundary_predictor_model
 
 
-def reward(input_ids):
-
-    # TODO count negative number if gist tokens
-    num_gist_tokens = 0  # TODO
-
-    return -num_gist_tokens
-
-
-def modify_gist_tokens(special_embeddings_mask, input_ids, attention_mask, num_gist_tokens_to_keep):
+def modify_gist_tokens_with_per_boundary_counts(special_embeddings_mask, input_ids, attention_mask, gist_counts_per_boundary):
     """
-    Modify special_embeddings_mask and input_ids to keep only the first num_gist_tokens_to_keep
-    gist tokens in each consecutive group of gist tokens. Also removes extra gist tokens from input_ids.
+    Modify special_embeddings_mask and input_ids to keep only the specified number of gist tokens
+    for each boundary group. Also removes extra gist tokens from input_ids.
 
     Args:
         special_embeddings_mask: torch.Tensor of shape [batch, seq_len] with 1s for gist tokens
         input_ids: torch.Tensor of shape [batch, seq_len] with token IDs
         attention_mask: torch.Tensor of shape [batch, seq_len] with attention mask
-        num_gist_tokens_to_keep: int, number of gist tokens to keep per group
+        gist_counts_per_boundary: list[int], number of gist tokens to keep for each boundary group
 
     Returns:
         Tuple of (modified_special_embeddings_mask, modified_input_ids, modified_attention_mask)
@@ -45,6 +38,7 @@ def modify_gist_tokens(special_embeddings_mask, input_ids, attention_mask, num_g
 
         # Build mask of indices to keep
         indices_to_keep = []
+        boundary_idx = 0
         i = 0
         while i < seq_len:
             if mask[i].item() == 1:  # Start of a gist token group
@@ -54,6 +48,13 @@ def modify_gist_tokens(special_embeddings_mask, input_ids, attention_mask, num_g
                     i += 1
                 group_end = i
                 group_length = group_end - group_start
+
+                # Get the number of gist tokens to keep for this boundary
+                if boundary_idx < len(gist_counts_per_boundary):
+                    num_gist_tokens_to_keep = gist_counts_per_boundary[boundary_idx]
+                else:
+                    num_gist_tokens_to_keep = group_length  # Keep all if not specified
+                boundary_idx += 1
 
                 # Keep only the first num_gist_tokens_to_keep tokens
                 tokens_to_keep_in_group = min(group_length, num_gist_tokens_to_keep)
@@ -78,30 +79,112 @@ def modify_gist_tokens(special_embeddings_mask, input_ids, attention_mask, num_g
     return modified_mask, modified_input_ids, modified_attention_mask
 
 
+def get_boundary_positions(special_embeddings_mask):
+    """Extract boundary positions (start of each gist token group) from special_embeddings_mask."""
+    boundary_positions = []
+    seq_len = special_embeddings_mask.shape[1]
+    i = 0
+    while i < seq_len:
+        if special_embeddings_mask[0, i].item() == 1:
+            boundary_positions.append(i)
+            # Skip the rest of this gist token group
+            while i < seq_len and special_embeddings_mask[0, i].item() == 1:
+                i += 1
+        else:
+            i += 1
+    return boundary_positions
+
+
+def compute_losses(model, input_ids, attention_mask, special_embeddings_mask, clothest_end_of_sentence_token_idx):
+    """Compute full loss, gist tokens loss, and non-gist tokens loss."""
+    # Create labels (shifted input_ids for next token prediction)
+    labels = input_ids.clone()
+    labels[:, :-1] = input_ids[:, 1:]
+    labels[:, -1] = -100  # Last token has no next token
+
+    # Mask out gist tokens in labels for non-gist loss
+    gist_mask_next_token = special_embeddings_mask[:, 1:].bool()  # [batch, seq_len-1]
+    labels_non_gist = labels.clone()
+    labels_non_gist[:, :-1][gist_mask_next_token] = -100
+
+    # Mask out non-gist tokens in labels for gist loss
+    labels_gist = labels.clone()
+    labels_gist[:, :-1][~gist_mask_next_token] = -100
+
+    # Run model forward pass for non-gist loss
+    with torch.no_grad():
+        outputs_non_gist = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask.bool(),
+            labels=labels_non_gist,
+            special_embeddings_mask=special_embeddings_mask,
+            clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        )
+
+    # Run model forward pass for gist loss
+    with torch.no_grad():
+        outputs_gist = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask.bool(),
+            labels=labels_gist,
+            special_embeddings_mask=special_embeddings_mask,
+            clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        )
+
+    # Run model forward pass for full loss
+    with torch.no_grad():
+        outputs_full = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask.bool(),
+            labels=labels,
+            special_embeddings_mask=special_embeddings_mask,
+            clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+        )
+
+    return outputs_full.loss.item(), outputs_gist.loss.item(), outputs_non_gist.loss.item()
+
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Sample gist tokens per boundary and compute loss statistics")
+    parser.add_argument("--num_samples", type=int, default=64, help="Number of samples to generate")
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default="artifacts/experiments/eos_8/sentence_Llama-3.2-1B_boundaries_prediction_full_boundary_predictor__num_eos_tokens_8_manual_base_weights_KH000000/checkpoint-1000",
+        help="Model checkpoint path",
+    )
+    parser.add_argument(
+        "--bp_checkpoint",
+        type=str,
+        default="artifacts/experiments/bp/unsloth__Llama-3.2-1B_drop_punkt_0.0_bs_4_train_samples_10000/model.pt",
+        help="Boundary predictor checkpoint path",
+    )
+    parser.add_argument(
+        "--text",
+        type=str,
+        default="Elizabeth's refusal of Mr. Collins offer of marriage showed an independence seldom seen in heroines of the day. Her refusal of Mr. Darcy while triggered by anger showed a level of independence that left him shocked and stunned.",
+        help="Text to process",
+    )
+    args = parser.parse_args()
+
     device = "cuda"
 
-    checkpoint = "artifacts/experiments/eos_8/sentence_Llama-3.2-1B_boundaries_prediction_full_boundary_predictor__num_eos_tokens_8_KHTDPJ7Z/checkpoint-1000"
-    model = SentenceLlamaForCausalLM.from_pretrained(checkpoint, torch_dtype=torch.bfloat16)
+    model = SentenceLlamaForCausalLM.from_pretrained(args.checkpoint, torch_dtype=torch.bfloat16)
     model.config._attn_implementation = "sentence_attention"
-
     model.to(device)
     model.eval()
 
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-    bp_checkpoint = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/bp/unsloth__Llama-3.2-1B/model.pt"
-    boundary_predictor_model = _load_boundary_predictor_model(bp_checkpoint, model)
+    tokenizer = AutoTokenizer.from_pretrained(args.checkpoint)
+    boundary_predictor_model = _load_boundary_predictor_model(args.bp_checkpoint, model)
     boundary_predictor_model.to(device)
     tokenizer.set_boundary_predictor_model(boundary_predictor_model)
-    # Set gist_placement to boundary_predictor to enable gist token insertion
     tokenizer.gist_placement = "boundary_predictor"
     print(f"Tokenizer gist_placement: {tokenizer.gist_placement}")
+    print(f"Number of EOS tokens: {tokenizer.num_eos_tokens}")
 
-    # pass
-    test_text = "Elizabeth's refusal of Mr. Collins offer of marriage showed an independence seldom seen in heroines of the day. Her refusal of Mr. Darcy while triggered by anger showed a level of independence that left him shocked and stunned."
-    # Call encode_plus for single text (not batch) to ensure gist tokens are inserted
-    encoding = tokenizer.encode_plus(test_text)
-    print(f"Encoding keys (before tensor conversion): {list(encoding.keys())}")
+    # Get boundaries prediction from pretrained model
+    encoding = tokenizer.encode_plus(args.text)
+    print(f"Encoding keys: {list(encoding.keys())}")
 
     # Convert to tensors manually
     input_ids_list = encoding["input_ids"]
@@ -115,16 +198,13 @@ if __name__ == "__main__":
     input_ids_base = torch.tensor([input_ids_list], device=device)
     attention_mask_tensor = torch.tensor([attention_mask_list], device=device)
 
-    # Get base special_embeddings_mask - if not present, compute from special_tokens_mask or gist token IDs
+    # Get base special_embeddings_mask
     special_embeddings_mask_base = encoding.get("special_embeddings_mask")
     if special_embeddings_mask_base is None:
-        # Compute special_embeddings_mask from special_tokens_mask or gist token IDs
         special_tokens_mask = encoding.get("special_tokens_mask")
         if special_tokens_mask is not None:
-            # Use special_tokens_mask as special_embeddings_mask
             special_embeddings_mask_base = special_tokens_mask
         else:
-            # Compute from gist token IDs
             gist_token_ids = set(tokenizer.end_of_sentence_token_ids)
             special_embeddings_mask_base = [1 if token_id in gist_token_ids else 0 for token_id in input_ids_list]
 
@@ -135,103 +215,94 @@ if __name__ == "__main__":
     if special_embeddings_mask_base.dim() == 1:
         special_embeddings_mask_base = special_embeddings_mask_base.unsqueeze(0)
 
-    # Use attention mask from encoding, ensure correct dtype (long for transformers, will be converted internally)
     attention_mask = attention_mask_tensor.to(torch.long)
 
-    # Store results for plotting
-    num_gist_tokens_list = []
-    losses_non_gist = []
+    # Get boundary positions
+    boundary_positions = get_boundary_positions(special_embeddings_mask_base)
+    num_boundaries = len(boundary_positions)
+    print(f"Number of boundaries found: {num_boundaries}")
+
+    # Store metrics for all samples
+    compression_rates = []
     losses_full = []
+    losses_gist = []
+    losses_non_gist = []
 
-    # Loop over different numbers of gist tokens (1 to 8)
-    for num_gist_tokens_to_keep in range(1, 9):
-        print(f"\n=== Testing with {num_gist_tokens_to_keep} gist tokens ===")
+    # Generate N samples
+    for sample_idx in range(args.num_samples):
+        # Sample uniformly the number of gist tokens for each boundary (from 1 to num_eos_tokens)
+        gist_counts_per_boundary = [np.random.randint(1, tokenizer.num_eos_tokens + 1) for _ in range(num_boundaries)]
+        print("gist_counts_per_boundary", gist_counts_per_boundary)
 
-        # Modify special_embeddings_mask, input_ids, and attention_mask to keep only first num_gist_tokens_to_keep gist tokens per group
-        special_embeddings_mask, input_ids, attention_mask_modified = modify_gist_tokens(
-            special_embeddings_mask_base, input_ids_base, attention_mask, num_gist_tokens_to_keep
+        # Modify gist tokens based on sampled counts
+        special_embeddings_mask, input_ids, attention_mask_modified = modify_gist_tokens_with_per_boundary_counts(
+            special_embeddings_mask_base, input_ids_base, attention_mask, gist_counts_per_boundary
         )
+
+        # Find max number of gist tokens in any boundary for computing clothest_end_of_sentence_token_idx
+        max_gist_tokens = max(gist_counts_per_boundary) if gist_counts_per_boundary else tokenizer.num_eos_tokens
 
         # Recompute clothest_end_of_sentence_token_idx with modified mask
         clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-            special_embeddings_mask.bool(), num_special_tokens=num_gist_tokens_to_keep
+            special_embeddings_mask.bool(), num_special_tokens=max_gist_tokens
         )
         if clothest_end_of_sentence_token_idx.dim() == 1:
             clothest_end_of_sentence_token_idx = clothest_end_of_sentence_token_idx.unsqueeze(0)
 
-        # Create labels (shifted input_ids for next token prediction)
-        labels = input_ids.clone()
-        labels[:, :-1] = input_ids[:, 1:]
-        labels[:, -1] = -100  # Last token has no next token
+        # Compute losses
+        loss_full, loss_gist, loss_non_gist = compute_losses(
+            model, input_ids, attention_mask_modified, special_embeddings_mask, clothest_end_of_sentence_token_idx
+        )
 
-        # Mask out gist tokens in labels for non-gist loss (set to -100 where the target token is a gist token)
-        gist_mask_next_token = special_embeddings_mask[:, 1:].bool()  # [batch, seq_len-1]
-        labels_non_gist = labels.clone()
-        labels_non_gist[:, :-1][gist_mask_next_token] = -100
-
-        # Run model forward pass for non-gist loss
-        model.eval()
-        with torch.no_grad():
-            outputs_non_gist = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask_modified.bool(),
-                labels=labels_non_gist,
-                special_embeddings_mask=special_embeddings_mask,
-                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
-            )
-
-        # Run model forward pass for full loss (including gist tokens)
-        with torch.no_grad():
-            outputs_full = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask_modified.bool(),
-                labels=labels,
-                special_embeddings_mask=special_embeddings_mask,
-                clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
-            )
-
-        loss_non_gist = outputs_non_gist.loss
-        loss_full = outputs_full.loss
-        losses_non_gist.append(loss_non_gist.item())
-        losses_full.append(loss_full.item())
-        num_gist_tokens_list.append(num_gist_tokens_to_keep)
-
-        # Count tokens for context
+        # Count tokens
         num_non_gist_tokens = (~special_embeddings_mask.bool() & attention_mask_modified.bool()).sum().item()
         num_gist_tokens = (special_embeddings_mask.bool() & attention_mask_modified.bool()).sum().item()
-        print(f"Loss for non-gist tokens: {loss_non_gist.item():.4f}")
-        print(f"Full loss (with gist tokens): {loss_full.item():.4f}")
-        print(f"Total tokens: {attention_mask_modified.sum().item()}")
-        print(f"Non-gist tokens: {num_non_gist_tokens}")
-        print(f"Gist tokens: {num_gist_tokens}")
 
-    # Plot results
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        num_gist_tokens_list,
-        losses_non_gist,
-        marker="o",
-        linewidth=2,
-        markersize=8,
-        label="Loss (non-gist tokens)",
-        color="blue",
-    )
-    plt.plot(
-        num_gist_tokens_list,
-        losses_full,
-        marker="s",
-        linewidth=2,
-        markersize=8,
-        label="Full loss (with gist tokens)",
-        color="red",
-    )
-    plt.xlabel("Number of Gist Tokens", fontsize=12)
-    plt.ylabel("Loss", fontsize=12)
-    plt.title("Loss vs Number of Gist Tokens", fontsize=14)
-    plt.legend(fontsize=11)
-    plt.grid(True, alpha=0.3)
-    plt.xticks(num_gist_tokens_list)
-    plt.tight_layout()
-    plt.savefig("/tmp/loss_vs_gist_tokens.png", dpi=150, bbox_inches="tight")
-    print("\nPlot saved to '/tmp/loss_vs_gist_tokens.png'")
-    plt.show()
+        # Compute compression rate
+        compression_rate = num_non_gist_tokens / (num_gist_tokens + 1) if num_non_gist_tokens > 0 else 0.0
+
+        # Store metrics
+        compression_rates.append(compression_rate)
+        losses_full.append(loss_full)
+        losses_gist.append(loss_gist)
+        losses_non_gist.append(loss_non_gist)
+
+        if (sample_idx + 1) % 10 == 0:
+            print(f"Processed {sample_idx + 1}/{args.num_samples} samples")
+
+    # Compute and print summary statistics
+    print("\n" + "=" * 80)
+    print("Summary Statistics")
+    print("=" * 80)
+    print(f"Number of samples: {args.num_samples}")
+    print("\nCompression Rate (gist_tokens / non_gist_tokens):")
+    compression_rates_valid = [x for x in compression_rates if not np.isnan(x)]
+    if compression_rates_valid:
+        print(f"  Mean: {np.mean(compression_rates_valid):.4f}")
+        print(f"  Std:  {np.std(compression_rates_valid):.4f}")
+        print(f"  Min:  {np.min(compression_rates_valid):.4f}")
+        print(f"  Max:  {np.max(compression_rates_valid):.4f}")
+    else:
+        print("  No valid values")
+    print("\nFull Loss:")
+    losses_full_valid = [x for x in losses_full if not np.isnan(x)]
+    if losses_full_valid:
+        print(f"  Mean: {np.mean(losses_full_valid):.4f}")
+        print(f"  Std:  {np.std(losses_full_valid):.4f}")
+    else:
+        print("  No valid values")
+    print("\nGist Tokens Loss:")
+    losses_gist_valid = [x for x in losses_gist if not np.isnan(x)]
+    if losses_gist_valid:
+        print(f"  Mean: {np.mean(losses_gist_valid):.4f}")
+        print(f"  Std:  {np.std(losses_gist_valid):.4f}")
+    else:
+        print("  No valid values")
+    print("\nNon-Gist Tokens Loss:")
+    losses_non_gist_valid = [x for x in losses_non_gist if not np.isnan(x)]
+    if losses_non_gist_valid:
+        print(f"  Mean: {np.mean(losses_non_gist_valid):.4f}")
+        print(f"  Std:  {np.std(losses_non_gist_valid):.4f}")
+    else:
+        print("  No valid values")
+    print("=" * 80)
