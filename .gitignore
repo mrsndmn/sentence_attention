@@ -4,6 +4,8 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+nltk_data
+
 # C extensions
 *.so
 

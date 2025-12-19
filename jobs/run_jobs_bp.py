@@ -29,7 +29,7 @@ def run_experiments(
 
     all_args = (
         f"--model_checkpoint {model_checkpoint} "
-        f"--proba_drop_punkt {proba_drop_punkt}"
+        f"--proba_drop_punkt {proba_drop_punkt} "
         f"--batch_size {batch_size} "
         f"--max_train_samples {max_train_samples} "
         "--compile "
