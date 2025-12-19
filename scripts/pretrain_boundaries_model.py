@@ -213,10 +213,18 @@ if __name__ == "__main__":
         action="store_true",
         help="Use torch.compile on the model for speed",
     )
+    parser.add_argument(
+        "--proba_drop_punkt",
+        type=float,
+        default=0.5,
+    )
     args = parser.parse_args()
 
     model_checkpoint = args.model_checkpoint
     checkpoint_name = model_checkpoint.replace("/", "__")
+    checkpoint_name = checkpoint_name + f"_drop_punkt_{args.proba_drop_punkt}"
+    checkpoint_name = checkpoint_name + f"_bs_{args.batch_size}"
+    checkpoint_name = checkpoint_name + f"_train_samples_{args.max_train_samples}"
 
     output_dir = args.output_dir or os.path.join("artifacts", "experiments", "bp", checkpoint_name)
     os.makedirs(output_dir, exist_ok=True)
@@ -268,7 +276,7 @@ if __name__ == "__main__":
                 if last_idx < sent_start:
                     continue
 
-                drop_punct = text[last_idx] in SENTENCE_ENDINGS and random.random() < 0.5
+                drop_punct = text[last_idx] in SENTENCE_ENDINGS and random.random() < args.proba_drop_punkt
                 boundary_idx = last_idx
 
                 if drop_punct:
