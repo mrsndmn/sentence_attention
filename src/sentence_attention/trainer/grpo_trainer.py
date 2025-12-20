@@ -16,6 +16,7 @@ class GRPOTrainer(Trainer):
         for batch_i in range(inputs.shape[0]):
             # seq length
             input_ids = input_ids[batch_i, : attention_masks_length[batch_i]]
+            # TODO iterate and sample
 
         return None
 
@@ -27,24 +28,58 @@ class GRPOTrainer(Trainer):
             for i in range(num_gist_tokens):
                 additional_special_tokens.append(f"<end_of_sentence_{i}_{num_gist_tokens}>")
 
-        print("additional_special_tokens", additional_special_tokens)
         tokenizer.add_special_tokens({"additional_special_tokens": additional_special_tokens})
 
-        # Initialize new embeddings with pretrained gist embeddings values
-        base_embedding_weight = model.get_input_embeddings().weight
+        # Resize embeddings for newly added special tokens.
+        # Note: must re-fetch weights AFTER resizing, since resize_token_embeddings may replace modules.
         model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
-        for num_gist_tokens in range(1, tokenizer.num_eos_tokens + 1):
-            for i in range(num_gist_tokens):
-                new_gist_token = f"<end_of_sentence_{i}_{num_gist_tokens}>"
-                orig_gist_token = f"<end_of_sentence_{i}>"
-                gist_token_id = tokenizer.convert_tokens_to_ids([new_gist_token])[0]
-                orig_gist_token_id = tokenizer.convert_tokens_to_ids([orig_gist_token])[0]
-                print(f"Initialize {new_gist_token} with {orig_gist_token}")
-                base_embedding_weight[gist_token_id] = base_embedding_weight[orig_gist_token_id]
 
-        # TODO also reinitialize LM Head for untied LMs
-        if not model.config.tie_word_embeddings:
-            raise ValueError("Not implemented model preparation for non tie_word_embeddings models")
+        input_embeddings = model.get_input_embeddings()
+        output_embeddings = model.get_output_embeddings()
+
+        with torch.no_grad():
+            input_weight = input_embeddings.weight
+
+            output_weight = None
+            output_bias = None
+            if output_embeddings is not None and not model.config.tie_word_embeddings:
+                output_weight = output_embeddings.weight
+                if hasattr(output_embeddings, "bias") and output_embeddings.bias is not None:
+                    output_bias = output_embeddings.bias
+
+            for num_gist_tokens in range(1, tokenizer.num_eos_tokens + 1):
+                for i in range(num_gist_tokens):
+                    new_gist_token = f"<end_of_sentence_{i}_{num_gist_tokens}>"
+                    orig_gist_token = f"<end_of_sentence_{i}>"
+
+                    new_id = tokenizer.convert_tokens_to_ids(new_gist_token)
+                    orig_id = tokenizer.convert_tokens_to_ids(orig_gist_token)
+                    if new_id is None or orig_id is None:
+                        raise ValueError(f"Failed to resolve token ids for {new_gist_token=} {orig_gist_token=}")
+
+                    # Initialize input embeddings for new tokens from the original gist token embeddings.
+                    input_weight[new_id].copy_(input_weight[orig_id])
+
+                    # For untied models, also initialize the LM head weights/bias for the new tokens.
+                    if output_weight is not None:
+                        if output_weight.shape[0] == len(tokenizer):
+                            output_weight[new_id].copy_(output_weight[orig_id])
+                        elif output_weight.ndim == 2 and output_weight.shape[1] == len(tokenizer):
+                            output_weight[:, new_id].copy_(output_weight[:, orig_id])
+                        else:
+                            raise ValueError(
+                                "Unexpected LM head weight shape while initializing new tokens: "
+                                f"{tuple(output_weight.shape)} vs vocab={len(tokenizer)}"
+                            )
+
+                        if output_bias is not None:
+                            if output_bias.shape[0] == len(tokenizer):
+                                output_bias[new_id].copy_(output_bias[orig_id])
+                            else:
+                                raise ValueError(
+                                    "Unexpected LM head bias shape while initializing new tokens: "
+                                    f"{tuple(output_bias.shape)} vs vocab={len(tokenizer)}"
+                                )
 
         return
 
