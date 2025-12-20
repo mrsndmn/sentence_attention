@@ -8,6 +8,9 @@ AVAILABLE_OPTIMIZED_PARAMS = ["full", "lora", "only_eos_embedding"]
 @dataclass
 class SentenceTrainingArguments(TrainingArguments):
 
+    trainer_type: str = field(default="clm")  # clm, grpo
+    num_generate_samples: int = field(default=32)
+
     ddp_find_unused_parameters: bool = field(default=False)
     load_best_model_at_end: bool = field(default=False)
     remove_unused_columns: bool = field(default=False)
