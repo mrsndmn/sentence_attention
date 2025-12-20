@@ -10,6 +10,7 @@ class FakeTokenizer:
     def __init__(self, vocab, num_eos_tokens: int):
         self._vocab = dict(vocab)
         self.num_eos_tokens = num_eos_tokens
+        self.pad_token_id = self._vocab.get("<pad>", 0)
 
     def add_special_tokens(self, special_tokens_dict):
         additional = special_tokens_dict.get("additional_special_tokens", [])
@@ -139,3 +140,97 @@ def test_prepare_model_before_training_copies_embeddings_for_new_gist_tokens(tie
                 model.get_output_embeddings().bias[new_id],
                 model.get_output_embeddings().bias[orig_id],
             )
+
+
+def test_sample_gist_tokens_for_input_replaces_runs_and_updates_masks():
+    torch.manual_seed(0)
+
+    num_eos_tokens = 3
+    hidden_size = 4
+    vocab = _make_base_vocab(num_eos_tokens)
+    tokenizer = FakeTokenizer(vocab=vocab, num_eos_tokens=num_eos_tokens)
+
+    # Add all variable-length gist tokens (like prepare_model_before_training does).
+    additional = []
+    for k in range(1, num_eos_tokens + 1):
+        for i in range(k):
+            additional.append(f"<end_of_sentence_{i}_{k}>")
+    tokenizer.add_special_tokens({"additional_special_tokens": additional})
+
+    model = FakeModel(vocab_size=len(tokenizer), hidden_size=hidden_size, tie_word_embeddings=True)
+
+    # Build a single example with two gist runs of length 3, right padded.
+    base_ids = [
+        tokenizer.convert_tokens_to_ids("hello"),
+        tokenizer.convert_tokens_to_ids("<end_of_sentence_0>"),
+        tokenizer.convert_tokens_to_ids("<end_of_sentence_1>"),
+        tokenizer.convert_tokens_to_ids("<end_of_sentence_2>"),
+        tokenizer.convert_tokens_to_ids("world"),
+        tokenizer.convert_tokens_to_ids("<end_of_sentence_0>"),
+        tokenizer.convert_tokens_to_ids("<end_of_sentence_1>"),
+        tokenizer.convert_tokens_to_ids("<end_of_sentence_2>"),
+    ]
+    seq_len = 12
+    pad_id = tokenizer.pad_token_id
+    base_ids = base_ids + [pad_id] * (seq_len - len(base_ids))
+
+    input_ids = torch.tensor([base_ids], dtype=torch.long)
+    attention_mask = (input_ids != pad_id).long()
+    special_embeddings_mask = torch.zeros_like(input_ids, dtype=torch.long)
+    for pos in [1, 2, 3, 5, 6, 7]:
+        special_embeddings_mask[0, pos] = 1
+
+    inputs = {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "special_embeddings_mask": special_embeddings_mask,
+    }
+
+    trainer = GRPOTrainer.__new__(GRPOTrainer)
+    trainer.processing_class = tokenizer
+
+    class Args:
+        grpo_num_generate_samples = 5
+
+    trainer.args = Args()
+
+    sampled = trainer.sample_gist_tokens_for_input(model, inputs)
+    assert isinstance(sampled, list)
+    assert len(sampled) == 5
+
+    for out in sampled:
+        assert out["input_ids"].shape == input_ids.shape
+        assert out["attention_mask"].shape == attention_mask.shape
+        assert out["special_embeddings_mask"].shape == special_embeddings_mask.shape
+        assert out["clothest_end_of_sentence_token_idx"].shape == input_ids.shape
+
+        # Masks must be consistent with padding.
+        assert torch.equal(out["attention_mask"], (out["input_ids"] != pad_id).long())
+        assert (out["special_embeddings_mask"] <= out["attention_mask"]).all()
+
+        # Each original run must be replaced by a run starting with <end_of_sentence_0_k>.
+        out_ids = out["input_ids"][0].tolist()
+        out_spec = out["special_embeddings_mask"][0].tolist()
+
+        # Find all contiguous gist runs in the output (within attention_mask).
+        runs = []
+        i = 0
+        valid_len = int(out["attention_mask"][0].sum().item())
+        while i < valid_len:
+            if out_spec[i] == 1:
+                j = i
+                while j < valid_len and out_spec[j] == 1:
+                    j += 1
+                runs.append((i, j))
+                i = j
+            else:
+                i += 1
+
+        # We expect exactly two gist runs (same as input), but each can have variable length 1..3.
+        assert len(runs) == 2
+        for start, end in runs:
+            run_len = end - start
+            assert 1 <= run_len <= num_eos_tokens
+            # First token must be <end_of_sentence_0_{run_len}>
+            first_expected = tokenizer.convert_tokens_to_ids(f"<end_of_sentence_0_{run_len}>")
+            assert out_ids[start] == first_expected

@@ -9,16 +9,139 @@ from transformers.trainer import _is_peft_model
 class GRPOTrainer(Trainer):
 
     def sample_gist_tokens_for_input(self, model, inputs):
+        """
+        For each contiguous sequence of gist tokens, sample a new number of gist tokens k in [1, run_len],
+        replace that gist sequence with `<end_of_sentence_{i}_{k}>` tokens, and right-pad to preserve tensor shapes.
 
-        input_ids = inputs["input_ids"].cpu()
-        attention_masks_length = inputs["attention_mask"].sum(dim=-1).cpu()
-        assert (inputs["attention_mask"][:, 0] == 1).all(), "input must be right padded"
-        for batch_i in range(inputs.shape[0]):
-            # seq length
-            input_ids = input_ids[batch_i, : attention_masks_length[batch_i]]
-            # TODO iterate and sample
+        Repeats the sampling `self.args.grpo_num_generate_samples` times and returns a list of new input dicts.
+        """
 
-        return None
+        tokenizer = getattr(self, "processing_class", None) or getattr(self, "tokenizer", None)
+        if tokenizer is None:
+            raise ValueError("Tokenizer is not available on trainer (expected `processing_class` or `tokenizer`).")
+
+        input_ids: torch.Tensor = inputs["input_ids"]
+        attention_mask: torch.Tensor = inputs["attention_mask"]
+        special_embeddings_mask: torch.Tensor = inputs["special_embeddings_mask"]
+
+        if input_ids.ndim != 2:
+            raise ValueError(f"Expected 2D input_ids, got shape={tuple(input_ids.shape)}")
+        if attention_mask.shape != input_ids.shape or special_embeddings_mask.shape != input_ids.shape:
+            raise ValueError("input_ids, attention_mask, and special_embeddings_mask must have the same shape.")
+
+        # Right padded (pads on the right, always attend to first token).
+        if not (attention_mask[:, 0] == 1).all():
+            raise ValueError("Input must be right padded (attention_mask[:, 0] must be 1).")
+
+        batch_size, seq_len = input_ids.shape
+
+        pad_token_id = getattr(tokenizer, "pad_token_id", None)
+        if pad_token_id is None:
+            pad_token_id = getattr(getattr(model, "config", None), "pad_token_id", 0) or 0
+
+        def compute_closest_boundary_idx_from_runs(mask: torch.Tensor) -> torch.Tensor:
+            # mask: [bs, seq_len] bool where True marks gist tokens.
+            # Boundary is the last token in each contiguous run of gist tokens.
+            is_special = mask.to(torch.bool)
+            boundary = is_special & torch.logical_not(torch.roll(is_special, shifts=-1, dims=1))
+            boundary[:, -1] = is_special[:, -1]
+
+            positions = torch.arange(seq_len, device=mask.device, dtype=torch.long).unsqueeze(0).expand(batch_size, -1)
+            boundary_indices = torch.where(boundary, positions, torch.zeros_like(positions))
+            last_boundary_inclusive, _ = torch.cummax(boundary_indices, dim=1)
+            last_boundary_prev = torch.roll(last_boundary_inclusive, shifts=1, dims=1)
+            last_boundary_prev[:, 0] = 0
+            return last_boundary_prev
+
+        def sample_one() -> dict:
+            new_input_ids = input_ids.clone()
+            new_attention_mask = attention_mask.clone()
+            new_special_mask = special_embeddings_mask.clone()
+
+            new_labels = None
+            if "labels" in inputs and isinstance(inputs["labels"], torch.Tensor) and inputs["labels"].shape == input_ids.shape:
+                new_labels = inputs["labels"].clone()
+
+            # Operate per-example to keep logic simple and robust.
+            for b in range(batch_size):
+                valid_len = int(new_attention_mask[b].sum().item())
+                if valid_len <= 0:
+                    continue
+
+                ids = new_input_ids[b, :valid_len].tolist()
+                spec = new_special_mask[b, :valid_len].to(torch.bool).tolist()
+                lbls = new_labels[b, :valid_len].tolist() if new_labels is not None else None
+
+                out_ids: list[int] = []
+                out_spec: list[int] = []
+                out_lbls: list[int] | None = [] if lbls is not None else None
+
+                i = 0
+                while i < valid_len:
+                    if spec[i]:
+                        # Consume a contiguous gist run.
+                        j = i
+                        while j < valid_len and spec[j]:
+                            j += 1
+                        run_len = j - i
+
+                        # Sample k in [1, run_len] and substitute the entire run with k new gist tokens.
+                        k = int(torch.randint(low=1, high=run_len + 1, size=(1,), device=input_ids.device).item())
+                        for tok_i in range(k):
+                            token_str = f"<end_of_sentence_{tok_i}_{k}>"
+                            tok_id = tokenizer.convert_tokens_to_ids(token_str)
+                            # HF tokenizers typically return unk_token_id for unknown tokens (not None).
+                            unk_id = getattr(tokenizer, "unk_token_id", None)
+                            if tok_id is None or (
+                                unk_id is not None and tok_id == unk_id and token_str != getattr(tokenizer, "unk_token", None)
+                            ):
+                                raise ValueError(
+                                    f"Token id not found for {token_str}. Did you call prepare_model_before_training?"
+                                )
+                            out_ids.append(int(tok_id))
+                            out_spec.append(1)
+                            if out_lbls is not None:
+                                out_lbls.append(int(tok_id))
+                        i = j
+                    else:
+                        out_ids.append(int(ids[i]))
+                        out_spec.append(0)
+                        if out_lbls is not None:
+                            out_lbls.append(int(lbls[i]))
+                        i += 1
+
+                # Right-pad back to seq_len.
+                if len(out_ids) > seq_len:
+                    out_ids = out_ids[:seq_len]
+                    out_spec = out_spec[:seq_len]
+                    if out_lbls is not None:
+                        out_lbls = out_lbls[:seq_len]
+
+                pad_count = seq_len - len(out_ids)
+                out_ids = out_ids + [int(pad_token_id)] * pad_count
+                out_spec = out_spec + [0] * pad_count
+                if out_lbls is not None:
+                    # Preserve common label convention for padded positions.
+                    out_lbls = out_lbls + [-100] * pad_count
+
+                new_input_ids[b] = torch.tensor(out_ids, device=input_ids.device, dtype=input_ids.dtype)
+                new_special_mask[b] = torch.tensor(out_spec, device=input_ids.device, dtype=new_special_mask.dtype)
+                new_attention_mask[b] = (new_input_ids[b] != pad_token_id).to(dtype=new_attention_mask.dtype)
+                if new_labels is not None and out_lbls is not None:
+                    new_labels[b] = torch.tensor(out_lbls, device=input_ids.device, dtype=new_labels.dtype)
+
+            result = dict(inputs)
+            result["input_ids"] = new_input_ids
+            result["attention_mask"] = new_attention_mask
+            result["special_embeddings_mask"] = new_special_mask
+            result["clothest_end_of_sentence_token_idx"] = compute_closest_boundary_idx_from_runs(
+                new_special_mask.to(torch.bool) & new_attention_mask.to(torch.bool)
+            )
+            if new_labels is not None:
+                result["labels"] = new_labels
+            return result
+
+        return [sample_one() for _ in range(self.args.grpo_num_generate_samples)]
 
     def prepare_model_before_training(self, model, tokenizer):
 
