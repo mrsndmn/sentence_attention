@@ -303,10 +303,12 @@ class GRPOTrainer(Trainer):
         # Group rewards/losses per original example, and take reward-weighted LM loss.
         reward_grouped = reward.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
         loss_grouped = per_example_lm_loss.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
-        reward_sum = reward_grouped.sum(dim=1, keepdim=True).clamp(min=1e-8)
-        weights = (reward_grouped / reward_sum).detach()
-        weighted_lm_loss_per_example = (weights * loss_grouped).sum(dim=1)  # [B]
-        loss = weighted_lm_loss_per_example.mean()
+        # reward_sum = reward_grouped.sum(dim=1, keepdim=True).clamp(min=1e-8)
+        advantage = (
+            (reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_grouped.std(dim=1, keepdim=True)
+        ).detach()
+        loss_per_example = (advantage * loss_grouped / loss_grouped.detach()).sum(dim=1)  # [B]
+        loss = loss_per_example.mean()
 
         # Mirror legacy metric naming.
         lm_loss_value = per_example_lm_loss.detach().mean()
@@ -315,6 +317,7 @@ class GRPOTrainer(Trainer):
         gist_tokens_all = gist_tokens.sum()
         gist_tokens_percent = (gist_tokens_all.float() / total_tokens_all.float()) * 100 / self.args.gradient_accumulation_steps
 
+        # breakpoint()
         metrics = {
             "lm_loss": lm_loss_value,
             "gist_tokens_percent": gist_tokens_percent.detach(),

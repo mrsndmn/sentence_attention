@@ -37,7 +37,9 @@ def run_experiments(
 
     random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
-    gradient_accumulation_steps = int(global_batch_size // (n_nodes * n_gpus * per_device_train_batch_size))
+    gradient_accumulation_steps = int(
+        global_batch_size // (n_nodes * n_gpus * per_device_train_batch_size * grpo_num_generate_samples)
+    )
 
     all_args = (
         "--save_strategy steps  --save_steps 5000 --max_grad_norm 1.0 --num_train_epochs 1 --seed 1008 --model_type sentence_pretrained_checkpoint "
