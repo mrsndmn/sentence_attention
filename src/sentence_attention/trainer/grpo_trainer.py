@@ -41,19 +41,80 @@ class GRPOTrainer(Trainer):
         if pad_token_id is None:
             pad_token_id = getattr(getattr(model, "config", None), "pad_token_id", 0) or 0
 
+        temperature = float(getattr(self.args, "grpo_sampling_temperature", 0.8))
+        top_p = float(getattr(self.args, "grpo_sampling_top_p", 0.95))
+        if temperature <= 0:
+            raise ValueError("grpo_sampling_temperature must be > 0")
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError("grpo_sampling_top_p must be in (0, 1]")
+
         def compute_closest_boundary_idx_from_runs(mask: torch.Tensor) -> torch.Tensor:
-            # mask: [bs, seq_len] bool where True marks gist tokens.
+            # mask: [bs, L] bool where True marks gist tokens.
             # Boundary is the last token in each contiguous run of gist tokens.
+            if mask.ndim != 2:
+                raise ValueError(f"Expected 2D mask, got shape={tuple(mask.shape)}")
+            bs, length = mask.shape
             is_special = mask.to(torch.bool)
             boundary = is_special & torch.logical_not(torch.roll(is_special, shifts=-1, dims=1))
             boundary[:, -1] = is_special[:, -1]
 
-            positions = torch.arange(seq_len, device=mask.device, dtype=torch.long).unsqueeze(0).expand(batch_size, -1)
+            positions = torch.arange(length, device=mask.device, dtype=torch.long).unsqueeze(0).expand(bs, -1)
             boundary_indices = torch.where(boundary, positions, torch.zeros_like(positions))
             last_boundary_inclusive, _ = torch.cummax(boundary_indices, dim=1)
             last_boundary_prev = torch.roll(last_boundary_inclusive, shifts=1, dims=1)
             last_boundary_prev[:, 0] = 0
             return last_boundary_prev
+
+        def _resolve_token_id(token_str: str) -> int:
+            tok_id = tokenizer.convert_tokens_to_ids(token_str)
+            unk_id = getattr(tokenizer, "unk_token_id", None)
+            if tok_id is None or (
+                unk_id is not None and tok_id == unk_id and token_str != getattr(tokenizer, "unk_token", None)
+            ):
+                raise ValueError(f"Token id not found for {token_str}. Did you call prepare_model_before_training?")
+            return int(tok_id)
+
+        # Build candidate ids for sampling the *first* token in a gist block: <end_of_sentence_0_{k}>.
+        # We only ever sample among tokens that exist in the tokenizer.
+        max_eos = int(getattr(tokenizer, "num_eos_tokens", 0) or 0)
+        if max_eos <= 0:
+            raise ValueError("Tokenizer must expose num_eos_tokens > 0 for GRPO gist sampling.")
+
+        # Precompute all possible first-token ids (k=1..max_eos). We'll later slice to run_len.
+        first_token_ids_all: list[int] = []
+        first_token_id_to_k: dict[int, int] = {}
+        for k in range(1, max_eos + 1):
+            tok_id = _resolve_token_id(f"<end_of_sentence_0_{k}>")
+            first_token_ids_all.append(tok_id)
+            first_token_id_to_k[tok_id] = k
+
+        def _sample_first_gist_token_id(next_logits: torch.Tensor | None, run_len: int) -> int:
+            # Candidates are <end_of_sentence_0_{k}> for k in [1, run_len], bounded by tokenizer.num_eos_tokens.
+            run_len = int(min(run_len, len(first_token_ids_all)))
+            if run_len <= 0:
+                raise ValueError(f"Invalid run_len={run_len} for gist sampling.")
+
+            if next_logits is None:
+                idx = int(torch.randint(low=0, high=run_len, size=(1,), device=input_ids.device).item())
+                return int(first_token_ids_all[idx])
+
+            candidate_ids = torch.tensor(first_token_ids_all[:run_len], device=next_logits.device, dtype=torch.long)
+            cand_logits = next_logits.index_select(0, candidate_ids)
+            cand_logits = cand_logits / temperature
+            probs = torch.softmax(cand_logits, dim=-1)
+
+            # Nucleus (top-p) sampling on the candidate set.
+            sorted_probs, sorted_idx = torch.sort(probs, descending=True)
+            cumulative = torch.cumsum(sorted_probs, dim=-1)
+            keep = cumulative <= top_p
+            if keep.numel() > 0:
+                keep[0] = True  # always keep at least one token
+            kept_probs = sorted_probs[keep]
+            kept_idx = sorted_idx[keep]
+            kept_probs = kept_probs / kept_probs.sum().clamp(min=1e-12)
+            sampled_rel = int(torch.multinomial(kept_probs, num_samples=1).item())
+            sampled_candidate_pos = int(kept_idx[sampled_rel].item())
+            return int(candidate_ids[sampled_candidate_pos].item())
 
         def sample_one() -> dict:
             new_input_ids = input_ids.clone()
@@ -64,73 +125,133 @@ class GRPOTrainer(Trainer):
             if "labels" in inputs and isinstance(inputs["labels"], torch.Tensor) and inputs["labels"].shape == input_ids.shape:
                 new_labels = inputs["labels"].clone()
 
-            # Operate per-example to keep logic simple and robust.
-            for b in range(batch_size):
-                valid_len = int(new_attention_mask[b].sum().item())
-                if valid_len <= 0:
-                    continue
+            was_training = model.training
+            try:
+                model.eval()
+                with torch.no_grad():
+                    # Operate per-example to keep logic simple and robust.
+                    for b in range(batch_size):
+                        valid_len = int(new_attention_mask[b].sum().item())
+                        if valid_len <= 0:
+                            continue
 
-                ids = new_input_ids[b, :valid_len].tolist()
-                spec = new_special_mask[b, :valid_len].to(torch.bool).tolist()
-                lbls = new_labels[b, :valid_len].tolist() if new_labels is not None else None
+                        ids = new_input_ids[b, :valid_len].tolist()
+                        spec = new_special_mask[b, :valid_len].to(torch.bool).tolist()
+                        lbls = new_labels[b, :valid_len].tolist() if new_labels is not None else None
 
-                out_ids: list[int] = []
-                out_spec: list[int] = []
-                out_lbls: list[int] | None = [] if lbls is not None else None
+                        out_ids: list[int] = []
+                        out_spec: list[int] = []
+                        out_lbls: list[int] | None = [] if lbls is not None else None
 
-                i = 0
-                while i < valid_len:
-                    if spec[i]:
-                        # Consume a contiguous gist run.
-                        j = i
-                        while j < valid_len and spec[j]:
-                            j += 1
-                        run_len = j - i
+                        # Maintain an incremental cache over the *constructed* output prefix so that each sampled
+                        # gist-run is conditioned on previously sampled gist tokens (not the original ones).
+                        past = None
+                        fed_spec: list[int] = []
+                        next_logits: torch.Tensor | None = None  # logits for the next token to generate
 
-                        # Sample k in [1, run_len] and substitute the entire run with k new gist tokens.
-                        k = int(torch.randint(low=1, high=run_len + 1, size=(1,), device=input_ids.device).item())
-                        for tok_i in range(k):
-                            token_str = f"<end_of_sentence_{tok_i}_{k}>"
-                            tok_id = tokenizer.convert_tokens_to_ids(token_str)
-                            # HF tokenizers typically return unk_token_id for unknown tokens (not None).
-                            unk_id = getattr(tokenizer, "unk_token_id", None)
-                            if tok_id is None or (
-                                unk_id is not None and tok_id == unk_id and token_str != getattr(tokenizer, "unk_token", None)
-                            ):
+                        pending_ids: list[int] = []
+                        pending_spec: list[int] = []
+
+                        def flush_pending() -> None:
+                            nonlocal past, next_logits, fed_spec, pending_ids, pending_spec
+                            if len(pending_ids) == 0:
+                                return
+
+                            total_spec = fed_spec + pending_spec
+                            total_len = len(total_spec)
+                            attention = torch.ones((1, total_len), device=input_ids.device, dtype=torch.long)
+                            special = torch.tensor(total_spec, device=input_ids.device, dtype=torch.long).unsqueeze(0)
+                            closest = compute_closest_boundary_idx_from_runs(special.to(torch.bool) & attention.to(torch.bool))
+
+                            chunk = torch.tensor(pending_ids, device=input_ids.device, dtype=new_input_ids.dtype).unsqueeze(0)
+                            outputs = model(
+                                fused_linear_cross_entropy=False,
+                                labels=None,
+                                input_ids=chunk,
+                                attention_mask=attention,
+                                special_embeddings_mask=special,
+                                clothest_end_of_sentence_token_idx=closest,
+                                past_key_values=past,
+                                use_cache=True,
+                                logits_to_keep=1,
+                                output_attentions=False,
+                            )
+                            if getattr(outputs, "logits", None) is None:
                                 raise ValueError(
-                                    f"Token id not found for {token_str}. Did you call prepare_model_before_training?"
+                                    "Model must return logits for GRPO sampling (fused_linear_cross_entropy=False)."
                                 )
-                            out_ids.append(int(tok_id))
-                            out_spec.append(1)
+                            if getattr(outputs, "past_key_values", None) is None:
+                                raise ValueError("Model must return past_key_values when use_cache=True for GRPO sampling.")
+
+                            past = outputs.past_key_values
+                            next_logits = outputs.logits[0, -1, :].detach()
+                            fed_spec = total_spec
+                            pending_ids = []
+                            pending_spec = []
+
+                        i = 0
+                        while i < valid_len:
+                            if spec[i]:
+                                # Consume a contiguous gist run (from the original input) and replace it with k tokens.
+                                j = i
+                                while j < valid_len and spec[j]:
+                                    j += 1
+                                run_len = j - i
+
+                                # Ensure next_logits is conditioned on everything we've already written to out_*.
+                                flush_pending()
+
+                                first_tok_id = _sample_first_gist_token_id(next_logits=next_logits, run_len=run_len)
+                                k = int(first_token_id_to_k.get(first_tok_id, 0))
+                                if k <= 0 or k > run_len:
+                                    raise ValueError(
+                                        "Sampled an invalid first gist token id. "
+                                        f"{first_tok_id=} {k=} {run_len=}. This should not happen."
+                                    )
+
+                                for tok_i in range(k):
+                                    token_str = f"<end_of_sentence_{tok_i}_{k}>"
+                                    tok_id = _resolve_token_id(token_str)
+                                    out_ids.append(int(tok_id))
+                                    out_spec.append(1)
+                                    if out_lbls is not None:
+                                        out_lbls.append(int(tok_id))
+                                    pending_ids.append(int(tok_id))
+                                    pending_spec.append(1)
+
+                                # Update cache with the inserted gist tokens so later sampling sees them in context.
+                                flush_pending()
+                                i = j
+                            else:
+                                tok = int(ids[i])
+                                out_ids.append(tok)
+                                out_spec.append(0)
+                                if out_lbls is not None:
+                                    out_lbls.append(int(lbls[i]))
+                                pending_ids.append(tok)
+                                pending_spec.append(0)
+                                i += 1
+                        # Right-pad back to seq_len.
+                        if len(out_ids) > seq_len:
+                            out_ids = out_ids[:seq_len]
+                            out_spec = out_spec[:seq_len]
                             if out_lbls is not None:
-                                out_lbls.append(int(tok_id))
-                        i = j
-                    else:
-                        out_ids.append(int(ids[i]))
-                        out_spec.append(0)
+                                out_lbls = out_lbls[:seq_len]
+
+                        pad_count = seq_len - len(out_ids)
+                        out_ids = out_ids + [int(pad_token_id)] * pad_count
+                        out_spec = out_spec + [0] * pad_count
                         if out_lbls is not None:
-                            out_lbls.append(int(lbls[i]))
-                        i += 1
+                            # Preserve common label convention for padded positions.
+                            out_lbls = out_lbls + [-100] * pad_count
 
-                # Right-pad back to seq_len.
-                if len(out_ids) > seq_len:
-                    out_ids = out_ids[:seq_len]
-                    out_spec = out_spec[:seq_len]
-                    if out_lbls is not None:
-                        out_lbls = out_lbls[:seq_len]
-
-                pad_count = seq_len - len(out_ids)
-                out_ids = out_ids + [int(pad_token_id)] * pad_count
-                out_spec = out_spec + [0] * pad_count
-                if out_lbls is not None:
-                    # Preserve common label convention for padded positions.
-                    out_lbls = out_lbls + [-100] * pad_count
-
-                new_input_ids[b] = torch.tensor(out_ids, device=input_ids.device, dtype=input_ids.dtype)
-                new_special_mask[b] = torch.tensor(out_spec, device=input_ids.device, dtype=new_special_mask.dtype)
-                new_attention_mask[b] = (new_input_ids[b] != pad_token_id).to(dtype=new_attention_mask.dtype)
-                if new_labels is not None and out_lbls is not None:
-                    new_labels[b] = torch.tensor(out_lbls, device=input_ids.device, dtype=new_labels.dtype)
+                        new_input_ids[b] = torch.tensor(out_ids, device=input_ids.device, dtype=input_ids.dtype)
+                        new_special_mask[b] = torch.tensor(out_spec, device=input_ids.device, dtype=new_special_mask.dtype)
+                        new_attention_mask[b] = (new_input_ids[b] != pad_token_id).to(dtype=new_attention_mask.dtype)
+                        if new_labels is not None and out_lbls is not None:
+                            new_labels[b] = torch.tensor(out_lbls, device=input_ids.device, dtype=new_labels.dtype)
+            finally:
+                model.train(was_training)
 
             result = dict(inputs)
             result["input_ids"] = new_input_ids
@@ -143,7 +264,15 @@ class GRPOTrainer(Trainer):
                 result["labels"] = new_labels
             return result
 
-        return [sample_one() for _ in range(self.args.grpo_num_generate_samples)]
+        orig_attn_impl = model.config._attn_implementation
+        model.config._attn_implementation = "sentence_attention"
+
+        result = [sample_one() for _ in range(self.args.grpo_num_generate_samples)]
+
+        model.config._attn_implementation = orig_attn_impl
+        # torch.cuda.empty_cache()
+
+        return result
 
     @staticmethod
     def prepare_model_before_training(model, tokenizer):
@@ -302,13 +431,19 @@ class GRPOTrainer(Trainer):
 
         # Group rewards/losses per original example, and take reward-weighted LM loss.
         reward_grouped = reward.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
-        loss_grouped = per_example_lm_loss.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
+        loss_grouped = token_losses.clone()
+
+        gist_tokens_shifted_mask = flat_special_mask[:, 1:-1] != 1
+        loss_grouped[:, :-1][gist_tokens_shifted_mask] = 0
+        loss_grouped = loss_grouped.sum(dim=1) / gist_tokens_shifted_mask.sum()
+        loss_grouped = loss_grouped.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
+        loss_grouped *= self.args.grpo_loss_alpha
         # reward_sum = reward_grouped.sum(dim=1, keepdim=True).clamp(min=1e-8)
         advantage = (
             (reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_grouped.std(dim=1, keepdim=True)
         ).detach()
-        loss_per_example = (advantage * loss_grouped / loss_grouped.detach()).sum(dim=1)  # [B]
-        loss = loss_per_example.mean()
+        grpo_loss_per_example = (advantage * loss_grouped / loss_grouped.detach()).sum(dim=1)  # [B]
+        loss = grpo_loss_per_example.mean() + per_example_lm_loss.mean()
 
         # Mirror legacy metric naming.
         lm_loss_value = per_example_lm_loss.detach().mean()
@@ -320,6 +455,7 @@ class GRPOTrainer(Trainer):
         # breakpoint()
         metrics = {
             "lm_loss": lm_loss_value,
+            "grpo_loss": loss_grouped.detach().mean(),
             "gist_tokens_percent": gist_tokens_percent.detach(),
             "grpo_reward_mean": (reward.detach().mean() / self.args.gradient_accumulation_steps),
             "grpo_reward_std": (reward.detach().std(unbiased=False) / self.args.gradient_accumulation_steps),

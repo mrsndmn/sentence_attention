@@ -34,6 +34,7 @@ def run_experiments(
     global_batch_size = experiment["global_batch_size"]
     learning_rate = experiment.get("learning_rate", "0.0001")
     max_steps = experiment.get("max_steps", "-1")
+    grpo_loss_alpha = experiment.get("grpo_loss_alpha", "1")
 
     random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
@@ -59,6 +60,7 @@ def run_experiments(
         "--boundary_predictor_model_checkpoint artifacts/experiments/bp/unsloth__Llama-3.2-1B_drop_punkt_0.0_bs_4_train_samples_10000/model.pt "
         "--trainer_type grpo "
         f"--grpo_num_generate_samples {grpo_num_generate_samples} "
+        f"--grpo_loss_alpha {grpo_loss_alpha} "
     )
 
     script_str = f"bash {workdir_prefix}/jobs/prepare_multinode_accelerate.sh scripts/train_sentence_llama.py {all_args}"
@@ -94,6 +96,7 @@ def _cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Submit boundary prediction training jobs")
 
     parser.add_argument("--grpo_num_generate_samples", type=int, default=4)
+    parser.add_argument("--grpo_loss_alpha", type=float, default=1.0)
     parser.add_argument("--global_batch_size", type=int, default=128)
     parser.add_argument("--learning_rate", type=float, default="0.0001")
     parser.add_argument("--n_nodes", type=int, default=1)
@@ -110,6 +113,7 @@ def main() -> None:
     run_experiments(
         {
             "grpo_num_generate_samples": args.grpo_num_generate_samples,
+            "grpo_loss_alpha": args.grpo_loss_alpha,
             "global_batch_size": args.global_batch_size,
             "learning_rate": args.learning_rate,
             "max_steps": args.max_steps,

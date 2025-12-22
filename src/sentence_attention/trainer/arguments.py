@@ -10,6 +10,9 @@ class SentenceTrainingArguments(TrainingArguments):
 
     trainer_type: str = field(default="clm")  # clm, grpo
     grpo_num_generate_samples: int = field(default=32)
+    grpo_sampling_temperature: float = field(default=0.8)
+    grpo_sampling_top_p: float = field(default=0.95)
+    grpo_loss_alpha: float = field(default=1.0)
 
     ddp_find_unused_parameters: bool = field(default=False)
     load_best_model_at_end: bool = field(default=False)
