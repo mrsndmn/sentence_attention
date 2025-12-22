@@ -14,6 +14,9 @@ from transformers.trainer_utils import EvalLoopOutput, denumpify_detensorize, ha
 
 class SentenceTrainer(Trainer):
 
+    def prepare_model_before_training(model, tokenizer):
+        return
+
     def compute_loss(
         self,
         model,

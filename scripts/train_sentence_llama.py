@@ -11,6 +11,7 @@ from datasets import load_dataset
 from sentence_attention.trainer.arguments import SentenceTrainingArguments
 from sentence_attention.trainer.build_model_tokenizer import build_model_tokenizer
 from sentence_attention.trainer.trainer import SentenceTrainer
+from sentence_attention.trainer.grpo_trainer import GRPOTrainer
 from transformers import TrainerCallback
 from transformers.loss.loss_utils import ForCausalLMLossFusedLinearCE
 
@@ -246,17 +247,28 @@ if __name__ == "__main__":
 
     transformers.logging.set_verbosity_info()
 
-    trainer = SentenceTrainer(
-        model,
-        callbacks=callbacks,
-        processing_class=tokenizer,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        compute_loss_func=ForCausalLMLossFusedLinearCE,
-    )
+    trainer_kwargs = {
+        "callbacks": callbacks,
+        "processing_class": tokenizer,
+        "args": training_args,
+        "train_dataset": train_dataset,
+        "eval_dataset": eval_dataset,
+        "data_collator": data_collator,
+        "compute_metrics": compute_metrics,
+        "compute_loss_func": ForCausalLMLossFusedLinearCE,
+    }
+
+    if training_args.trainer_type == "clm":
+        trainer_class = SentenceTrainer
+    elif training_args.trainer_type == "grpo":
+        trainer_class = GRPOTrainer
+    else:
+        raise ValueError("unknown trainer_class")
+
+    trainer_class.prepare_model_before_training(model, tokenizer)
+
+    print("trainer_class", trainer_class)
+    trainer = trainer_class(model, **trainer_kwargs)
 
     trainer.accelerator.init_trackers(
         project_name=trackers_project_name,

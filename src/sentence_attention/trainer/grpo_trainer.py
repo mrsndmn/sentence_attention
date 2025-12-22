@@ -2,8 +2,10 @@ import time
 
 import torch
 from transformers import Trainer
-from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
-from transformers.trainer import _is_peft_model
+
+from typing import Any
+
+from transformers.trainer_pt_utils import distributed_concat
 
 
 class GRPOTrainer(Trainer):
@@ -143,7 +145,8 @@ class GRPOTrainer(Trainer):
 
         return [sample_one() for _ in range(self.args.grpo_num_generate_samples)]
 
-    def prepare_model_before_training(self, model, tokenizer):
+    @staticmethod
+    def prepare_model_before_training(model, tokenizer):
 
         # Add separate tokens with different sequence length
         additional_special_tokens = []
@@ -222,114 +225,104 @@ class GRPOTrainer(Trainer):
         Subclass and override for custom behavior.
         """
 
-        # if (self.label_smoother is not None or self.compute_loss_func is not None) and "labels" in inputs:
+        import torch.nn.functional as F
 
         labels = inputs.pop("labels")
 
-        unwrapped_model = self.accelerator.unwrap_model(model)
-
-        # Optionally disable loss on EOS tokens when using multiple EOS tokens
         special_embeddings_mask = inputs.get("special_embeddings_mask")
-
         attention_mask = inputs["attention_mask"]
-        # token_frequency = inputs.get('token_frequency', None)
+        if special_embeddings_mask is None:
+            raise ValueError("special_embeddings_mask must be provided for GRPO training.")
+        if special_embeddings_mask.shape != attention_mask.shape:
+            raise ValueError("special_embeddings_mask and attention_mask must have the same shape.")
+
+        # Generate multiple sampled "compressions" per input.
+        base_inputs = dict(inputs)
+        base_inputs["labels"] = labels
+        sampled_inputs = self.sample_gist_tokens_for_input(model, base_inputs)
+        if not isinstance(sampled_inputs, list) or len(sampled_inputs) == 0:
+            raise ValueError("sample_gist_tokens_for_input must return a non-empty list of input dicts.")
+
+        num_samples = len(sampled_inputs)
+        batch_size, seq_len = inputs["input_ids"].shape
+
+        # Flatten samples into a single batch for a single forward pass.
+        flat_input_ids = torch.cat([s["input_ids"] for s in sampled_inputs], dim=0)
+        flat_attention_mask = torch.cat([s["attention_mask"] for s in sampled_inputs], dim=0)
+        flat_special_mask = torch.cat([s["special_embeddings_mask"] for s in sampled_inputs], dim=0)
+        flat_closest_idx = torch.cat([s["clothest_end_of_sentence_token_idx"] for s in sampled_inputs], dim=0)
+        flat_labels = torch.cat([s["labels"] for s in sampled_inputs], dim=0)
+
         model_kwargs = {
-            "input_ids": inputs["input_ids"],
-            "attention_mask": attention_mask,
+            "input_ids": flat_input_ids,
+            "attention_mask": flat_attention_mask,
+            "special_embeddings_mask": flat_special_mask,
+            "clothest_end_of_sentence_token_idx": flat_closest_idx,
             "use_cache": False,
             "output_attentions": False,
         }
 
         if self.model_accepts_loss_kwargs:
-            loss_kwargs = {}
             if num_items_in_batch is not None:
-                loss_kwargs["num_items_in_batch"] = num_items_in_batch
-            model_kwargs = {**model_kwargs, **loss_kwargs}
-
-        assert special_embeddings_mask is not None
-        model_kwargs["special_embeddings_mask"] = special_embeddings_mask
-
-        model_kwargs["clothest_end_of_sentence_token_idx"] = inputs["clothest_end_of_sentence_token_idx"]
-
-        assert special_embeddings_mask.shape == attention_mask.shape
-
-        fused_linear_cross_entropy = True
+                model_kwargs["num_items_in_batch"] = num_items_in_batch
 
         torch.compiler.cudagraph_mark_step_begin()
-        # breakpoint()
-        # print("model_kwargs input ids", model_kwargs["input_ids"])
         outputs = model(
-            fused_linear_cross_entropy=fused_linear_cross_entropy,
-            labels=labels,
+            fused_linear_cross_entropy=False,
+            labels=None,
             **model_kwargs,
         )
-        # [ bs, seq_len, 2 ]
 
         if self.args.past_index >= 0:
             self._past = outputs[self.args.past_index]
 
-        if fused_linear_cross_entropy:
-            loss = outputs.loss
-        elif labels is not None and self.label_smoother is not None or self.compute_loss_func is not None:
-            if _is_peft_model(unwrapped_model):
-                model_name = unwrapped_model.base_model.model._get_name()
-            else:
-                model_name = unwrapped_model._get_name()
+        if getattr(outputs, "logits", None) is None:
+            raise ValueError("Model must return logits for GRPO loss computation (fused_linear_cross_entropy=False).")
 
-            # User-defined compute_loss function
-            if self.compute_loss_func is not None:
-                loss = self.compute_loss_func(
-                    outputs.logits,
-                    labels,
-                    vocab_size=unwrapped_model.config.vocab_size,
-                    num_items_in_batch=num_items_in_batch,
-                )
-            elif model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
-                loss = self.label_smoother(outputs, labels, shift_labels=True)
-            else:
-                loss = self.label_smoother(outputs, labels)
-        else:
-            if isinstance(outputs, dict) and "loss" not in outputs:
-                raise ValueError(
-                    "The model did not return a loss from the inputs, only the following keys: "
-                    f"{','.join(outputs.keys())}. For reference, the inputs it received are {','.join(inputs.keys())}."
-                )
-            # We don't use .loss here since the model may return tuples instead of ModelOutput.
-            loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+        logits = outputs.logits  # [N*B, seq_len, vocab]
 
-        moe_loss = torch.tensor(0.0, device=loss.device, dtype=loss.dtype)
-        lm_loss = loss.detach()
-        if self.args.moe_special_embeddings_layer_idx is not None and outputs.moe_aux_loss is not None:
-            # Ensure moe_aux_loss is on the same device as loss
-            moe_aux_loss = outputs.moe_aux_loss
-            if isinstance(moe_aux_loss, torch.Tensor):
-                moe_aux_loss = moe_aux_loss.to(device=loss.device, dtype=loss.dtype)
-            else:
-                # Convert scalar to tensor if needed
-                moe_aux_loss = torch.tensor(moe_aux_loss, device=loss.device, dtype=loss.dtype)
-            moe_loss = moe_aux_loss * self.args.moe_aux_loss_weight
-            loss += moe_loss
+        # Per-example LM loss (causal shift), ignoring -100.
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = flat_labels[:, 1:].contiguous()
+        vocab_size = shift_logits.shape[-1]
+        token_losses = F.cross_entropy(
+            shift_logits.view(-1, vocab_size),
+            shift_labels.view(-1),
+            ignore_index=-100,
+            reduction="none",
+        ).view(shift_labels.shape)
 
-        if self.args.average_tokens_across_devices and (self.model_accepts_loss_kwargs or self.compute_loss_func):
-            loss *= self.accelerator.num_processes
+        per_example_lm_loss = token_losses.sum(dim=1) / num_items_in_batch  # [N*B]
 
-        outputs.loss = loss
+        # Reward = compression rate = (#non-gist tokens) / (#gist tokens)
+        gist_tokens = (flat_special_mask.bool() & flat_attention_mask.bool()).sum(dim=1)
+        total_tokens = flat_attention_mask.sum(dim=1)
+        non_gist_tokens = (total_tokens - gist_tokens).clamp(min=0)
+        reward = non_gist_tokens.float() / gist_tokens.clamp(min=1).float()  # [N*B]
 
-        # Convert to scalars to avoid device issues during distributed gathering
-        # The transformers library will handle scalar metrics properly
-        lm_loss_value = lm_loss.detach()
-        moe_loss_value = moe_loss.detach()
+        # Group rewards/losses per original example, and take reward-weighted LM loss.
+        reward_grouped = reward.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
+        loss_grouped = per_example_lm_loss.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
+        reward_sum = reward_grouped.sum(dim=1, keepdim=True).clamp(min=1e-8)
+        weights = (reward_grouped / reward_sum).detach()
+        weighted_lm_loss_per_example = (weights * loss_grouped).sum(dim=1)  # [B]
+        loss = weighted_lm_loss_per_example.mean()
 
-        total_tokens = attention_mask.sum().clamp(min=1)
-        gist_tokens = (special_embeddings_mask.bool() & attention_mask.bool()).sum()
-        gist_tokens_percent = (gist_tokens.float() / total_tokens.float()) * 100 / self.args.gradient_accumulation_steps
+        # Mirror legacy metric naming.
+        lm_loss_value = per_example_lm_loss.detach().mean()
+
+        total_tokens_all = total_tokens.sum().clamp(min=1)
+        gist_tokens_all = gist_tokens.sum()
+        gist_tokens_percent = (gist_tokens_all.float() / total_tokens_all.float()) * 100 / self.args.gradient_accumulation_steps
 
         metrics = {
             "lm_loss": lm_loss_value,
-            "moe_loss": moe_loss_value,
             "gist_tokens_percent": gist_tokens_percent.detach(),
+            "grpo_reward_mean": (reward.detach().mean() / self.args.gradient_accumulation_steps),
+            "grpo_reward_std": (reward.detach().std(unbiased=False) / self.args.gradient_accumulation_steps),
         }
 
+        outputs.loss = loss
         return (loss, outputs) if return_outputs else (loss, metrics)
 
     def save_model(self, output_dir: str | None = None, _internal_call: bool = False):
@@ -341,3 +334,51 @@ class GRPOTrainer(Trainer):
             except Exception as e:
                 print("Error in saving model", e)
                 time.sleep(300)
+
+    def _nested_gather(self, tensors, name: str | None = None):
+        """
+        Gather arbitrary nested structures across processes, ensuring tensors are on the accelerator device.
+
+        This avoids NCCL errors when attempting to all_gather CPU tensors by moving any tensors/scalars
+        to `self.args.device` prior to using distributed collectives.
+        """
+        # Local import to avoid hard dependency if not using distributed
+        import torch.distributed as dist
+
+        # Fast path: no distributed initialized or single process
+        if not dist.is_available() or not dist.is_initialized() or dist.get_world_size() == 1:
+            return tensors
+
+        device = (
+            getattr(self.args, "device", None)
+            or getattr(self.accelerator, "device", None)
+            or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        )
+
+        def to_device_tensor(x: Any) -> torch.Tensor:
+            if isinstance(x, torch.Tensor):
+                t = x
+            else:
+                try:
+                    t = torch.tensor(x)
+                except Exception:
+                    # If it can't be tensorized, return as-is (will not be gathered)
+                    return x  # type: ignore[return-value]
+            if t.device != device:
+                t = t.to(device)
+            # Ensure at least 1D for concatenation semantics
+            if t.dim() == 0:
+                t = t.view(1)
+            return t
+
+        if isinstance(tensors, dict):
+            return type(tensors)({k: self._nested_gather(v) for k, v in tensors.items()})
+        if isinstance(tensors, (list, tuple)):
+            gathered_list = [self._nested_gather(v) for v in tensors]
+            return type(tensors)(gathered_list)
+
+        # Base case: attempt to gather a tensor; if not tensorizable, return as-is
+        t = to_device_tensor(tensors)
+        if not isinstance(t, torch.Tensor):
+            return tensors
+        return distributed_concat(t)

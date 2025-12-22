@@ -88,6 +88,7 @@ def _build_tokenizer(training_args: SentenceTrainingArguments, model, torch_dtyp
             boundary_predictor_model = _load_boundary_predictor_model(
                 training_args.boundary_predictor_model_checkpoint, model, device=device, torch_dtype=torch_dtype
             )
+            # boundary_predictor_model
             extra["boundary_predictor_device"] = device
 
         tokenizer = tokenizer_class.from_pretrained(
