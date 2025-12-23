@@ -421,7 +421,11 @@ class GRPOTrainer(Trainer):
             reduction="none",
         ).view(shift_labels.shape)
 
-        per_example_lm_loss = token_losses.sum(dim=1) / num_items_in_batch  # [N*B]
+        token_losses_lm_loss = token_losses.clone()
+        # token_losses_lm_loss[flat_special_mask[:, :-1]] = 0
+        per_example_lm_loss = (
+            token_losses_lm_loss.sum(dim=1) / num_items_in_batch / self.args.grpo_num_generate_samples
+        )  # [N*B]
 
         # Reward = compression rate = (#non-gist tokens) / (#gist tokens)
         gist_tokens = (flat_special_mask.bool() & flat_attention_mask.bool()).sum(dim=1)
@@ -452,6 +456,32 @@ class GRPOTrainer(Trainer):
         gist_tokens_all = gist_tokens.sum()
         gist_tokens_percent = (gist_tokens_all.float() / total_tokens_all.float()) * 100 / self.args.gradient_accumulation_steps
 
+        # Distribution of "first gist token" types (<end_of_sentence_0_{k}>) as a percent of ALL gist tokens.
+        # We define "first gist token" as the first token in each contiguous gist-run in the sampled sequence.
+        tokenizer = self.processing_class
+        max_eos: int = tokenizer.num_eos_tokens
+
+        flat_special_bool = flat_special_mask.bool() & flat_attention_mask.bool()
+        prev_special = torch.zeros_like(flat_special_bool)
+        prev_special[:, 1:] = flat_special_bool[:, :-1]
+        starts = flat_special_bool & (~prev_special)
+
+        denom_gist = starts.sum().float().clamp(min=1.0)
+        first_gist_metrics: dict[str, torch.Tensor] = {}
+        if starts.any():
+            start_ids = flat_input_ids[starts]
+            for k in range(1, max_eos + 1):
+                tok_id = tokenizer.convert_tokens_to_ids(f"<end_of_sentence_0_{k}>")
+                count_k = (start_ids == int(tok_id)).sum() if tok_id is not None else torch.tensor(0, device=start_ids.device)
+                first_gist_metrics[f"grpo_first_gist_token_{k}_percent"] = (
+                    (count_k.float() / denom_gist) * 100 / self.args.gradient_accumulation_steps
+                ).detach()
+        else:
+            for k in range(1, max_eos + 1):
+                first_gist_metrics[f"grpo_first_gist_token_{k}_percent"] = torch.tensor(
+                    0.0, device=loss.device, dtype=torch.float32
+                )
+
         # breakpoint()
         metrics = {
             "lm_loss": lm_loss_value,
@@ -460,6 +490,7 @@ class GRPOTrainer(Trainer):
             "grpo_reward_mean": (reward.detach().mean() / self.args.gradient_accumulation_steps),
             "grpo_reward_std": (reward.detach().std(unbiased=False) / self.args.gradient_accumulation_steps),
         }
+        metrics.update(first_gist_metrics)
 
         outputs.loss = loss
         return (loss, outputs) if return_outputs else (loss, metrics)
