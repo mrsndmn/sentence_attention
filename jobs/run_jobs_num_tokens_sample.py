@@ -31,6 +31,7 @@ def run_experiments(
     instance_type = f"a100.{n_gpus}gpu"
 
     grpo_num_generate_samples = experiment.get("grpo_num_generate_samples", 4)
+    grpo_pretrain_sampling_steps = experiment.get("grpo_pretrain_sampling_steps", 100)
     global_batch_size = experiment["global_batch_size"]
     learning_rate = experiment.get("learning_rate", "0.0001")
     max_steps = experiment.get("max_steps", "-1")
@@ -61,6 +62,7 @@ def run_experiments(
         "--trainer_type grpo "
         f"--grpo_num_generate_samples {grpo_num_generate_samples} "
         f"--grpo_loss_alpha {grpo_loss_alpha} "
+        f"--grpo_pretrain_sampling_steps {grpo_pretrain_sampling_steps} "
     )
 
     script_str = f"bash {workdir_prefix}/jobs/prepare_multinode_accelerate.sh scripts/train_sentence_llama.py {all_args}"
@@ -96,6 +98,7 @@ def _cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Submit boundary prediction training jobs")
 
     parser.add_argument("--grpo_num_generate_samples", type=int, default=4)
+    parser.add_argument("--grpo_pretrain_sampling_steps", type=int, default=100)
     parser.add_argument("--grpo_loss_alpha", type=float, default=1.0)
     parser.add_argument("--global_batch_size", type=int, default=128)
     parser.add_argument("--learning_rate", type=float, default="0.0001")
@@ -113,6 +116,7 @@ def main() -> None:
     run_experiments(
         {
             "grpo_num_generate_samples": args.grpo_num_generate_samples,
+            "grpo_pretrain_sampling_steps": args.grpo_pretrain_sampling_steps,
             "grpo_loss_alpha": args.grpo_loss_alpha,
             "global_batch_size": args.global_batch_size,
             "learning_rate": args.learning_rate,

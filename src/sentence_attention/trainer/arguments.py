@@ -13,6 +13,10 @@ class SentenceTrainingArguments(TrainingArguments):
     grpo_sampling_temperature: float = field(default=0.8)
     grpo_sampling_top_p: float = field(default=0.95)
     grpo_loss_alpha: float = field(default=1.0)
+    grpo_pretrain_sampling_steps: int = field(
+        default=0,
+        metadata={"help": "Use uniform sampling for gist tokens for the first N steps, then switch to model-based sampling."},
+    )
 
     ddp_find_unused_parameters: bool = field(default=False)
     load_best_model_at_end: bool = field(default=False)

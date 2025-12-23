@@ -49,6 +49,13 @@ class GRPOTrainer(Trainer):
         if not (0.0 < top_p <= 1.0):
             raise ValueError("grpo_sampling_top_p must be in (0, 1]")
 
+        # Anneal sampling strategy: start with uniform sampling for a few steps, then switch to logits-based sampling.
+        pretrain_steps = self.args.grpo_pretrain_sampling_steps
+        if pretrain_steps < 0:
+            pretrain_steps = 0
+        global_step = self.state.global_step
+        use_model_based_sampling = global_step >= pretrain_steps
+
         def compute_closest_boundary_idx_from_runs(mask: torch.Tensor) -> torch.Tensor:
             # mask: [bs, L] bool where True marks gist tokens.
             # Boundary is the last token in each contiguous run of gist tokens.
@@ -212,7 +219,8 @@ class GRPOTrainer(Trainer):
                                 # Ensure next_logits is conditioned on everything we've already written to out_*.
                                 flush_pending()
 
-                                first_tok_id = _sample_first_gist_token_id(next_logits=next_logits, run_len=run_len)
+                                logits_for_sampling = next_logits if use_model_based_sampling else None
+                                first_tok_id = _sample_first_gist_token_id(next_logits=logits_for_sampling, run_len=run_len)
                                 k = int(first_token_id_to_k.get(first_tok_id, 0))
                                 if k <= 0 or k > run_len:
                                     raise ValueError(
