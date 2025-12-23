@@ -23,6 +23,7 @@ class SentenceTrainer(Trainer):
         inputs,
         return_outputs=False,
         num_items_in_batch=None,
+        num_start_gist_tokens_items_in_batch=None,
         log_metrics=True,
         log_prefix="debug",
         force_log=False,

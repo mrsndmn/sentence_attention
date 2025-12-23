@@ -379,6 +379,7 @@ class GRPOTrainer(Trainer):
         inputs,
         return_outputs=False,
         num_items_in_batch=None,
+        num_start_gist_tokens_items_in_batch=None,
         log_metrics=True,
         log_prefix="debug",
         force_log=False,
@@ -513,10 +514,12 @@ class GRPOTrainer(Trainer):
         advantage = ((reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_std).detach()
 
         # GRPO loss on the "action" tokens only: first token of each gist-run.
-        action_count = starts_target.sum(dim=1).clamp(min=1)  # [N*B]
-        action_nll = (token_losses * starts_target).sum(dim=1) / (
-            action_count * self.args.gradient_accumulation_steps * self.args.world_size
-        )  # [N*B]
+        global_action_count = num_start_gist_tokens_items_in_batch
+        if global_action_count is None:
+            action_count = starts_target.sum(dim=1).clamp(min=1)
+            global_action_count = action_count * self.args.gradient_accumulation_steps * self.args.world_size
+
+        action_nll = (token_losses * starts_target).sum(dim=1) / global_action_count  # [N*B]
         action_nll_grouped = action_nll.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
 
         grpo_loss_per_example = (advantage * action_nll_grouped).mean(dim=1) * float(self.args.grpo_loss_alpha)  # [B]
