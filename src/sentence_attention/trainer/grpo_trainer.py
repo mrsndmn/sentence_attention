@@ -517,6 +517,10 @@ class GRPOTrainer(Trainer):
         else:
             loss += grpo_loss_per_example.mean()
 
+        if torch.isnan(loss):
+            print("Found nan loss")
+            breakpoint()
+
         # Mirror legacy metric naming.
         lm_loss_value = per_example_lm_loss.detach().mean()
 
