@@ -36,6 +36,10 @@ def run_experiments(
     learning_rate = experiment.get("learning_rate", "0.0001")
     max_steps = experiment.get("max_steps", "-1")
     grpo_loss_alpha = experiment.get("grpo_loss_alpha", "1")
+    grpo_quality_beta = experiment.get("grpo_quality_beta", 2.0)
+    grpo_quality_margin = experiment.get("grpo_quality_margin", 0.02)
+    grpo_reward_clip = experiment.get("grpo_reward_clip", 2.0)
+    grpo_supervised_exclude_action_tokens = experiment.get("grpo_supervised_exclude_action_tokens", 1)
 
     random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
@@ -63,6 +67,10 @@ def run_experiments(
         f"--grpo_num_generate_samples {grpo_num_generate_samples} "
         f"--grpo_loss_alpha {grpo_loss_alpha} "
         f"--grpo_pretrain_sampling_steps {grpo_pretrain_sampling_steps} "
+        f"--grpo_quality_beta {grpo_quality_beta} "
+        f"--grpo_quality_margin {grpo_quality_margin} "
+        f"--grpo_reward_clip {grpo_reward_clip} "
+        f"--grpo_supervised_exclude_action_tokens {grpo_supervised_exclude_action_tokens} "
     )
 
     script_str = f"bash {workdir_prefix}/jobs/prepare_multinode_accelerate.sh scripts/train_sentence_llama.py {all_args}"
@@ -100,6 +108,15 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--grpo_num_generate_samples", type=int, default=4)
     parser.add_argument("--grpo_pretrain_sampling_steps", type=int, default=100)
     parser.add_argument("--grpo_loss_alpha", type=float, default=1.0)
+    parser.add_argument("--grpo_quality_beta", type=float, default=2.0)
+    parser.add_argument("--grpo_quality_margin", type=float, default=0.02)
+    parser.add_argument("--grpo_reward_clip", type=float, default=2.0)
+    parser.add_argument(
+        "--grpo_supervised_exclude_action_tokens",
+        type=int,
+        choices=[0, 1],
+        default=1,
+    )
     parser.add_argument("--global_batch_size", type=int, default=128)
     parser.add_argument("--learning_rate", type=float, default="0.0001")
     parser.add_argument("--n_nodes", type=int, default=1)
@@ -118,6 +135,10 @@ def main() -> None:
             "grpo_num_generate_samples": args.grpo_num_generate_samples,
             "grpo_pretrain_sampling_steps": args.grpo_pretrain_sampling_steps,
             "grpo_loss_alpha": args.grpo_loss_alpha,
+            "grpo_quality_beta": args.grpo_quality_beta,
+            "grpo_quality_margin": args.grpo_quality_margin,
+            "grpo_reward_clip": args.grpo_reward_clip,
+            "grpo_supervised_exclude_action_tokens": args.grpo_supervised_exclude_action_tokens,
             "global_batch_size": args.global_batch_size,
             "learning_rate": args.learning_rate,
             "max_steps": args.max_steps,

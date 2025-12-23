@@ -13,6 +13,22 @@ class SentenceTrainingArguments(TrainingArguments):
     grpo_sampling_temperature: float = field(default=0.8)
     grpo_sampling_top_p: float = field(default=0.95)
     grpo_loss_alpha: float = field(default=1.0)
+    grpo_quality_beta: float = field(
+        default=0.1,
+        metadata={"help": "Penalty weight for quality degradation in GRPO reward shaping."},
+    )
+    grpo_quality_margin: float = field(
+        default=0.0,
+        metadata={"help": "Allow this much non-gist loss increase without penalty (in nats/token)."},
+    )
+    grpo_reward_clip: float = field(
+        default=5.0,
+        metadata={"help": "Clip shaped rewards to [-clip, clip] before advantage normalization (<=0 disables)."},
+    )
+    grpo_supervised_exclude_action_tokens: bool = field(
+        default=True,
+        metadata={"help": "Exclude the first token of each gist-run (the GRPO action) from supervised CE."},
+    )
     grpo_pretrain_sampling_steps: int = field(
         default=0,
         metadata={"help": "Use uniform sampling for gist tokens for the first N steps, then switch to model-based sampling."},

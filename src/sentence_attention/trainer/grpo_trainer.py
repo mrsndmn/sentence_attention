@@ -42,8 +42,8 @@ class GRPOTrainer(Trainer):
         if pad_token_id is None:
             pad_token_id = getattr(getattr(model, "config", None), "pad_token_id", 0) or 0
 
-        temperature = float(getattr(self.args, "grpo_sampling_temperature", 0.8))
-        top_p = float(getattr(self.args, "grpo_sampling_top_p", 0.95))
+        temperature = float(self.args.grpo_sampling_temperature)
+        top_p = float(self.args.grpo_sampling_top_p)
         if temperature <= 0:
             raise ValueError("grpo_sampling_temperature must be > 0")
         if not (0.0 < top_p <= 1.0):
@@ -286,7 +286,7 @@ class GRPOTrainer(Trainer):
         orig_attn_impl = model.config._attn_implementation
         model.config._attn_implementation = "sentence_attention"
 
-        num_generate_samples = int(getattr(self.args, "grpo_num_generate_samples", 0) or 0)
+        num_generate_samples = int(self.args.grpo_num_generate_samples)
         if num_generate_samples <= 0:
             raise ValueError("grpo_num_generate_samples must be > 0")
 
@@ -403,7 +403,9 @@ class GRPOTrainer(Trainer):
         # Generate multiple sampled "compressions" per input.
         base_inputs = dict(inputs)
         base_inputs["labels"] = labels
-        sampled_inputs = self.sample_gist_tokens_for_input(model, base_inputs)
+
+        unwrapped_model = self.accelerator.unwrap_model(model)
+        sampled_inputs = self.sample_gist_tokens_for_input(unwrapped_model, base_inputs)
         if not isinstance(sampled_inputs, list) or len(sampled_inputs) == 0:
             raise ValueError("sample_gist_tokens_for_input must return a non-empty list of input dicts.")
 
@@ -456,36 +458,30 @@ class GRPOTrainer(Trainer):
             reduction="none",
         ).view(shift_labels.shape)
 
-        token_losses_lm_loss = token_losses.clone()
-        # token_losses_lm_loss[flat_special_mask[:, :-1]] = 0
-        per_example_lm_loss = token_losses_lm_loss.sum(dim=1) / (
-            num_items_in_batch * self.args.grpo_num_generate_samples
-        )  # [N*B]
-
-        # Reward = compression rate = (#non-gist tokens) / (#gist tokens)
-        gist_tokens = (flat_special_mask.bool() & flat_attention_mask.bool()).sum(dim=1)
-        total_tokens = flat_attention_mask.sum(dim=1)
-        non_gist_tokens = (total_tokens - gist_tokens).clamp(min=0)
-        reward = non_gist_tokens.float() / gist_tokens.clamp(min=1).float()  # [N*B]
-
-        # Compute starts tokens mask
-        flat_special_bool = flat_special_mask.bool() & flat_attention_mask.bool()
+        # Masks aligned to the shifted targets (positions 1..L-1).
+        flat_special_bool = flat_special_mask.bool() & flat_attention_mask.bool()  # [N*B, L]
         prev_special = torch.zeros_like(flat_special_bool)
         prev_special[:, 1:] = flat_special_bool[:, :-1]
-        starts = flat_special_bool & (~prev_special)
+        starts = flat_special_bool & (~prev_special)  # [N*B, L]
+
+        target_is_valid = (flat_attention_mask[:, 1:].bool()) & (shift_labels != -100)  # [N*B, L-1]
+        starts_target = starts[:, 1:] & target_is_valid  # [N*B, L-1]
+
+        # Supervised CE: by default keep it on all tokens EXCEPT the action tokens (first token of each gist-run).
+        supervised_mask = target_is_valid
+        if bool(self.args.grpo_supervised_exclude_action_tokens):
+            supervised_mask = supervised_mask & (~starts_target)
+
+        # supervised_denom = supervised_mask.sum().clamp(min=1)
+        lm_loss = (token_losses * supervised_mask).sum() / (num_items_in_batch * num_samples)
 
         # Group rewards/losses per original example, and take reward-weighted LM loss.
-        # Only keep reward if a sample improves the causal LM loss on non-gist tokens vs the baseline sample.
+        # Compute non-gist causal LM loss (quality proxy) and shape reward as compression_gain - beta * penalty.
         # Baseline sample is expected to be sample index 0 (see sample_gist_tokens_for_input).
-        target_is_special = flat_special_mask[:, 1:].bool()
-        target_is_valid = (flat_attention_mask[:, 1:].bool()) & (shift_labels != -100)
-        non_gist_target_mask = (~target_is_special) & target_is_valid
+        target_is_special = flat_special_mask[:, 1:].bool()  # [N*B, L-1]
+        non_gist_target_mask = (~target_is_special) & target_is_valid  # [N*B, L-1]
         non_gist_denom = non_gist_target_mask.sum(dim=1).clamp(min=1)
-        non_gist_causal_lm_loss = (
-            (token_losses * non_gist_target_mask).sum(dim=1)
-            / non_gist_denom
-            * (num_items_in_batch * gist_tokens.sum().float() / non_gist_tokens.sum().clamp(min=1).float())
-        )  # [N*B]
+        non_gist_causal_lm_loss = (token_losses * non_gist_target_mask).sum(dim=1) / non_gist_denom  # [N*B]
 
         non_gist_loss_grouped = non_gist_causal_lm_loss.view(num_samples, batch_size)  # [N, B]
         baseline_non_gist_loss = non_gist_loss_grouped[0]  # [B]
@@ -493,37 +489,50 @@ class GRPOTrainer(Trainer):
         better_than_baseline[0, :] = False
         better_than_baseline_percent = better_than_baseline.sum() / better_than_baseline.numel()
 
-        reward_grouped = reward.view(num_samples, batch_size) * better_than_baseline.to(reward.dtype).view(
-            num_samples, batch_size
-        )  # [N, B]
-        reward_grouped = reward_grouped.transpose(0, 1)  # [B, N]
-        loss_grouped = token_losses.clone()
+        # Compression signal: fewer gist tokens is better (baseline has all original gist tokens).
+        gist_tokens = (flat_special_mask.bool() & flat_attention_mask.bool()).sum(dim=1)  # [N*B]
+        gist_grouped = gist_tokens.view(num_samples, batch_size).transpose(0, 1).to(torch.float32)  # [B, N]
+        gist_baseline = gist_grouped[:, :1].clamp(min=1.0)  # [B, 1]
+        compression_gain = (gist_baseline - gist_grouped) / (
+            gist_baseline * self.args.gradient_accumulation_steps * self.args.world_size
+        )  # [B, N] in [0, 1]
 
-        gist_tokens_shifted_mask = starts[:, 1:-1] != 1
-        loss_grouped[:, :-1][gist_tokens_shifted_mask] = 0
-        loss_grouped = loss_grouped.sum(dim=1) / gist_tokens_shifted_mask.sum()
-        loss_grouped = loss_grouped.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
-        loss_grouped *= self.args.grpo_loss_alpha
-        # reward_sum = reward_grouped.sum(dim=1, keepdim=True).clamp(min=1e-8)
+        # Quality penalty: increase in non-gist CE vs baseline.
+        non_gist_grouped = non_gist_loss_grouped.transpose(0, 1).to(torch.float32)  # [B, N]
+        non_gist_delta = non_gist_grouped - baseline_non_gist_loss.to(torch.float32).unsqueeze(1)  # [B, N]
+        margin = float(self.args.grpo_quality_margin)
+        quality_penalty = torch.relu(non_gist_delta - margin)  # [B, N]
+        beta = float(self.args.grpo_quality_beta)
+
+        reward_grouped = compression_gain - beta * quality_penalty  # [B, N]
+        clip = float(self.args.grpo_reward_clip)
+        if clip > 0:
+            reward_grouped = reward_grouped.clamp(min=-clip, max=clip)
+
         reward_std = reward_grouped.std(dim=1, keepdim=True).clamp(min=1e-8)
         advantage = ((reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_std).detach()
-        grpo_loss_per_example = (advantage * loss_grouped / loss_grouped.detach()).sum(dim=1)  # [B]
 
-        loss = per_example_lm_loss.mean()
-        if torch.allclose(reward_std, torch.tensor([0.0], device="cuda"), atol=1e-5):
-            # No grpo optimization
-            pass
-            # reward.fill_(0)
-        else:
-            loss += grpo_loss_per_example.mean()
+        # GRPO loss on the "action" tokens only: first token of each gist-run.
+        action_count = starts_target.sum(dim=1).clamp(min=1)  # [N*B]
+        action_nll = (token_losses * starts_target).sum(dim=1) / (
+            action_count * self.args.gradient_accumulation_steps * self.args.world_size
+        )  # [N*B]
+        action_nll_grouped = action_nll.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
+
+        grpo_loss_per_example = (advantage * action_nll_grouped).mean(dim=1) * float(self.args.grpo_loss_alpha)  # [B]
+
+        loss = lm_loss
+        if not (reward_std <= 1e-8).all():
+            loss = loss + grpo_loss_per_example.mean()
 
         if torch.isnan(loss):
             print("Found nan loss")
             breakpoint()
 
         # Mirror legacy metric naming.
-        lm_loss_value = per_example_lm_loss.detach().mean()
+        lm_loss_value = lm_loss.detach()
 
+        total_tokens = flat_attention_mask.sum(dim=1)
         total_tokens_all = total_tokens.sum().clamp(min=1)
         gist_tokens_all = gist_tokens.sum()
         gist_tokens_percent = (gist_tokens_all.float() / total_tokens_all.float()) * 100 / self.args.gradient_accumulation_steps
@@ -553,11 +562,13 @@ class GRPOTrainer(Trainer):
         metrics = {
             "lm_loss": lm_loss_value,
             "starts": denom_gist.sum(),
-            "grpo_loss": loss_grouped.detach().mean(),
+            "grpo_loss": grpo_loss_per_example.detach().mean(),
             "grpo_better_than_baseline_percent": better_than_baseline_percent.detach(),
             "gist_tokens_percent": gist_tokens_percent.detach(),
-            "grpo_reward_mean": (reward.detach().mean() / self.args.gradient_accumulation_steps),
-            "grpo_reward_std": (reward.detach().std(unbiased=False) / self.args.gradient_accumulation_steps),
+            "grpo_reward_mean": (reward_grouped.detach().mean() / self.args.gradient_accumulation_steps),
+            "grpo_reward_std": (reward_grouped.detach().std(unbiased=False) / self.args.gradient_accumulation_steps),
+            "grpo_compression_gain_mean": (compression_gain.detach().mean() / self.args.gradient_accumulation_steps),
+            "grpo_non_gist_delta_mean": (non_gist_delta.detach().mean() / self.args.gradient_accumulation_steps),
         }
         metrics.update(first_gist_metrics)
 
@@ -589,7 +600,7 @@ class GRPOTrainer(Trainer):
             return tensors
 
         device = (
-            getattr(self.args, "device", None)
+            self.args.device
             or getattr(self.accelerator, "device", None)
             or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
