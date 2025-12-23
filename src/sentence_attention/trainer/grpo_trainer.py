@@ -15,7 +15,8 @@ class GRPOTrainer(Trainer):
         For each contiguous sequence of gist tokens, sample a new number of gist tokens k in [1, run_len],
         replace that gist sequence with `<end_of_sentence_{i}_{k}>` tokens, and right-pad to preserve tensor shapes.
 
-        Repeats the sampling `self.args.grpo_num_generate_samples` times and returns a list of new input dicts.
+        Always returns one "baseline" sample with the original gist token placement (i.e. keep all gist tokens),
+        and uses sampling for the remaining `self.args.grpo_num_generate_samples - 1` samples.
         """
 
         tokenizer = getattr(self, "processing_class", None) or getattr(self, "tokenizer", None)
@@ -267,7 +268,23 @@ class GRPOTrainer(Trainer):
         orig_attn_impl = model.config._attn_implementation
         model.config._attn_implementation = "sentence_attention"
 
-        result = [sample_one() for _ in range(self.args.grpo_num_generate_samples)]
+        num_generate_samples = int(getattr(self.args, "grpo_num_generate_samples", 0) or 0)
+        if num_generate_samples <= 0:
+            raise ValueError("grpo_num_generate_samples must be > 0")
+
+        # Baseline sample: keep the original gist token placement unchanged (all gist tokens present).
+        baseline = dict(inputs)
+        if (
+            "clothest_end_of_sentence_token_idx" not in baseline
+            or not isinstance(baseline["clothest_end_of_sentence_token_idx"], torch.Tensor)
+            or baseline["clothest_end_of_sentence_token_idx"].shape != input_ids.shape
+        ):
+            baseline["clothest_end_of_sentence_token_idx"] = compute_closest_boundary_idx_from_runs(
+                baseline["special_embeddings_mask"].to(torch.bool) & baseline["attention_mask"].to(torch.bool)
+            )
+
+        result = [baseline]
+        result.extend(sample_one() for _ in range(num_generate_samples - 1))
 
         model.config._attn_implementation = orig_attn_impl
         # torch.cuda.empty_cache()
