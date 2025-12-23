@@ -451,7 +451,21 @@ class GRPOTrainer(Trainer):
         reward = non_gist_tokens.float() / gist_tokens.clamp(min=1).float()  # [N*B]
 
         # Group rewards/losses per original example, and take reward-weighted LM loss.
-        reward_grouped = reward.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
+        # Only keep reward if a sample improves the causal LM loss on non-gist tokens vs the baseline sample.
+        # Baseline sample is expected to be sample index 0 (see sample_gist_tokens_for_input).
+        target_is_special = flat_special_mask[:, 1:].bool()
+        target_is_valid = (flat_attention_mask[:, 1:].bool()) & (shift_labels != -100)
+        non_gist_target_mask = (~target_is_special) & target_is_valid
+        non_gist_denom = non_gist_target_mask.sum(dim=1).clamp(min=1)
+        non_gist_causal_lm_loss = (token_losses * non_gist_target_mask).sum(dim=1) / non_gist_denom  # [N*B]
+
+        non_gist_loss_grouped = non_gist_causal_lm_loss.view(num_samples, batch_size)  # [N, B]
+        baseline_non_gist_loss = non_gist_loss_grouped[0]  # [B]
+        better_than_baseline = non_gist_loss_grouped < baseline_non_gist_loss.unsqueeze(0)  # [N, B]
+        better_than_baseline[0, :] = False
+
+        reward_grouped = reward.view(num_samples, batch_size) * better_than_baseline.to(reward.dtype)  # [N, B]
+        reward_grouped = reward_grouped.transpose(0, 1)  # [B, N]
         loss_grouped = token_losses.clone()
 
         gist_tokens_shifted_mask = flat_special_mask[:, 1:-1] != 1
@@ -460,9 +474,8 @@ class GRPOTrainer(Trainer):
         loss_grouped = loss_grouped.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
         loss_grouped *= self.args.grpo_loss_alpha
         # reward_sum = reward_grouped.sum(dim=1, keepdim=True).clamp(min=1e-8)
-        advantage = (
-            (reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_grouped.std(dim=1, keepdim=True)
-        ).detach()
+        reward_std = reward_grouped.std(dim=1, keepdim=True).clamp(min=1e-8)
+        advantage = ((reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_std).detach()
         grpo_loss_per_example = (advantage * loss_grouped / loss_grouped.detach()).sum(dim=1)  # [B]
         loss = grpo_loss_per_example.mean() + per_example_lm_loss.mean()
 
