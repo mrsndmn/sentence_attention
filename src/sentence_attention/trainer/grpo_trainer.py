@@ -100,9 +100,12 @@ class GRPOTrainer(Trainer):
                 return int(first_token_ids_all[idx])
 
             candidate_ids = torch.tensor(first_token_ids_all[:run_len], device=next_logits.device, dtype=torch.long)
-            cand_logits = next_logits.index_select(0, candidate_ids)
-            cand_logits = cand_logits / temperature
+            cand_logits = next_logits.index_select(0, candidate_ids).to(torch.float32) / temperature
             probs = torch.softmax(cand_logits, dim=-1)
+            probs = torch.where(torch.isfinite(probs), probs, torch.zeros_like(probs))
+            if float(probs.sum().detach().cpu().item()) <= 0.0:
+                idx = int(torch.randint(low=0, high=run_len, size=(1,), device="cpu").item())
+                return int(first_token_ids_all[idx])
 
             # Nucleus (top-p) sampling on the candidate set.
             sorted_probs, sorted_idx = torch.sort(probs, descending=True)
@@ -112,8 +115,15 @@ class GRPOTrainer(Trainer):
                 keep[0] = True  # always keep at least one token
             kept_probs = sorted_probs[keep]
             kept_idx = sorted_idx[keep]
-            kept_probs = kept_probs / kept_probs.sum().clamp(min=1e-12)
-            sampled_rel = int(torch.multinomial(kept_probs, num_samples=1).item())
+            kept_sum = kept_probs.sum()
+            if not torch.isfinite(kept_sum) or float(kept_sum.detach().cpu().item()) <= 0.0:
+                idx = int(torch.randint(low=0, high=int(kept_idx.numel()), size=(1,), device="cpu").item())
+                sampled_candidate_pos = int(kept_idx[idx].item())
+                return int(candidate_ids[sampled_candidate_pos].item())
+            kept_probs = (kept_probs / kept_sum).to(torch.float32)
+
+            # Sample on CPU to avoid CUDA device-side asserts on invalid distributions.
+            sampled_rel = int(torch.multinomial(kept_probs.detach().cpu(), num_samples=1).item())
             sampled_candidate_pos = int(kept_idx[sampled_rel].item())
             return int(candidate_ids[sampled_candidate_pos].item())
 
@@ -440,8 +450,8 @@ class GRPOTrainer(Trainer):
 
         token_losses_lm_loss = token_losses.clone()
         # token_losses_lm_loss[flat_special_mask[:, :-1]] = 0
-        per_example_lm_loss = (
-            token_losses_lm_loss.sum(dim=1) / num_items_in_batch / self.args.grpo_num_generate_samples
+        per_example_lm_loss = token_losses_lm_loss.sum(dim=1) / (
+            num_items_in_batch * self.args.grpo_num_generate_samples
         )  # [N*B]
 
         # Reward = compression rate = (#non-gist tokens) / (#gist tokens)
@@ -450,6 +460,12 @@ class GRPOTrainer(Trainer):
         non_gist_tokens = (total_tokens - gist_tokens).clamp(min=0)
         reward = non_gist_tokens.float() / gist_tokens.clamp(min=1).float()  # [N*B]
 
+        # Compute starts tokens mask
+        flat_special_bool = flat_special_mask.bool() & flat_attention_mask.bool()
+        prev_special = torch.zeros_like(flat_special_bool)
+        prev_special[:, 1:] = flat_special_bool[:, :-1]
+        starts = flat_special_bool & (~prev_special)
+
         # Group rewards/losses per original example, and take reward-weighted LM loss.
         # Only keep reward if a sample improves the causal LM loss on non-gist tokens vs the baseline sample.
         # Baseline sample is expected to be sample index 0 (see sample_gist_tokens_for_input).
@@ -457,18 +473,25 @@ class GRPOTrainer(Trainer):
         target_is_valid = (flat_attention_mask[:, 1:].bool()) & (shift_labels != -100)
         non_gist_target_mask = (~target_is_special) & target_is_valid
         non_gist_denom = non_gist_target_mask.sum(dim=1).clamp(min=1)
-        non_gist_causal_lm_loss = (token_losses * non_gist_target_mask).sum(dim=1) / non_gist_denom  # [N*B]
+        non_gist_causal_lm_loss = (
+            (token_losses * non_gist_target_mask).sum(dim=1)
+            / non_gist_denom
+            * (num_items_in_batch * gist_tokens.sum().float() / non_gist_tokens.sum().clamp(min=1).float())
+        )  # [N*B]
 
         non_gist_loss_grouped = non_gist_causal_lm_loss.view(num_samples, batch_size)  # [N, B]
         baseline_non_gist_loss = non_gist_loss_grouped[0]  # [B]
         better_than_baseline = non_gist_loss_grouped < baseline_non_gist_loss.unsqueeze(0)  # [N, B]
         better_than_baseline[0, :] = False
+        better_than_baseline_percent = better_than_baseline.sum() / better_than_baseline.numel()
 
-        reward_grouped = reward.view(num_samples, batch_size) * better_than_baseline.to(reward.dtype)  # [N, B]
+        reward_grouped = reward.view(num_samples, batch_size) * better_than_baseline.to(reward.dtype).view(
+            num_samples, batch_size
+        )  # [N, B]
         reward_grouped = reward_grouped.transpose(0, 1)  # [B, N]
         loss_grouped = token_losses.clone()
 
-        gist_tokens_shifted_mask = flat_special_mask[:, 1:-1] != 1
+        gist_tokens_shifted_mask = starts[:, 1:-1] != 1
         loss_grouped[:, :-1][gist_tokens_shifted_mask] = 0
         loss_grouped = loss_grouped.sum(dim=1) / gist_tokens_shifted_mask.sum()
         loss_grouped = loss_grouped.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
@@ -477,7 +500,14 @@ class GRPOTrainer(Trainer):
         reward_std = reward_grouped.std(dim=1, keepdim=True).clamp(min=1e-8)
         advantage = ((reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_std).detach()
         grpo_loss_per_example = (advantage * loss_grouped / loss_grouped.detach()).sum(dim=1)  # [B]
-        loss = grpo_loss_per_example.mean() + per_example_lm_loss.mean()
+
+        loss = per_example_lm_loss.mean()
+        if torch.allclose(reward_std, torch.tensor([0.0], device="cuda"), atol=1e-5):
+            # No grpo optimization
+            pass
+            # reward.fill_(0)
+        else:
+            loss += grpo_loss_per_example.mean()
 
         # Mirror legacy metric naming.
         lm_loss_value = per_example_lm_loss.detach().mean()
@@ -490,11 +520,6 @@ class GRPOTrainer(Trainer):
         # We define "first gist token" as the first token in each contiguous gist-run in the sampled sequence.
         tokenizer = self.processing_class
         max_eos: int = tokenizer.num_eos_tokens
-
-        flat_special_bool = flat_special_mask.bool() & flat_attention_mask.bool()
-        prev_special = torch.zeros_like(flat_special_bool)
-        prev_special[:, 1:] = flat_special_bool[:, :-1]
-        starts = flat_special_bool & (~prev_special)
 
         denom_gist = starts.sum().float().clamp(min=1.0)
         first_gist_metrics: dict[str, torch.Tensor] = {}
@@ -515,7 +540,9 @@ class GRPOTrainer(Trainer):
         # breakpoint()
         metrics = {
             "lm_loss": lm_loss_value,
+            "starts": denom_gist.sum(),
             "grpo_loss": loss_grouped.detach().mean(),
+            "grpo_better_than_baseline_percent": better_than_baseline_percent.detach(),
             "gist_tokens_percent": gist_tokens_percent.detach(),
             "grpo_reward_mean": (reward.detach().mean() / self.args.gradient_accumulation_steps),
             "grpo_reward_std": (reward.detach().std(unbiased=False) / self.args.gradient_accumulation_steps),
