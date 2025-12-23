@@ -514,7 +514,7 @@ class GRPOTrainer(Trainer):
         advantage = ((reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_std).detach()
 
         # GRPO loss on the "action" tokens only: first token of each gist-run.
-        global_action_count = num_start_gist_tokens_items_in_batch
+        global_action_count = num_start_gist_tokens_items_in_batch * num_samples
         if global_action_count is None:
             action_count = starts_target.sum(dim=1).clamp(min=1)
             global_action_count = action_count * self.args.gradient_accumulation_steps * self.args.world_size
@@ -522,7 +522,7 @@ class GRPOTrainer(Trainer):
         action_nll = (token_losses * starts_target).sum(dim=1) / global_action_count  # [N*B]
         action_nll_grouped = action_nll.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
 
-        grpo_loss_per_example = (advantage * action_nll_grouped).mean(dim=1) * float(self.args.grpo_loss_alpha)  # [B]
+        grpo_loss_per_example = (advantage.detach() * action_nll_grouped).mean(dim=1) * float(self.args.grpo_loss_alpha)  # [B]
 
         loss = lm_loss
         if not (reward_std <= 1e-8).all():
@@ -536,9 +536,10 @@ class GRPOTrainer(Trainer):
         lm_loss_value = lm_loss.detach()
 
         total_tokens = flat_attention_mask.sum(dim=1)
-        total_tokens_all = total_tokens.sum().clamp(min=1)
         gist_tokens_all = gist_tokens.sum()
-        gist_tokens_percent = (gist_tokens_all.float() / total_tokens_all.float()) * 100 / self.args.gradient_accumulation_steps
+        gist_tokens_percent = (
+            gist_tokens_all.float() * 100 / (total_tokens * self.args.gradient_accumulation_steps * self.args.world_size)
+        )
 
         # Distribution of "first gist token" types (<end_of_sentence_0_{k}>) as a percent of ALL gist tokens.
         # We define "first gist token" as the first token in each contiguous gist-run in the sampled sequence.
@@ -553,7 +554,7 @@ class GRPOTrainer(Trainer):
                 tok_id = tokenizer.convert_tokens_to_ids(f"<end_of_sentence_0_{k}>")
                 count_k = (start_ids == int(tok_id)).sum() if tok_id is not None else torch.tensor(0, device=start_ids.device)
                 first_gist_metrics[f"grpo_first_gist_token_{k}_percent"] = (
-                    (count_k.float() / denom_gist) * 100 / self.args.gradient_accumulation_steps
+                    count_k.float() * 100 / (num_start_gist_tokens_items_in_batch * num_samples)
                 ).detach()
         else:
             for k in range(1, max_eos + 1):
