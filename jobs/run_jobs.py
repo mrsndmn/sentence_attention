@@ -56,6 +56,9 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
         number_of_eos_tokens = exp.pop("number_of_eos_tokens", 1)
         gist_placement = exp.pop("gist_placement", "sentence")
         uniform_interval_tokens = exp.pop("uniform_interval_tokens", 40)
+        gist_sets = exp.pop("gist_sets", "single")
+        gist_insertion_strategy = exp.pop("gist_insertion_strategy", "default")
+        num_gist_sets_in_swarm = exp.pop("num_gist_sets_in_swarm", 1)
 
         learning_rate = exp.pop("learning_rate", 1e-4)
         lr_scheduler_type = exp.pop("lr_scheduler_type", "cosine_with_min_lr")
@@ -193,6 +196,9 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"--number_of_eos_tokens {number_of_eos_tokens} "
             f"--gist_placement {gist_placement} "
             f"--uniform_interval_tokens {uniform_interval_tokens} "
+            f"--gist_sets {gist_sets} "
+            f"--gist_insertion_strategy {gist_insertion_strategy} "
+            f"--num_gist_sets_in_swarm {num_gist_sets_in_swarm} "
             f"--flexible_eos_tokens {flexible_eos_tokens} "
             f"--ft_with_bos_token {ft_with_bos_token} "
             f"--max_steps {max_steps} "
@@ -293,6 +299,9 @@ def run_training_experiments(
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
     boundary_predictor_model_checkpoint=None,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
     **kwargs: Dict,
 ) -> None:
 
@@ -343,6 +352,9 @@ def run_training_experiments(
         "uniform_interval_tokens": uniform_interval_tokens,
         "gist_initialization": gist_initialization,
         "boundary_predictor_model_checkpoint": boundary_predictor_model_checkpoint,
+        "gist_sets": gist_sets,
+        "gist_insertion_strategy": gist_insertion_strategy,
+        "num_gist_sets_in_swarm": num_gist_sets_in_swarm,
     }
 
     experiments = []
@@ -626,6 +638,9 @@ def run_group_eos_only_my_recall(
     moe_special_embeddings_layer_idx=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ):
@@ -658,6 +673,9 @@ def run_group_eos_only_my_recall(
         moe_num_experts=moe_num_experts,
         gist_placement=gist_placement,
         uniform_interval_tokens=uniform_interval_tokens,
+        gist_sets=gist_sets,
+        gist_insertion_strategy=gist_insertion_strategy,
+        num_gist_sets_in_swarm=num_gist_sets_in_swarm,
     )
 
 
@@ -675,6 +693,9 @@ def run_group_eos_only(
     gist_placement: str = "sentence",
     gist_initialization: str = "mvnormal",
     uniform_interval_tokens: int = 40,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -695,6 +716,9 @@ def run_group_eos_only(
         gist_placement=gist_placement,
         uniform_interval_tokens=uniform_interval_tokens,
         gist_initialization=gist_initialization,
+        gist_sets=gist_sets,
+        gist_insertion_strategy=gist_insertion_strategy,
+        num_gist_sets_in_swarm=num_gist_sets_in_swarm,
     )
 
 
@@ -722,6 +746,9 @@ def _run_group_eos_only(
     moe_num_experts=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
 ) -> None:
     num_train_epochs = 1
     save_steps = 5000
@@ -771,8 +798,24 @@ def _run_group_eos_only(
                 model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
             elif gist_placement == "with_logits":
                 model_dir_prefix = f"{model_dir_prefix}_with_logits"
+            elif gist_placement == "sentence_nltk":
+                model_dir_prefix = f"{model_dir_prefix}_sentence_nltk"
             else:
                 raise ValueError("Unhandled gist placement")
+
+            if gist_sets != "single":
+                model_dir_prefix = f"{model_dir_prefix}_gist_sets_{gist_sets}"
+            if gist_sets == "swarm":
+                model_dir_prefix = f"{model_dir_prefix}_swarm_{num_gist_sets_in_swarm}"
+            if gist_insertion_strategy != "default":
+                model_dir_prefix = f"{model_dir_prefix}_strategy_{gist_insertion_strategy}"
+
+            if gist_sets != "single":
+                model_dir_prefix = f"{model_dir_prefix}_gist_sets_{gist_sets}"
+            if gist_sets == "swarm":
+                model_dir_prefix = f"{model_dir_prefix}_swarm_{num_gist_sets_in_swarm}"
+            if gist_insertion_strategy != "default":
+                model_dir_prefix = f"{model_dir_prefix}_strategy_{gist_insertion_strategy}"
 
             if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
                 print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -820,6 +863,9 @@ def _run_group_eos_only(
                 moe_num_experts=moe_num_experts,
                 gist_placement=gist_placement,
                 uniform_interval_tokens=uniform_interval_tokens,
+                gist_sets=gist_sets,
+                gist_insertion_strategy=gist_insertion_strategy,
+                num_gist_sets_in_swarm=num_gist_sets_in_swarm,
                 **extra_kwargs,
             )
 
@@ -839,6 +885,9 @@ def run_group_full_4k(
     moe_special_embeddings_layer_idx=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -907,8 +956,17 @@ def run_group_full_4k(
             model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
         elif gist_placement == "with_logits":
             model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        elif gist_placement == "sentence_nltk":
+            model_dir_prefix = f"{model_dir_prefix}_sentence_nltk"
         else:
             raise ValueError("Unhandled gist placement")
+
+        if gist_sets != "single":
+            model_dir_prefix = f"{model_dir_prefix}_gist_sets_{gist_sets}"
+        if gist_sets == "swarm":
+            model_dir_prefix = f"{model_dir_prefix}_swarm_{num_gist_sets_in_swarm}"
+        if gist_insertion_strategy != "default":
+            model_dir_prefix = f"{model_dir_prefix}_strategy_{gist_insertion_strategy}"
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -963,6 +1021,9 @@ def run_group_full_4k(
             moe_num_experts=moe_num_experts,
             gist_placement=gist_placement,
             uniform_interval_tokens=uniform_interval_tokens,
+            gist_sets=gist_sets,
+            gist_insertion_strategy=gist_insertion_strategy,
+            num_gist_sets_in_swarm=num_gist_sets_in_swarm,
             **extra_kwargs,
         )
 
@@ -982,6 +1043,9 @@ def run_group_full_4k_my_recall(
     moe_special_embeddings_layer_idx=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -1045,8 +1109,17 @@ def run_group_full_4k_my_recall(
             model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
         elif gist_placement == "with_logits":
             model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        elif gist_placement == "sentence_nltk":
+            model_dir_prefix = f"{model_dir_prefix}_sentence_nltk"
         else:
             raise ValueError("Unhandled gist placement")
+
+        if gist_sets != "single":
+            model_dir_prefix = f"{model_dir_prefix}_gist_sets_{gist_sets}"
+        if gist_sets == "swarm":
+            model_dir_prefix = f"{model_dir_prefix}_swarm_{num_gist_sets_in_swarm}"
+        if gist_insertion_strategy != "default":
+            model_dir_prefix = f"{model_dir_prefix}_strategy_{gist_insertion_strategy}"
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1100,6 +1173,9 @@ def run_group_full_4k_my_recall(
             moe_num_experts=moe_num_experts,
             gist_placement=gist_placement,
             uniform_interval_tokens=uniform_interval_tokens,
+            gist_sets=gist_sets,
+            gist_insertion_strategy=gist_insertion_strategy,
+            num_gist_sets_in_swarm=num_gist_sets_in_swarm,
             **extra_kwargs,
         )
 
@@ -1119,6 +1195,9 @@ def run_group_full_4k_colddown(
     moe_special_embeddings_layer_idx=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -1183,8 +1262,17 @@ def run_group_full_4k_colddown(
             model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
         elif gist_placement == "with_logits":
             model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        elif gist_placement == "sentence_nltk":
+            model_dir_prefix = f"{model_dir_prefix}_sentence_nltk"
         else:
             raise ValueError("Unhandled gist placement")
+
+        if gist_sets != "single":
+            model_dir_prefix = f"{model_dir_prefix}_gist_sets_{gist_sets}"
+        if gist_sets == "swarm":
+            model_dir_prefix = f"{model_dir_prefix}_swarm_{num_gist_sets_in_swarm}"
+        if gist_insertion_strategy != "default":
+            model_dir_prefix = f"{model_dir_prefix}_strategy_{gist_insertion_strategy}"
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1238,6 +1326,9 @@ def run_group_full_4k_colddown(
             moe_num_experts=moe_num_experts,
             gist_placement=gist_placement,
             uniform_interval_tokens=uniform_interval_tokens,
+            gist_sets=gist_sets,
+            gist_insertion_strategy=gist_insertion_strategy,
+            num_gist_sets_in_swarm=num_gist_sets_in_swarm,
             **extra_kwargs,
         )
 
@@ -1257,6 +1348,9 @@ def run_group_full_4k_boundary_predictor(
     moe_special_embeddings_layer_idx=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
     ngpus: int | None = None,
     num_nodes: int | None = None,
     boundary_predictor_model_checkpoint: str | None = None,
@@ -1325,8 +1419,17 @@ def run_group_full_4k_boundary_predictor(
             model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
         elif gist_placement == "with_logits":
             model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        elif gist_placement == "sentence_nltk":
+            model_dir_prefix = f"{model_dir_prefix}_sentence_nltk"
         else:
             raise ValueError("Unhandled gist placement")
+
+        if gist_sets != "single":
+            model_dir_prefix = f"{model_dir_prefix}_gist_sets_{gist_sets}"
+        if gist_sets == "swarm":
+            model_dir_prefix = f"{model_dir_prefix}_swarm_{num_gist_sets_in_swarm}"
+        if gist_insertion_strategy != "default":
+            model_dir_prefix = f"{model_dir_prefix}_strategy_{gist_insertion_strategy}"
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1401,6 +1504,9 @@ def run_group_full_16k_colddown(
     moe_special_embeddings_layer_idx=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    gist_sets: str = "single",
+    gist_insertion_strategy: str = "default",
+    num_gist_sets_in_swarm: int = 1,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -1458,6 +1564,23 @@ def run_group_full_16k_colddown(
             model_dir_prefix_mid = f"{model_dir_prefix_mid}bos_token_"
 
         model_dir_prefix = f"sentence_{model_slug}{model_dir_prefix_mid}{optimized_params}"
+        if gist_placement == "sentence":
+            pass
+        elif gist_placement == "uniform":
+            model_dir_prefix = f"{model_dir_prefix}_uniform_interval_{uniform_interval_tokens}"
+        elif gist_placement == "with_logits":
+            model_dir_prefix = f"{model_dir_prefix}_with_logits"
+        elif gist_placement == "sentence_nltk":
+            model_dir_prefix = f"{model_dir_prefix}_sentence_nltk"
+        else:
+            raise ValueError("Unhandled gist placement")
+
+        if gist_sets != "single":
+            model_dir_prefix = f"{model_dir_prefix}_gist_sets_{gist_sets}"
+        if gist_sets == "swarm":
+            model_dir_prefix = f"{model_dir_prefix}_swarm_{num_gist_sets_in_swarm}"
+        if gist_insertion_strategy != "default":
+            model_dir_prefix = f"{model_dir_prefix}_strategy_{gist_insertion_strategy}"
 
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
@@ -1513,6 +1636,9 @@ def run_group_full_16k_colddown(
             moe_num_experts=moe_num_experts,
             gist_placement=gist_placement,
             uniform_interval_tokens=uniform_interval_tokens,
+            gist_sets=gist_sets,
+            gist_insertion_strategy=gist_insertion_strategy,
+            num_gist_sets_in_swarm=num_gist_sets_in_swarm,
             **extra_kwargs,
         )
 
@@ -1647,10 +1773,16 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--moe_special_embeddings_layer_idx", type=int, default=None)
     parser.add_argument("--moe_num_experts", type=int, default=None)
     parser.add_argument(
-        "--gist_placement", type=str, default="sentence", choices=["sentence", "uniform", "with_logits", "boundary_predictor"]
+        "--gist_placement",
+        type=str,
+        default="sentence",
+        choices=["sentence", "sentence_nltk", "uniform", "with_logits", "boundary_predictor"],
     )
     parser.add_argument("--gist_initialization", type=str, default="mvnormal", choices=["mvnormal", "normal"])
     parser.add_argument("--uniform_interval_tokens", type=int, default=40)
+    parser.add_argument("--gist_sets", type=str, default="single", choices=["single", "roll", "swarm"])
+    parser.add_argument("--gist_insertion_strategy", type=str, default="default", choices=["default", "random"])
+    parser.add_argument("--num_gist_sets_in_swarm", type=int, default=1)
     parser.add_argument("--ft_with_bos_token", action="store_true", help="Enable fine-tuning with BOS token")
     parser.add_argument("--boundary_predictor_model_checkpoint", default=None)
     parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
@@ -1700,6 +1832,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
             gist_initialization=args.gist_initialization,
@@ -1717,6 +1852,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
@@ -1732,6 +1870,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1749,6 +1890,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1766,6 +1910,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1783,6 +1930,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1801,6 +1951,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1818,6 +1971,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
@@ -1835,6 +1991,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1853,6 +2012,9 @@ def main() -> None:
             moe_num_experts=args.moe_num_experts,
             gist_placement=args.gist_placement,
             uniform_interval_tokens=args.uniform_interval_tokens,
+            gist_sets=args.gist_sets,
+            gist_insertion_strategy=args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
