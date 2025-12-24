@@ -53,7 +53,7 @@ def run_experiments(
         "--report_to tensorboard --select_train_dataset_items 0 --weight_decay 0.01 --bf16 0 --torch_compile 0  --eval_strategy no  --eval_steps 0 --gradient_checkpointing 0 --save_total_limit 100 "
         "--optim adamw_torch_fused  --logging_steps 1 --add_end_of_sentence_token 1 --disable_tqdm 0 --dataset fineweb_edu --flexible_eos_tokens 0 "
         "--ft_with_bos_token 0 --save_safetensors 1 --dataloader_num_workers 0  --use_liger_kernel 1 --sentence_attention_implementation sentence_attention_flex "
-        " --limit_dataset_shards 1 --offset_dataset_shards 8 "
+        " --limit_dataset_shards 2 --offset_dataset_shards 8 "
         f"--max_steps {max_steps} "
         f"--learning_rate {learning_rate} "
         f"--per_device_train_batch_size {per_device_train_batch_size} "

@@ -345,8 +345,11 @@ class GRPOTrainer(Trainer):
                 baseline["special_embeddings_mask"].to(torch.bool) & baseline["attention_mask"].to(torch.bool)
             )
 
-        result = [baseline]
-        result.extend(sample_one() for _ in range(num_generate_samples - 1))
+        if use_model_based_sampling:
+            result = [baseline]
+            result.extend(sample_one() for _ in range(num_generate_samples - 1))
+        else:
+            result = [sample_one()]
 
         if orig_attn_impl is not None and model_config is not None:
             model_config._attn_implementation = orig_attn_impl
@@ -515,7 +518,10 @@ class GRPOTrainer(Trainer):
 
         # Supervised CE: by default keep it on all tokens EXCEPT the action tokens (first token of each gist-run).
         supervised_mask = target_is_valid
-        if bool(self.args.grpo_supervised_exclude_action_tokens):
+
+        global_step = int(getattr(getattr(self, "state", None), "global_step", 0))
+        use_model_based_sampling = global_step >= self.args.grpo_pretrain_sampling_steps
+        if use_model_based_sampling and bool(self.args.grpo_supervised_exclude_action_tokens):
             supervised_mask = supervised_mask & (~starts_target)
 
         # supervised_denom = supervised_mask.sum().clamp(min=1)
@@ -569,9 +575,11 @@ class GRPOTrainer(Trainer):
 
         grpo_loss_per_example = (advantage.detach() * action_nll_grouped).mean(dim=1) * float(self.args.grpo_loss_alpha)  # [B]
 
-        loss = lm_loss
-        if not (reward_std <= 1e-8).all():
-            loss = loss + grpo_loss_per_example.mean()
+        # loss = 0
+        if use_model_based_sampling and not (reward_std <= 1e-8).all():
+            loss = grpo_loss_per_example.mean()
+        else:
+            loss = lm_loss
 
         if torch.isnan(loss):
             print("Found nan loss")
