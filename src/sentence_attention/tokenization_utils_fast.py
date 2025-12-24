@@ -1,6 +1,7 @@
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import nltk
 import torch
 import torch.nn.functional as F
 
@@ -10,6 +11,11 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
     special_token_mask_to_clothest_token_idx_slow,
 )
+
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt", quiet=True)
 
 
 class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
@@ -39,8 +45,10 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         )  # can also be set with set_boundary_predictor_model
         self.boundary_predictor_device: Optional[str] = kwargs.get("boundary_predictor_device", None)
 
-        if self.gist_placement not in {"sentence", "uniform", "with_logits", "boundary_predictor"}:
-            raise ValueError("gist_placement must be one of {'sentence','uniform','with_logits', 'boundary_predictor}")
+        if self.gist_placement not in {"sentence", "sentence_nltk", "uniform", "with_logits", "boundary_predictor"}:
+            raise ValueError(
+                "gist_placement must be one of {'sentence','sentence_nltk','uniform','with_logits', 'boundary_predictor}"
+            )
         if not isinstance(self.uniform_interval_tokens, int) or self.uniform_interval_tokens <= 0:
             raise ValueError("uniform_interval_tokens must be a positive integer")
         # if self.gist_placement == "boundary_predictor" and self.boundary_predictor_model is None:
@@ -244,20 +252,30 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
 
         end_of_sentence_token = "".join(self.end_of_sentence_tokens_list)
 
-        patterns = [
-            (r"\. ", f". {end_of_sentence_token}"),
-            (r"\? ", f"? {end_of_sentence_token}"),
-            (r"! ", f"! {end_of_sentence_token}"),
-            (r"\.\n", f".\n{end_of_sentence_token}"),
-            (r"\?\n", f"?\n{end_of_sentence_token}"),
-            (r"!\n", f"!\n{end_of_sentence_token}"),
-            (r"\.$", f". {end_of_sentence_token}"),
-            (r"!$", f"!{end_of_sentence_token}"),
-            (r"\?$", f"?{end_of_sentence_token}"),
-        ]
+        if self.gist_placement == "sentence_nltk":
+            sentence_tokenizer = nltk.tokenize.PunktTokenizer()
+            # Get sentence boundaries
+            sentence_spans = list(sentence_tokenizer.span_tokenize(text))
+            # Insert tokens at sentence boundaries (in reverse order to preserve indices)
+            for _sent_start, sent_end in reversed(sentence_spans):
+                # Insert tokens at the end of each sentence
+                text = text[:sent_end] + end_of_sentence_token + text[sent_end:]
+        else:
+            # Original regex-based sentence detection for "sentence" placement
+            patterns = [
+                (r"\. ", f". {end_of_sentence_token}"),
+                (r"\? ", f"? {end_of_sentence_token}"),
+                (r"! ", f"! {end_of_sentence_token}"),
+                (r"\.\n", f".\n{end_of_sentence_token}"),
+                (r"\?\n", f"?\n{end_of_sentence_token}"),
+                (r"!\n", f"!\n{end_of_sentence_token}"),
+                (r"\.$", f". {end_of_sentence_token}"),
+                (r"!$", f"!{end_of_sentence_token}"),
+                (r"\?$", f"?{end_of_sentence_token}"),
+            ]
 
-        for pattern, replacement in patterns:
-            text = re.sub(pattern, replacement, text)
+            for pattern, replacement in patterns:
+                text = re.sub(pattern, replacement, text)
 
         return text
 
