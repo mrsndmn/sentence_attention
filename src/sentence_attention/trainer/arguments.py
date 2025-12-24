@@ -39,9 +39,12 @@ class SentenceTrainingArguments(TrainingArguments):
     remove_unused_columns: bool = field(default=False)
 
     number_of_eos_tokens: int = field(default=1)
-    gist_placement: str = field(default="with_logits")  # 'sentence', 'uniform', 'boundary_predictor'
+    gist_placement: str = field(default="with_logits")  # 'sentence', 'sentence_nltk', 'uniform', 'boundary_predictor'
     gist_initialization: str = field(default="mvnormal")  # mvnormal, normal
     uniform_interval_tokens: int = field(default=40)
+    gist_sets: str = field(default="single")  # 'single', 'roll', 'swarm'
+    gist_insertion_strategy: str = field(default="default")  # 'default', 'random'
+    num_gist_sets_in_swarm: int = field(default=1)
 
     boundary_predictor_model_checkpoint: str = field(default="")
 

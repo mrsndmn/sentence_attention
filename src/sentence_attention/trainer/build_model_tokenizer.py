@@ -79,6 +79,12 @@ def _build_tokenizer(training_args: SentenceTrainingArguments, model, torch_dtyp
             training_args.gist_placement,
             "uniform_interval_tokens",
             training_args.uniform_interval_tokens,
+            "gist_sets",
+            training_args.gist_sets,
+            "gist_insertion_strategy",
+            training_args.gist_insertion_strategy,
+            "num_gist_sets_in_swarm",
+            training_args.num_gist_sets_in_swarm,
         )
 
         extra = {}
@@ -96,6 +102,9 @@ def _build_tokenizer(training_args: SentenceTrainingArguments, model, torch_dtyp
             num_eos_tokens=number_of_eos_tokens,
             gist_placement=training_args.gist_placement,
             uniform_interval_tokens=training_args.uniform_interval_tokens,
+            gist_sets=training_args.gist_sets,
+            gist_insertion_strategy=training_args.gist_insertion_strategy,
+            num_gist_sets_in_swarm=training_args.num_gist_sets_in_swarm,
             **extra,
         )
 
