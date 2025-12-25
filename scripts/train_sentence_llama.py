@@ -156,9 +156,7 @@ if __name__ == "__main__":
             for special_token_id in special_token_ids:
                 special_embeddings_mask = special_embeddings_mask | (input_ids == special_token_id)
 
-            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-                special_embeddings_mask, num_special_tokens=num_eos_tokens
-            )
+            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
 
             labels = input_ids.clone()
             if tokenizer.pad_token_id is not None:

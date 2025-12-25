@@ -431,7 +431,6 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         if clothest_end_of_sentence_token_idx is None:
             clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
                 special_embeddings_mask,
-                num_special_tokens=len(self.config.end_of_sentence_token_ids),
             )
 
         causal_mask = self._update_causal_mask(
@@ -886,7 +885,6 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
         if clothest_end_of_sentence_token_idx is None:
             clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
                 special_embeddings_mask,
-                num_special_tokens=len(self.config.end_of_sentence_token_ids),
             )
 
         past_key_values = kwargs.get("past_key_values")
@@ -952,7 +950,6 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
 
             clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
                 current_special_embeddings_mask,
-                num_special_tokens=len(self.config.end_of_sentence_token_ids),
             )
 
             model_out = self(
@@ -1059,7 +1056,6 @@ class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
         # if "clothest_end_of_sentence_token_idx" not in outputs or need_recalc_special_embeddings_mask:
         outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
             outputs["special_embeddings_mask"],
-            num_special_tokens=len(self.config.end_of_sentence_token_ids),
         )
         # print('outputs["clothest_end_of_sentence_token_idx"]', outputs["clothest_end_of_sentence_token_idx"])
 

@@ -31,10 +31,7 @@ def test_sentence_attention_4d_mask():
     for pos in special_positions:
         special_embeddings_mask[:, pos] = 1
 
-    num_special_tokens = 2
-    clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-        special_embeddings_mask, num_special_tokens=num_special_tokens
-    )
+    clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
 
     cache_position = torch.arange(seq_len)
     causal_mask_4d = SentenceLlamaModel._prepare_4d_causal_attention_mask_with_cache_position_sentence_attention(

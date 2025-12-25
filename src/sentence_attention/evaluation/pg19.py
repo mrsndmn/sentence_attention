@@ -80,7 +80,6 @@ def evaluate_pg19_ppl(
 
                 clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
                     special_embeddings_mask,
-                    num_special_tokens=len(special_token_ids),
                 )
 
                 def outputs_hook(inner_input_ids, outputs, prev_sentence_i, sentence_i):

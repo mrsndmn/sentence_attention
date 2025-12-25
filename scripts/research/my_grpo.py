@@ -243,9 +243,7 @@ if __name__ == "__main__":
         max_gist_tokens = max(gist_counts_per_boundary) if gist_counts_per_boundary else tokenizer.num_eos_tokens
 
         # Recompute clothest_end_of_sentence_token_idx with modified mask
-        clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-            special_embeddings_mask.bool(), num_special_tokens=max_gist_tokens
-        )
+        clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask.bool())
         if clothest_end_of_sentence_token_idx.dim() == 1:
             clothest_end_of_sentence_token_idx = clothest_end_of_sentence_token_idx.unsqueeze(0)
 

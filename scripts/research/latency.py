@@ -98,7 +98,7 @@ def build_special_mask_and_closest_idx(input_ids: torch.LongTensor, eos_ids: Lis
     special_mask = torch.zeros_like(input_ids, dtype=torch.long, device=input_ids.device)
     for eid in eos_ids:
         special_mask[input_ids == eid] = 1
-    closest_idx = special_token_mask_to_clothest_token_idx_slow(special_mask, num_special_tokens=len(eos_ids))
+    closest_idx = special_token_mask_to_clothest_token_idx_slow(special_mask)
     return special_mask, closest_idx
 
 

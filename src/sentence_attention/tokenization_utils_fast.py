@@ -541,7 +541,7 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
                 special_embeddings_mask[idx] = 1
 
         clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-            torch.tensor([special_embeddings_mask], dtype=torch.bool), num_special_tokens=self.num_eos_tokens
+            torch.tensor([special_embeddings_mask], dtype=torch.bool)
         )[0].tolist()
 
         updated: Dict[str, Any] = dict(encoding)

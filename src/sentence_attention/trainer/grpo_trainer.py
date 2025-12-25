@@ -7,6 +7,10 @@ from typing import Any
 
 from transformers.trainer_pt_utils import distributed_concat
 
+from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
+    special_token_mask_to_clothest_token_idx_slow,
+)
+
 
 class GRPOTrainer(Trainer):
 
@@ -55,29 +59,6 @@ class GRPOTrainer(Trainer):
             pretrain_steps = 0
         global_step = int(getattr(getattr(self, "state", None), "global_step", 0))
         use_model_based_sampling = global_step >= pretrain_steps
-        positions_full = torch.arange(seq_len, device=input_ids.device, dtype=torch.long)
-
-        def compute_closest_boundary_idx_from_runs(mask: torch.Tensor) -> torch.Tensor:
-            # mask: [bs, L] bool where True marks gist tokens.
-            # Boundary is the last token in each contiguous run of gist tokens.
-            if mask.ndim != 2:
-                raise ValueError(f"Expected 2D mask, got shape={tuple(mask.shape)}")
-            bs, length = mask.shape
-            is_special = mask.to(torch.bool)
-            boundary = is_special & torch.logical_not(torch.roll(is_special, shifts=-1, dims=1))
-            boundary[:, -1] = is_special[:, -1]
-
-            if length > positions_full.numel():
-                # Should not happen (we never build sequences longer than seq_len), but be safe.
-                positions = torch.arange(length, device=mask.device, dtype=torch.long)
-            else:
-                positions = positions_full[:length]
-            positions = positions.unsqueeze(0).expand(bs, -1)
-            boundary_indices = torch.where(boundary, positions, torch.zeros_like(positions))
-            last_boundary_inclusive, _ = torch.cummax(boundary_indices, dim=1)
-            last_boundary_prev = torch.roll(last_boundary_inclusive, shifts=1, dims=1)
-            last_boundary_prev[:, 0] = 0
-            return last_boundary_prev
 
         def _resolve_token_id(token_str: str) -> int:
             tok_id = tokenizer.convert_tokens_to_ids(token_str)
@@ -96,9 +77,9 @@ class GRPOTrainer(Trainer):
         # eos_token_ids_by_k[k] -> list of ids for <end_of_sentence_{i}_{k}> (i=0..k-1). Index 0 unused.
         eos_token_ids_by_k: list[list[int]] = [[]]
         first_token_ids_all: list[int] = []
-        for k in range(1, max_eos + 1):
+        for k in range(max_eos):
             ids_k: list[int] = []
-            for i in range(k):
+            for i in range(k + 1):
                 ids_k.append(_resolve_token_id(f"<end_of_sentence_{i}_{k}>"))
             eos_token_ids_by_k.append(ids_k)
             first_token_ids_all.append(ids_k[0])
@@ -108,7 +89,7 @@ class GRPOTrainer(Trainer):
         eos_spec_tensors_by_k: list[torch.Tensor] = [
             torch.empty((0,), device=input_ids.device, dtype=special_embeddings_mask.dtype)
         ]
-        for k in range(1, max_eos + 1):
+        for k in range(max_eos):
             eos_token_tensors_by_k.append(torch.tensor(eos_token_ids_by_k[k], device=input_ids.device, dtype=input_ids.dtype))
             eos_spec_tensors_by_k.append(torch.ones((k,), device=input_ids.device, dtype=special_embeddings_mask.dtype))
 
@@ -221,7 +202,7 @@ class GRPOTrainer(Trainer):
                             total_len = int(total_spec.numel())
                             attention = torch.ones((1, total_len), device=input_ids.device, dtype=torch.long)
                             special = total_spec.unsqueeze(0)
-                            closest = compute_closest_boundary_idx_from_runs(special.to(torch.bool))
+                            closest = special_token_mask_to_clothest_token_idx_slow(special.to(torch.bool))
 
                             outputs = model(
                                 fused_linear_cross_entropy=False,
@@ -317,7 +298,7 @@ class GRPOTrainer(Trainer):
             result["input_ids"] = new_input_ids
             result["attention_mask"] = new_attention_mask
             result["special_embeddings_mask"] = new_special_mask
-            result["clothest_end_of_sentence_token_idx"] = compute_closest_boundary_idx_from_runs(
+            result["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
                 new_special_mask.to(torch.bool) & new_attention_mask.to(torch.bool)
             )
             if new_labels is not None:
@@ -341,7 +322,7 @@ class GRPOTrainer(Trainer):
             or not isinstance(baseline["clothest_end_of_sentence_token_idx"], torch.Tensor)
             or baseline["clothest_end_of_sentence_token_idx"].shape != input_ids.shape
         ):
-            baseline["clothest_end_of_sentence_token_idx"] = compute_closest_boundary_idx_from_runs(
+            baseline["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
                 baseline["special_embeddings_mask"].to(torch.bool) & baseline["attention_mask"].to(torch.bool)
             )
 
@@ -359,66 +340,6 @@ class GRPOTrainer(Trainer):
 
     @staticmethod
     def prepare_model_before_training(model, tokenizer):
-
-        # Add separate tokens with different sequence length
-        additional_special_tokens = []
-        for num_gist_tokens in range(1, tokenizer.num_eos_tokens + 1):
-            for i in range(num_gist_tokens):
-                additional_special_tokens.append(f"<end_of_sentence_{i}_{num_gist_tokens}>")
-
-        tokenizer.add_special_tokens({"additional_special_tokens": additional_special_tokens})
-
-        # Resize embeddings for newly added special tokens.
-        # Note: must re-fetch weights AFTER resizing, since resize_token_embeddings may replace modules.
-        model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
-
-        input_embeddings = model.get_input_embeddings()
-        output_embeddings = model.get_output_embeddings()
-
-        with torch.no_grad():
-            input_weight = input_embeddings.weight
-
-            output_weight = None
-            output_bias = None
-            if output_embeddings is not None and not model.config.tie_word_embeddings:
-                output_weight = output_embeddings.weight
-                if hasattr(output_embeddings, "bias") and output_embeddings.bias is not None:
-                    output_bias = output_embeddings.bias
-
-            for num_gist_tokens in range(1, tokenizer.num_eos_tokens + 1):
-                for i in range(num_gist_tokens):
-                    new_gist_token = f"<end_of_sentence_{i}_{num_gist_tokens}>"
-                    orig_gist_token = f"<end_of_sentence_{i}>"
-
-                    new_id = tokenizer.convert_tokens_to_ids(new_gist_token)
-                    orig_id = tokenizer.convert_tokens_to_ids(orig_gist_token)
-                    if new_id is None or orig_id is None:
-                        raise ValueError(f"Failed to resolve token ids for {new_gist_token=} {orig_gist_token=}")
-
-                    # Initialize input embeddings for new tokens from the original gist token embeddings.
-                    input_weight[new_id].copy_(input_weight[orig_id])
-
-                    # For untied models, also initialize the LM head weights/bias for the new tokens.
-                    if output_weight is not None:
-                        if output_weight.shape[0] == len(tokenizer):
-                            output_weight[new_id].copy_(output_weight[orig_id])
-                        elif output_weight.ndim == 2 and output_weight.shape[1] == len(tokenizer):
-                            output_weight[:, new_id].copy_(output_weight[:, orig_id])
-                        else:
-                            raise ValueError(
-                                "Unexpected LM head weight shape while initializing new tokens: "
-                                f"{tuple(output_weight.shape)} vs vocab={len(tokenizer)}"
-                            )
-
-                        if output_bias is not None:
-                            if output_bias.shape[0] == len(tokenizer):
-                                output_bias[new_id].copy_(output_bias[orig_id])
-                            else:
-                                raise ValueError(
-                                    "Unexpected LM head bias shape while initializing new tokens: "
-                                    f"{tuple(output_bias.shape)} vs vocab={len(tokenizer)}"
-                                )
-
         return
 
     def compute_loss(

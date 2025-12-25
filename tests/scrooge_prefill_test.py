@@ -379,7 +379,6 @@ def _new_test_scrooge_prefill_kv_cache():
 
         clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
             special_embeddings_mask,
-            num_special_tokens=len(model.config.end_of_sentence_token_ids),
         )
 
         outputs = scrooge_prefill(
@@ -407,7 +406,6 @@ def _new_test_scrooge_prefill_kv_cache():
 
         # clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
         #     special_embeddings_mask,
-        #     num_special_tokens=len(model.config.end_of_sentence_token_ids),
         # )
 
         # inputs["special_embeddings_mask"] = special_embeddings_mask
@@ -461,7 +459,6 @@ def test_scrooge_prefills():
 
     clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
         special_embeddings_mask,
-        num_special_tokens=len(model.config.end_of_sentence_token_ids),
     )
 
     print("input_ids", input_ids.shape)
@@ -542,7 +539,6 @@ def test_kv_cache_forward():
 
     clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
         special_embeddings_mask,
-        num_special_tokens=len(model.config.end_of_sentence_token_ids),
     )
 
     print("input_ids", input_ids.shape)
@@ -637,7 +633,6 @@ def test_kv_cache_forward():
         )
         full_clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
             full_special_embeddings_mask,
-            num_special_tokens=len(model.config.end_of_sentence_token_ids),
         )
 
         init_out = model(
@@ -681,7 +676,6 @@ def test_kv_cache_forward():
         )
         eos_only_clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
             eos_only_special_embeddings_mask,
-            num_special_tokens=len(model.config.end_of_sentence_token_ids),
         )
 
         print("eos_only_forward_cache", eos_only_forward_cache.get_seq_length())

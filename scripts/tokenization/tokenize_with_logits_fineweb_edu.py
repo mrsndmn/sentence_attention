@@ -130,9 +130,7 @@ if __name__ == "__main__":
             new_input_ids[0, target_position_i] = tokenized_inputs.input_ids[0, orig_position_i]
             target_position_i += 1
 
-        clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-            special_embeddings_mask, num_special_tokens=num_eos_tokens
-        )
+        clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
 
         return {
             "input_ids": new_input_ids[0],

@@ -63,23 +63,24 @@ if is_torch_flex_attn_available():
     from transformers.integrations.flex_attention import make_flex_block_causal_mask
 
 
-def special_token_mask_to_clothest_token_idx_slow(special_token_mask, num_special_tokens=None):
+def special_token_mask_to_clothest_token_idx_slow(special_token_mask):
     # [ bs, seq_len ]
-
-    assert num_special_tokens is not None, "num_special_tokens must be provided"
+    #
+    # Returns, for every position, the index of the most recent "boundary" token.
+    # Boundary definition:
+    # - **Fixed-length mode** (num_special_tokens is not None): boundary is every N-th special token globally.
+    # - **Flexible-run mode** (num_special_tokens is None): boundary is the last token of each contiguous run of
+    #   special (gist) tokens. This supports variable-length gist runs, assuming runs are separated by non-gist tokens.
 
     # Vectorized implementation (device-aware, no Python loops).
-    # For each position, returns the index of the last "boundary" token,
-    # where a boundary is the N-th special token since the previous boundary.
     is_special = special_token_mask.to(torch.bool)  # [bs, seq_len]
     batch_size, seq_len = is_special.shape
     device = special_token_mask.device
 
-    # Cumulative count of special tokens along sequence
-    cumsum_specials = is_special.to(torch.int64).cumsum(dim=1)  # [bs, seq_len]
-
-    # Boundary positions are those special tokens where cumsum % N == 0
-    at_boundary = is_special & (cumsum_specials.remainder(num_special_tokens) == 0)  # [bs, seq_len]
+    # Flexible-run mode: boundary is the last token in each contiguous run of specials.
+    next_is_special = torch.zeros_like(is_special)
+    next_is_special[:, :-1] = is_special[:, 1:]
+    at_boundary = is_special & (~next_is_special)  # [bs, seq_len]
 
     # For cummax trick, place the position index at boundaries, else 0
     positions = torch.arange(seq_len, device=device, dtype=torch.long).unsqueeze(0).expand(batch_size, -1)
@@ -88,8 +89,7 @@ def special_token_mask_to_clothest_token_idx_slow(special_token_mask, num_specia
     # Propagate the last seen boundary index to the right
     last_boundary_inclusive, _ = torch.cummax(boundary_indices, dim=1)  # [bs, seq_len]
 
-    # The original logic assigns the previous boundary index for the boundary token itself.
-    # Shift by one to use the strictly previous boundary for the current position.
+    # Assign the previous boundary index for the boundary token itself.
     last_boundary_prev = torch.roll(last_boundary_inclusive, shifts=1, dims=1)
     last_boundary_prev[:, 0] = 0
 
@@ -753,7 +753,6 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         if clothest_end_of_sentence_token_idx is None:
             clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
                 special_embeddings_mask,
-                num_special_tokens=len(self.config.end_of_sentence_token_ids),
             )
 
         assert len(attention_mask.shape) == 2
@@ -1215,10 +1214,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         clothest_end_of_sentence_token_idx = kwargs.get("clothest_end_of_sentence_token_idx")
         if clothest_end_of_sentence_token_idx is None:
-            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
-                special_embeddings_mask,
-                num_special_tokens=len(self.config.end_of_sentence_token_ids),
-            )
+            clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
 
         past_key_values = kwargs.get("past_key_values")
         if past_key_values is None:
@@ -1273,10 +1269,8 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         full_special_mask[:, :initial_len] = special_embeddings_mask
 
         # Initialize closest EOS index for the prefix, then update incrementally
-        num_special_tokens = len(self.config.end_of_sentence_token_ids)
-        prefix_closest = special_token_mask_to_clothest_token_idx_slow(
-            full_special_mask[:, :initial_len], num_special_tokens=num_special_tokens
-        )
+        num_special_tokens = None
+        prefix_closest = special_token_mask_to_clothest_token_idx_slow(full_special_mask[:, :initial_len])
         full_closest_eos_idx = torch.zeros((1, total_len), device=device, dtype=torch.long)
         if initial_len > 0:
             full_closest_eos_idx[:, :initial_len] = prefix_closest
@@ -1286,7 +1280,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
         # Count trailing specials at the end of the prefix to continue sequence
         trailing_special_count = 0
-        if initial_len > 0:
+        if initial_len > 0 and num_special_tokens is not None:
             specials_prefix = full_special_mask[0, :initial_len]
             idx = initial_len - 1
             while idx >= 0 and specials_prefix[idx].item() == 1:
@@ -1331,7 +1325,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
 
             # Decide next token
             last_generated = int(generated_tokens_buf[num_generated - 1].item())
-            if last_generated in self.config.end_of_sentence_token_ids:
+            if num_special_tokens is not None and last_generated in self.config.end_of_sentence_token_ids:
                 prev_idx = self.config.end_of_sentence_token_ids.index(last_generated)
                 if prev_idx < len(self.config.end_of_sentence_token_ids) - 1:
                     current_input_ids[0, 0] = self.config.end_of_sentence_token_ids[prev_idx + 1]
@@ -1351,16 +1345,21 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             full_special_mask[0, cur_len] = is_special
 
             # Update closest EOS index incrementally
-            if is_special:
-                trailing_special_count += 1
-                if trailing_special_count == num_special_tokens:
+            if num_special_tokens is None:
+                # Flexible-run mode: update boundary when we *finish* a run of specials.
+                # In incremental decoding we only observe tokens one-by-one, so we can only
+                # finalize a run when we see the next non-special token.
+                #
+                # Semantics: `current_closest_boundary` points to the last finalized run end.
+                # For special tokens, we keep the previous boundary. When a non-special arrives
+                # and the previous token was special, we finalize the previous index as boundary.
+                prev_is_special = bool(full_special_mask[0, cur_len - 1].item()) if cur_len > 0 else False
+                if is_special:
                     full_closest_eos_idx[0, cur_len] = current_closest_boundary
-                    current_closest_boundary = cur_len
-                    trailing_special_count = 0
                 else:
+                    if prev_is_special and cur_len > 0:
+                        current_closest_boundary = cur_len - 1
                     full_closest_eos_idx[0, cur_len] = current_closest_boundary
-            else:
-                full_closest_eos_idx[0, cur_len] = current_closest_boundary
 
             # Advance cache position
             current_cache_position = current_cache_position.add(1)
@@ -1414,10 +1413,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                 for end_of_sentence_token_id in self.config.end_of_sentence_token_ids:
                     special_embeddings_mask[current_input_ids == end_of_sentence_token_id] = 1
 
-            current_closest_idx = special_token_mask_to_clothest_token_idx_slow(
-                special_embeddings_mask,
-                num_special_tokens=len(self.config.end_of_sentence_token_ids),
-            )
+            current_closest_idx = special_token_mask_to_clothest_token_idx_slow(special_embeddings_mask)
 
             model_out = self(
                 input_ids=current_input_ids,
@@ -1499,7 +1495,6 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         # print('outputs["special_embeddings_mask"]', outputs["special_embeddings_mask"])
         outputs["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
             outputs["special_embeddings_mask"],
-            num_special_tokens=len(self.config.end_of_sentence_token_ids),
         )
         # print('outputs["clothest_end_of_sentence_token_idx"]', outputs["clothest_end_of_sentence_token_idx"])
 

@@ -36,7 +36,6 @@ def test_sentence_attention_impl_equivalence():
 
     clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
         special_embeddings_mask,
-        num_special_tokens=4,
     )
 
     cache_position = torch.arange(seq_len)

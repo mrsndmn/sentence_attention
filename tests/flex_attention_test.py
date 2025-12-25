@@ -75,12 +75,10 @@ def test_flex_attention_sentence_mask():
 
     # Create a FlexAttention layer
 
-    num_special_tokens = 2
     special_embeddings_mask = torch.tensor([[0, 1, 1, 0, 1, 1, 0, 0, 1, 1]]).repeat(batch_size, 1).bool()
 
     clothest_eos_token_idx = special_token_mask_to_clothest_token_idx_slow(
         special_embeddings_mask,
-        num_special_tokens=num_special_tokens,
     )
 
     attention_mask_bool = torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]).repeat(batch_size, 1).bool()
@@ -145,7 +143,6 @@ def test_sentence_attention_forward():
 
     clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
         special_embeddings_mask,
-        num_special_tokens=4,
     )
 
     cache_position = torch.arange(seq_len)
@@ -225,7 +222,6 @@ def test_sentence_attention_impl_equivalence():
 
     clothest_end_of_sentence_token_idx = special_token_mask_to_clothest_token_idx_slow(
         special_embeddings_mask,
-        num_special_tokens=4,
     )
 
     cache_position = torch.arange(seq_len)
