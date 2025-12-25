@@ -37,7 +37,9 @@ def run_local_process(script_str, env_variables):
     return result
 
 
-def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, local=False, ruler_mode="tiny"):
+def run_helmet_eval_experiments(
+    experiment, job_description="Eval", dry=False, local=False, ruler_mode="tiny", pass_k=None, pass_k_metric_to_maximize=None
+):
 
     experiment = copy.deepcopy(experiment)
 
@@ -88,7 +90,12 @@ def run_helmet_eval_experiments(experiment, job_description="Eval", dry=False, l
         python_path_prefix_dirs = f"{python_path_prefix_dirs}:../AutoCompressors"
 
     use_chat_template = "instruct" in pretrained_model_artifacts_path.lower()
-    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {current_env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template {use_chat_template} --no_torch_compile --output_dir {output_dir} --limit_max_length 33000 '"
+    script_str = f"bash -c 'date && cd {helmet_workdir_prefix} && {current_env_bin_path}/python eval.py --config {bench_config} --model_name_or_path {pretrained_model} --use_chat_template {use_chat_template} --no_torch_compile --output_dir {output_dir} --limit_max_length 33000"
+    if pass_k is not None:
+        script_str += f" --pass_k {pass_k}"
+    if pass_k_metric_to_maximize is not None:
+        script_str += f" --pass_k_metric_to_maximize {pass_k_metric_to_maximize}"
+    script_str += " '"
 
     print(f"\n\n{script_str}\n")
 
@@ -178,11 +185,21 @@ def run_lighteval_eval_experiments(experiment, job_description="Eval", dry=False
     return
 
 
-def run_eval_experiments(experiment, job_description="Eval", dry=False, local=False, ruler_mode="none"):
+def run_eval_experiments(
+    experiment, job_description="Eval", dry=False, local=False, ruler_mode="none", pass_k=None, pass_k_metric_to_maximize=None
+):
 
     if experiment["benchmark"] in ["recall", "rag", "rerank", "cite", "longqa", "summ", "icl"]:
         assert ruler_mode in ["tiny", "short", "long"], f"Invalid mode: {ruler_mode}"
-        return run_helmet_eval_experiments(experiment, job_description, dry, local, ruler_mode=ruler_mode)
+        return run_helmet_eval_experiments(
+            experiment,
+            job_description,
+            dry,
+            local,
+            ruler_mode=ruler_mode,
+            pass_k=pass_k,
+            pass_k_metric_to_maximize=pass_k_metric_to_maximize,
+        )
 
     return run_lighteval_eval_experiments(experiment, job_description, dry, local)
 
@@ -299,6 +316,8 @@ def evaluate_benchmarks(
     limit_jobs: int,
     in_progress_jobs_descriptions=None,
     ruler_mode="none",
+    pass_k=None,
+    pass_k_metric_to_maximize=None,
 ):
 
     stop = False
@@ -378,6 +397,8 @@ def evaluate_benchmarks(
                     job_description=job_description,
                     local=local,
                     ruler_mode=ruler_mode,
+                    pass_k=pass_k,
+                    pass_k_metric_to_maximize=pass_k_metric_to_maximize,
                 )
 
                 processed_models += 1
@@ -415,6 +436,8 @@ if __name__ == "__main__":
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--ruler_mode", type=str, default="none", choices=["none", "tiny", "short", "long"])
     parser.add_argument("--run_for_in_progress_jobs", action="store_true")
+    parser.add_argument("--pass_k", type=int, default=None)
+    parser.add_argument("--pass_k_metric_to_maximize", type=str, default=None)
     args = parser.parse_args()
 
     num_checkpoints = args.num_checkpoints
@@ -474,6 +497,8 @@ if __name__ == "__main__":
                 max_jobs_queue_size=args.max_jobs_queue_size,
                 in_progress_jobs_descriptions=in_progress_jobs_descriptions,
                 ruler_mode=args.ruler_mode,
+                pass_k=args.pass_k,
+                pass_k_metric_to_maximize=args.pass_k_metric_to_maximize,
             )
             processed_models += result["processed_models"]
 
@@ -504,6 +529,8 @@ if __name__ == "__main__":
                     max_jobs_queue_size=args.max_jobs_queue_size,
                     in_progress_jobs_descriptions=in_progress_jobs_descriptions,
                     ruler_mode=args.ruler_mode,
+                    pass_k=args.pass_k,
+                    pass_k_metric_to_maximize=args.pass_k_metric_to_maximize,
                 )
 
                 stop = result["stop"]

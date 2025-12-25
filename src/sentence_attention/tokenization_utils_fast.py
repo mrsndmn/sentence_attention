@@ -298,9 +298,13 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         if self.gist_placement == "sentence_nltk":
             sentence_tokenizer = nltk.tokenize.PunktTokenizer()
             # Get sentence boundaries
+            # breakpoint()
+            orig_text_len = len(text)
             sentence_spans = list(sentence_tokenizer.span_tokenize(text))
             # Insert tokens at sentence boundaries (in reverse order to preserve indices)
             for _sent_start, sent_end in reversed(sentence_spans):
+                if sent_end == orig_text_len:
+                    continue
                 # Determine which tokens to insert
                 if self.gist_insertion_strategy == "random" and self.gist_token_sets is not None:
                     # Select a random set of tokens
