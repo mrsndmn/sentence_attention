@@ -115,3 +115,13 @@ class SentenceTrainingArguments(TrainingArguments):
     moe_num_experts: int = field(default=0)
     moe_special_embeddings_layer_idx: Optional[int] = field(default=None)
     moe_aux_loss_weight: float = 1.0
+
+    full_attention_layers: list[int] = field(
+        default_factory=list,
+        metadata={
+            "help": (
+                "0-based layer indices that should use full causal attention instead of sentence attention. "
+                "Example: --full_attention_layers 0 1 2"
+            )
+        },
+    )

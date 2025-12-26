@@ -126,6 +126,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
 
         moe_special_embeddings_layer_idx = exp.pop("moe_special_embeddings_layer_idx", None)
         moe_num_experts = exp.pop("moe_num_experts", None)
+        full_attention_layers = exp.pop("full_attention_layers", [])
 
         dataloader_num_workers = 16
 
@@ -134,6 +135,17 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             dataloader_num_workers = 0
 
         assert (moe_special_embeddings_layer_idx is None) == (moe_num_experts is None)
+
+        if full_attention_layers is None:
+            full_attention_layers = []
+        if not isinstance(full_attention_layers, list):
+            raise ValueError(f"full_attention_layers must be a list[int], got: {type(full_attention_layers)}")
+        if any(not isinstance(x, int) for x in full_attention_layers):
+            raise ValueError(f"full_attention_layers must be a list[int], got: {full_attention_layers}")
+
+        full_attention_layers_s = ""
+        if full_attention_layers:
+            full_attention_layers_s = "--full_attention_layers " + " ".join(str(x) for x in full_attention_layers)
 
         if len(exp.keys()) > 0:
             raise ValueError(f"unknown parsms:{exp}")
@@ -207,6 +219,7 @@ def run_experiments(experiments: List[Dict], job_description: str = "", test: bo
             f"{resume_from_checkpoint_s} "
             f"--use_liger_kernel 1 "
             f"--sentence_attention_implementation sentence_attention_flex "
+            f"{full_attention_layers_s} "
             f"--gist_initialization {gist_initialization} "
             f"--boundary_predictor_model_checkpoint {boundary_predictor_model_checkpoint} "
             # f"--use_liger_kernel 0 "
@@ -302,6 +315,7 @@ def run_training_experiments(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
     **kwargs: Dict,
 ) -> None:
 
@@ -355,6 +369,7 @@ def run_training_experiments(
         "gist_sets": gist_sets,
         "gist_insertion_strategy": gist_insertion_strategy,
         "num_gist_sets_in_swarm": num_gist_sets_in_swarm,
+        "full_attention_layers": [] if full_attention_layers is None else full_attention_layers,
     }
 
     experiments = []
@@ -641,6 +656,7 @@ def run_group_eos_only_my_recall(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ):
@@ -676,6 +692,7 @@ def run_group_eos_only_my_recall(
         gist_sets=gist_sets,
         gist_insertion_strategy=gist_insertion_strategy,
         num_gist_sets_in_swarm=num_gist_sets_in_swarm,
+        full_attention_layers=full_attention_layers,
     )
 
 
@@ -696,6 +713,7 @@ def run_group_eos_only(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -719,6 +737,7 @@ def run_group_eos_only(
         gist_sets=gist_sets,
         gist_insertion_strategy=gist_insertion_strategy,
         num_gist_sets_in_swarm=num_gist_sets_in_swarm,
+        full_attention_layers=full_attention_layers,
     )
 
 
@@ -749,6 +768,7 @@ def _run_group_eos_only(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
 ) -> None:
     num_train_epochs = 1
     save_steps = 5000
@@ -866,6 +886,7 @@ def _run_group_eos_only(
                 gist_sets=gist_sets,
                 gist_insertion_strategy=gist_insertion_strategy,
                 num_gist_sets_in_swarm=num_gist_sets_in_swarm,
+                full_attention_layers=full_attention_layers,
                 **extra_kwargs,
             )
 
@@ -888,6 +909,7 @@ def run_group_full_4k(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -968,6 +990,9 @@ def run_group_full_4k(
         if gist_insertion_strategy != "default":
             model_dir_prefix = f"{model_dir_prefix}_strategy_{gist_insertion_strategy}"
 
+        if full_attention_layers is not None and len(full_attention_layers) > 0:
+            model_dir_prefix = f"{model_dir_prefix}_full_attention_layers_{'_'.join(map(str, full_attention_layers))}"
+
         if not force and check_checkpoint_model_exists(model_dir_prefix, number_of_eos_tokens):
             print(f"Experiment eos_{number_of_eos_tokens} / {model_dir_prefix} already exists")
             continue
@@ -1024,6 +1049,7 @@ def run_group_full_4k(
             gist_sets=gist_sets,
             gist_insertion_strategy=gist_insertion_strategy,
             num_gist_sets_in_swarm=num_gist_sets_in_swarm,
+            full_attention_layers=full_attention_layers,
             **extra_kwargs,
         )
 
@@ -1046,6 +1072,7 @@ def run_group_full_4k_my_recall(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -1176,6 +1203,7 @@ def run_group_full_4k_my_recall(
             gist_sets=gist_sets,
             gist_insertion_strategy=gist_insertion_strategy,
             num_gist_sets_in_swarm=num_gist_sets_in_swarm,
+            full_attention_layers=full_attention_layers,
             **extra_kwargs,
         )
 
@@ -1198,6 +1226,7 @@ def run_group_full_4k_colddown(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -1329,6 +1358,7 @@ def run_group_full_4k_colddown(
             gist_sets=gist_sets,
             gist_insertion_strategy=gist_insertion_strategy,
             num_gist_sets_in_swarm=num_gist_sets_in_swarm,
+            full_attention_layers=full_attention_layers,
             **extra_kwargs,
         )
 
@@ -1351,6 +1381,7 @@ def run_group_full_4k_boundary_predictor(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
     boundary_predictor_model_checkpoint: str | None = None,
@@ -1485,6 +1516,7 @@ def run_group_full_4k_boundary_predictor(
             gist_placement=gist_placement,
             uniform_interval_tokens=uniform_interval_tokens,
             boundary_predictor_model_checkpoint=boundary_predictor_model_checkpoint,
+            full_attention_layers=full_attention_layers,
             **extra_kwargs,
         )
 
@@ -1507,6 +1539,7 @@ def run_group_full_16k_colddown(
     gist_sets: str = "single",
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
+    full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -1639,6 +1672,7 @@ def run_group_full_16k_colddown(
             gist_sets=gist_sets,
             gist_insertion_strategy=gist_insertion_strategy,
             num_gist_sets_in_swarm=num_gist_sets_in_swarm,
+            full_attention_layers=full_attention_layers,
             **extra_kwargs,
         )
 
@@ -1656,6 +1690,7 @@ def run_group_lora(
     moe_special_embeddings_layer_idx=None,
     gist_placement: str = "sentence",
     uniform_interval_tokens: int = 40,
+    full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
 ) -> None:
@@ -1733,6 +1768,7 @@ def run_group_lora(
             moe_num_experts=moe_num_experts,
             gist_placement=gist_placement,
             uniform_interval_tokens=uniform_interval_tokens,
+            full_attention_layers=full_attention_layers,
         )
 
 
@@ -1783,6 +1819,13 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--gist_sets", type=str, default="single", choices=["single", "roll", "swarm"])
     parser.add_argument("--gist_insertion_strategy", type=str, default="default", choices=["default", "random"])
     parser.add_argument("--num_gist_sets_in_swarm", type=int, default=1)
+    parser.add_argument(
+        "--full_attention_layers",
+        type=int,
+        nargs="*",
+        default=None,
+        help="0-based layer indices that should use full causal attention (forwarded to train_sentence_llama.py).",
+    )
     parser.add_argument("--ft_with_bos_token", action="store_true", help="Enable fine-tuning with BOS token")
     parser.add_argument("--boundary_predictor_model_checkpoint", default=None)
     parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
@@ -1835,6 +1878,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
             gist_initialization=args.gist_initialization,
@@ -1855,6 +1899,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
@@ -1873,6 +1918,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1893,6 +1939,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1913,6 +1960,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1933,6 +1981,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1954,6 +2003,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -1974,6 +2024,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )
@@ -1994,6 +2045,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
@@ -2015,6 +2067,7 @@ def main() -> None:
             gist_sets=args.gist_sets,
             gist_insertion_strategy=args.gist_insertion_strategy,
             num_gist_sets_in_swarm=args.num_gist_sets_in_swarm,
+            full_attention_layers=args.full_attention_layers,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
         )

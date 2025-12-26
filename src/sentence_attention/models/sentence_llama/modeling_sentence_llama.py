@@ -327,6 +327,7 @@ class SentenceLlamaAttention(nn.Module):
 class SentenceLlamaDecoderLayer(nn.Module):
     def __init__(self, config: LlamaConfig, layer_idx: int):
         super().__init__()
+        self.config = config
         self.hidden_size = config.hidden_size
 
         self.layer_idx = layer_idx
@@ -351,16 +352,22 @@ class SentenceLlamaDecoderLayer(nn.Module):
         position_embeddings: Tuple[torch.Tensor, torch.Tensor] | None = None,  # necessary, but kept here for BC
         special_embeddings_mask: torch.Tensor | None = None,
         clothest_end_of_sentence_token_idx: torch.Tensor | None = None,
+        full_causal_mask=None,
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Tuple[torch.FloatTensor, Tuple[torch.FloatTensor, torch.FloatTensor] | None]:
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
 
+        current_attention_mask = attention_mask
+        if self.layer_idx in self.config.full_attention_layers:
+            # print("Full attention for layer", self.layer_idx)
+            current_attention_mask = full_causal_mask
+
         # Self Attention
         hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
-            attention_mask=attention_mask,
+            attention_mask=current_attention_mask,
             position_ids=position_ids,
             past_key_value=past_key_value,
             output_attentions=output_attentions,
@@ -525,6 +532,10 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
     def __init__(self, config: LlamaConfig):
         super().__init__(config)
 
+        # Ensure the attribute always exists, even if the pretrained config.json doesn't have it.
+        if getattr(self.config, "full_attention_layers", None) is None:
+            self.config.full_attention_layers = []
+
         self.config._attn_implementation = "sentence_attention"
         # self.config._attn_implementation = "sentence_attention_flex"
 
@@ -574,6 +585,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         position_embeddings,
         special_embeddings_mask,
         clothest_end_of_sentence_token_idx,
+        full_causal_mask=None,
     ):
 
         if self.gradient_checkpointing and self.training:
@@ -602,6 +614,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 position_embeddings=position_embeddings,
                 special_embeddings_mask=special_embeddings_mask,
                 clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+                full_causal_mask=full_causal_mask,
             )
 
         return layer_outputs
@@ -623,6 +636,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         special_embeddings_mask,
         clothest_end_of_sentence_token_idx,
         num_items_in_batch,
+        full_causal_mask=None,
     ):
 
         moe_special_embeddings_layer_idx = self.config.moe_special_embeddings_layer_idx
@@ -644,6 +658,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 position_embeddings,
                 special_embeddings_mask,
                 clothest_end_of_sentence_token_idx,
+                full_causal_mask=full_causal_mask,
             )
 
             hidden_states = layer_outputs[0]
@@ -757,7 +772,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         assert len(attention_mask.shape) == 2
 
-        causal_mask = self._update_causal_mask(
+        causal_mask, full_causal_mask = self._update_causal_mask(
             attention_mask,
             inputs_embeds,
             cache_position,
@@ -796,6 +811,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             special_embeddings_mask,
             clothest_end_of_sentence_token_idx,
             num_items_in_batch=num_items_in_batch,
+            full_causal_mask=full_causal_mask,
         )
 
         hidden_states = self.norm(hidden_states)
@@ -827,14 +843,14 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
     ):
         if self.config._attn_implementation == "flash_attention_2":
             if attention_mask is not None and (attention_mask == 0.0).any():
-                return attention_mask
-            return None
+                return attention_mask, None
+            return None, None
 
         if self.config._attn_implementation == "flex_attention":
             if isinstance(attention_mask, torch.Tensor):
                 attention_mask = make_flex_block_causal_mask(attention_mask)
             if isinstance(attention_mask, BlockMask):
-                return attention_mask
+                return attention_mask, None
 
         # For SDPA, when possible, we will rely on its `is_causal` argument instead of its `attn_mask` argument, in
         # order to dispatch on Flash Attention 2. This feature is not compatible with static cache, as SDPA will fail
@@ -850,7 +866,7 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 past_key_values_length=past_seen_tokens,
                 is_training=self.training,
             ):
-                return None
+                return None, None
 
         dtype, device = input_tensor.dtype, input_tensor.device
         sequence_length = input_tensor.shape[1]
@@ -902,6 +918,35 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 batch_size=input_tensor.shape[0],
             )
 
+        full_causal_mask = None
+        full_attention_layers = getattr(self.config, "full_attention_layers", None) or []
+        if full_attention_layers:
+            if "flex" in self.config._attn_implementation:
+                attention_mask_bool = attention_mask.bool()
+
+                def causal(b, h, q_idx, kv_idx):
+                    return (q_idx >= kv_idx) & attention_mask_bool[b, kv_idx]
+
+                # Sparsity pattern is independent of heads, so we broadcast H=None.
+                full_causal_mask = torch.nn.attention.flex_attention.create_block_mask(
+                    causal,
+                    B=attention_mask.shape[0],
+                    H=None,
+                    Q_LEN=sequence_length,
+                    KV_LEN=target_length,
+                    device=attention_mask.device,
+                )
+            else:
+                full_causal_mask = self._prepare_4d_causal_attention_mask_with_cache_position(
+                    attention_mask,
+                    sequence_length=sequence_length,
+                    target_length=target_length,
+                    dtype=dtype,
+                    device=device,
+                    cache_position=cache_position,
+                    batch_size=input_tensor.shape[0],
+                )
+
         if (
             (self.config._attn_implementation in ["sdpa", "sentence_attention", "eager"])
             and attention_mask is not None
@@ -913,8 +958,10 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
             # Details: https://github.com/pytorch/pytorch/issues/110213
             min_dtype = torch.finfo(dtype).min
             causal_mask = AttentionMaskConverter._unmask_unattended(causal_mask, min_dtype)
+            if full_causal_mask is not None:
+                full_causal_mask = AttentionMaskConverter._unmask_unattended(full_causal_mask, min_dtype)
 
-        return causal_mask
+        return causal_mask, full_causal_mask
 
     @staticmethod
     def _prepare_4d_causal_attention_mask_with_cache_position_sentence_attention_flex(

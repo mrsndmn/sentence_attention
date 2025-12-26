@@ -160,6 +160,19 @@ def build_model_tokenizer(training_args: SentenceTrainingArguments):
 
     model.config._attn_implementation = training_args.sentence_attention_implementation
 
+    full_attention_layers = training_args.full_attention_layers or []
+    if full_attention_layers:
+        if any(layer_idx < 0 for layer_idx in full_attention_layers):
+            raise ValueError(f"--full_attention_layers must be >= 0, got: {full_attention_layers}")
+        max_layer_idx = max(full_attention_layers)
+        if max_layer_idx >= model.config.num_hidden_layers:
+            raise ValueError(
+                "Invalid --full_attention_layers: max index "
+                f"{max_layer_idx} must be < num_hidden_layers ({model.config.num_hidden_layers}). "
+                f"Got: {full_attention_layers}"
+            )
+    model.config.full_attention_layers = sorted(set(full_attention_layers))
+
     if training_args.moe_special_embeddings_layer_idx is not None:
         model.config.moe_special_embeddings_layer_idx = training_args.moe_special_embeddings_layer_idx
         model.config.moe_num_experts = training_args.moe_num_experts
