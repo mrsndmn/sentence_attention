@@ -144,9 +144,9 @@ class SentenceTrainer(Trainer):
         gist_tokens_percent = (gist_tokens.float() / total_tokens.float()) * 100 / self.args.gradient_accumulation_steps
 
         metrics = {
-            "lm_loss": lm_loss_value,
-            "moe_loss": moe_loss_value,
-            "gist_tokens_percent": gist_tokens_percent.detach(),
+            "lm_loss": lm_loss_value / self.accelerator.num_processes,
+            "moe_loss": moe_loss_value / self.accelerator.num_processes,
+            "gist_tokens_percent": gist_tokens_percent.detach() / self.accelerator.num_processes,
         }
 
         return (loss, outputs) if return_outputs else (loss, metrics)

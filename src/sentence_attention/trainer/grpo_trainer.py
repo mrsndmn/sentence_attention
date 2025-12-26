@@ -464,7 +464,8 @@ class GRPOTrainer(Trainer):
                 )
 
         if self.args.average_tokens_across_devices:
-            loss /= self.accelerator.num_processes
+            loss *= self.accelerator.num_processes
+            # loss /= self.accelerator.num_processes
             # lm_loss_value /= self.accelerator.num_processes
             # grpo_loss_per_example /= self.accelerator.num_processes
 
