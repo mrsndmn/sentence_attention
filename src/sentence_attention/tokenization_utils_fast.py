@@ -69,21 +69,31 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
         # if self.gist_placement == "boundary_predictor" and self.boundary_predictor_model is None:
         #     raise ValueError("boundary_predictor_model must be provided when gist_placement='boundary_predictor'")
 
+        self.start_end_of_sentence_token = []
+
         if self.num_eos_tokens >= 1:
             # Initialize tokens based on gist_sets mode
             if self.gist_sets == "single":
                 self.end_of_sentence_tokens_list = [f"<end_of_sentence_{i}>" for i in range(self.num_eos_tokens)]
+                self.start_end_of_sentence_token.append(self.end_of_sentence_tokens_list[0])
             elif self.gist_sets == "roll":
                 all_sets_gist_tokens = []
                 for current_num_gist_tokens in range(self.num_eos_tokens):
                     for gist_i in range(current_num_gist_tokens + 1):
-                        all_sets_gist_tokens.append(f"<end_of_sentence_{gist_i}_{current_num_gist_tokens}>")
+                        gist_token = f"<end_of_sentence_{gist_i}_{current_num_gist_tokens}>"
+                        all_sets_gist_tokens.append(gist_token)
+                        if gist_i == 0:
+                            self.start_end_of_sentence_token.append(gist_token)
                 self.end_of_sentence_tokens_list = all_sets_gist_tokens
             elif self.gist_sets == "swarm":
                 all_sets_gist_tokens = []
                 for swarm_i in range(self.num_gist_sets_in_swarm):
                     for gist_i in range(self.num_eos_tokens):
-                        all_sets_gist_tokens.append(f"<end_of_sentence_{gist_i}_swarm_{swarm_i}>")
+                        gist_token = f"<end_of_sentence_{gist_i}_swarm_{swarm_i}>"
+                        all_sets_gist_tokens.append(gist_token)
+                        if gist_i == 0:
+                            self.start_end_of_sentence_token.append(gist_token)
+
                 self.end_of_sentence_tokens_list = all_sets_gist_tokens
         else:
             raise ValueError("num_eos_tokens cant be negative")
@@ -95,6 +105,10 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
                 print(f"Added <end_of_sentence> token with ID: {self.convert_tokens_to_ids(end_of_sentence_token)}")
 
             self.end_of_sentence_token_ids.append(self.convert_tokens_to_ids(end_of_sentence_token))
+
+        self.start_end_of_sentence_token_ids = [
+            self.convert_tokens_to_ids(start_eos_token) for start_eos_token in self.start_end_of_sentence_token
+        ]
 
         # For roll and swarm modes, organize tokens into sets for random selection
         if self.gist_sets == "roll":

@@ -212,6 +212,10 @@ class GRPOTrainer(Trainer):
 
                         pos = run_end
 
+                    if len(runs) == 0:
+                        prefix_id_parts.append(ids_1d)
+                        prefix_spec_parts.append(spec_1d)
+
                     out_ids = torch.cat(prefix_id_parts, dim=0)
                     out_spec = torch.cat(prefix_spec_parts, dim=0).to(dtype=special_embeddings_mask.dtype)
 
@@ -350,6 +354,8 @@ class GRPOTrainer(Trainer):
             reduction="none",
         ).view(shift_labels.shape)
 
+        token_losses = token_losses.to(torch.float32)
+
         # Masks aligned to the shifted targets (positions 1..L-1).
         flat_special_bool = flat_special_mask.bool() & flat_attention_mask.bool()  # [N*B, L]
         prev_special = torch.zeros_like(flat_special_bool)
@@ -376,13 +382,17 @@ class GRPOTrainer(Trainer):
         target_is_special = flat_special_mask[:, 1:].bool()  # [N*B, L-1]
         non_gist_target_mask = (~target_is_special) & target_is_valid  # [N*B, L-1]
         non_gist_denom = non_gist_target_mask.sum(dim=1).clamp(min=1)
-        non_gist_causal_lm_loss = (token_losses * non_gist_target_mask).sum(dim=1) / non_gist_denom  # [N*B]
+        non_gist_causal_lm_loss = (token_losses.to(torch.float32) * non_gist_target_mask).sum(dim=1) / non_gist_denom  # [N*B]
 
         non_gist_loss_grouped = non_gist_causal_lm_loss.view(num_samples, batch_size)  # [N, B]
         baseline_non_gist_loss = non_gist_loss_grouped[0]  # [B]
         better_than_baseline = non_gist_loss_grouped < baseline_non_gist_loss.unsqueeze(0)  # [N, B]
         better_than_baseline[0, :] = False
-        better_than_baseline_percent = better_than_baseline.sum() / better_than_baseline.numel()
+        better_than_baseline_percent = (
+            100
+            * better_than_baseline.sum()
+            / (better_than_baseline.numel() * self.accelerator.num_processes * self.args.gradient_accumulation_steps)
+        )
 
         # Compression signal: fewer gist tokens is better (baseline has all original gist tokens).
         gist_tokens = (flat_special_mask.bool() & flat_attention_mask.bool()).sum(dim=1)  # [N*B]
@@ -418,11 +428,9 @@ class GRPOTrainer(Trainer):
 
         grpo_loss_per_example = (advantage.detach() * action_nll_grouped).mean(dim=1) * float(self.args.grpo_loss_alpha)  # [B]
 
-        # loss = 0
+        loss = lm_loss.clone()
         if use_model_based_sampling and not (reward_std <= 1e-8).all():
-            loss = grpo_loss_per_example.mean()
-        else:
-            loss = lm_loss
+            loss += grpo_loss_per_example.mean()
 
         if torch.isnan(loss):
             print("Found nan loss")
@@ -431,11 +439,9 @@ class GRPOTrainer(Trainer):
         # Mirror legacy metric naming.
         lm_loss_value = lm_loss.detach()
 
-        total_tokens = flat_attention_mask.sum(dim=1)
+        total_tokens = flat_attention_mask.sum()
         gist_tokens_all = gist_tokens.sum()
-        gist_tokens_percent = (
-            gist_tokens_all.float() * 100 / (total_tokens * self.args.gradient_accumulation_steps * self.args.world_size)
-        )
+        gist_tokens_percent = gist_tokens_all.float() * 100 / total_tokens
 
         # Distribution of "first gist token" types (<end_of_sentence_0_{k}>) as a percent of ALL gist tokens.
         # We define "first gist token" as the first token in each contiguous gist-run in the sampled sequence.
@@ -446,32 +452,34 @@ class GRPOTrainer(Trainer):
         first_gist_metrics: dict[str, torch.Tensor] = {}
         if starts.any():
             start_ids = flat_input_ids[starts]
-            for k in range(max_eos):
-                tok_id = tokenizer.convert_tokens_to_ids(f"<end_of_sentence_0_{k}>")
-                count_k = (start_ids == int(tok_id)).sum() if tok_id is not None else torch.tensor(0, device=start_ids.device)
+            for k, start_eos_token_id in enumerate(tokenizer.start_end_of_sentence_token_ids):
+                count_k = (start_ids == int(start_eos_token_id)).sum()
                 first_gist_metrics[f"grpo_first_gist_token_{k}_percent"] = (
                     count_k.float() * 100 / (num_start_gist_tokens_items_in_batch * num_samples)
                 ).detach()
         else:
-            for k in range(1, max_eos + 1):
+            for k in range(max_eos):
                 first_gist_metrics[f"grpo_first_gist_token_{k}_percent"] = torch.tensor(
                     0.0, device=loss.device, dtype=torch.float32
                 )
 
         if self.args.average_tokens_across_devices:
-            loss *= self.accelerator.num_processes
-            lm_loss_value *= self.accelerator.num_processes
-            grpo_loss_per_example *= self.accelerator.num_processes
+            loss /= self.accelerator.num_processes
+            lm_loss_value /= self.accelerator.num_processes
+            grpo_loss_per_example /= self.accelerator.num_processes
 
-        # breakpoint()
         metrics = {
             "lm_loss": lm_loss_value,
             "starts": denom_gist.sum(),
             "grpo_loss": grpo_loss_per_example.detach().mean(),
             "grpo_better_than_baseline_percent": better_than_baseline_percent.detach(),
-            "gist_tokens_percent": gist_tokens_percent.detach(),
-            "grpo_reward_mean": (reward_grouped.detach().mean() / self.args.gradient_accumulation_steps),
-            "grpo_reward_std": (reward_grouped.detach().std(unbiased=False) / self.args.gradient_accumulation_steps),
+            "gist_tokens_percent": gist_tokens_percent.detach() / self.args.gradient_accumulation_steps,
+            "grpo_reward_mean": reward_grouped.detach().mean()
+            / self.args.gradient_accumulation_steps
+            / self.accelerator.num_processes,
+            "grpo_reward_std": reward_grouped.detach().std(unbiased=False)
+            / self.args.gradient_accumulation_steps
+            / self.accelerator.num_processes,
             "grpo_compression_gain_mean": (compression_gain.detach().mean() / self.args.gradient_accumulation_steps),
             "grpo_non_gist_delta_mean": (non_gist_delta.detach().mean() / self.args.gradient_accumulation_steps),
         }
