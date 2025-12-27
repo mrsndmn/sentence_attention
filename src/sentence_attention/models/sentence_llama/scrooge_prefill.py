@@ -54,6 +54,10 @@ def full_prefill_small_kv_cache(
 
     for i in range(len(past_key_values.key_cache)):
         # Get the current cache tensor shape: [batch_size, num_heads, seq_len, head_dim]
+        if model.config.full_attention_layers is not None and i in model.config.full_attention_layers:
+            # print("skip kv cache idx", i, "due to full attention")
+            continue
+
         cache_shape = past_key_values.key_cache[i].shape
         batch_size, num_heads, seq_len, head_dim = cache_shape
 
@@ -119,9 +123,14 @@ def scrooge_prefill(
     clothest_end_of_sentence_token_idx,
     output_hidden_states=False,
     outputs_hook=None,
+    full_attention_layers=None,
 ):
 
     assert clothest_end_of_sentence_token_idx.shape[0] == 1, "only single size batch is supported"
+
+    prev_full_attention_layers = getattr(model.config, "full_attention_layers", None)
+    if full_attention_layers is not None:
+        model.config.full_attention_layers = list(full_attention_layers)
 
     eos_tokens_idxs = set(clothest_end_of_sentence_token_idx.cpu().numpy().tolist()[0])
     eos_tokens_idxs.remove(0)
@@ -269,6 +278,9 @@ def scrooge_prefill(
     cache_position = torch.arange(sentence_i, sentence_i + 1, device=input_ids.device)
 
     assert cache_position.shape[0] == last_input_ids.shape[1], "cache position should have the same length as last input ids"
+
+    if full_attention_layers is not None:
+        model.config.full_attention_layers = [] if prev_full_attention_layers is None else prev_full_attention_layers
 
     return {
         "last_outputs": last_outputs,

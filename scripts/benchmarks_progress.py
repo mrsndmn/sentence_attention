@@ -178,11 +178,33 @@ def discover_benchmarks(experiment_dir: str, checkpoints: List[Tuple[int, str]])
     return sorted(seen)
 
 
+def get_experiment_label(experiment_dir: str, label_map: Dict[str, str] | None = None) -> str:
+    """Get experiment label, applying custom mapping if provided."""
+    exp_label = os.path.basename(experiment_dir.rstrip("/"))
+    exp_label = exp_label.split("_")[-1]
+
+    if label_map is not None:
+        # Try to match by full experiment dir path first
+        if experiment_dir in label_map:
+            return label_map[experiment_dir]
+        # Then try to match by auto-generated label
+        if exp_label in label_map:
+            return label_map[exp_label]
+        # Also try matching by full basename
+        exp_basename = os.path.basename(experiment_dir.rstrip("/"))
+        if exp_basename in label_map:
+            return label_map[exp_basename]
+
+    return exp_label
+
+
 def plot_benchmark_over_checkpoints(
     experiment_dirs: List[str],
     benchmarks: List[str],
     metric_preference: Sequence[str],
     output_dir: str | None = None,
+    single_figure: bool = False,
+    label_map: Dict[str, str] | None = None,
 ) -> None:
     matplotlib.style.use("seaborn-v0_8-darkgrid")
 
@@ -222,40 +244,97 @@ def plot_benchmark_over_checkpoints(
             raise ValueError("Output directory must be specified when plotting multiple experiments")
     os.makedirs(output_dir, exist_ok=True)
 
-    for benchmark in benchmarks:
-        # Preparing heatmap figure
+    if single_figure and len(benchmarks) > 1:
+        # Create one figure with subplots for all benchmarks
+        n_benchmarks = len(benchmarks)
+        nrows = min(2, n_benchmarks)
+        ncols = (n_benchmarks + nrows - 1) // nrows
+        scale = 2
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(2 * scale * ncols, 2 * scale * nrows), squeeze=False)
+        axes = axes.flatten()
 
-        for experiment_dir, data in experiment_data.items():
-            steps: List[int] = []
-            values: List[float] = []
+        for idx, benchmark in enumerate(benchmarks):
+            ax = axes[idx]
+            has_data = False
 
-            for step, ckpt_path in data["checkpoints"]:
-                print("ckpt_path", ckpt_path)
-                val = read_benchmark_metric(ckpt_path, benchmark, metric_preference)
-                if val is None:
+            for experiment_dir, data in experiment_data.items():
+                steps: List[int] = []
+                values: List[float] = []
+
+                for step, ckpt_path in data["checkpoints"]:
+                    print("ckpt_path", ckpt_path)
+                    val = read_benchmark_metric(ckpt_path, benchmark, metric_preference)
+                    if val is None:
+                        continue
+                    steps.append(step)
+                    values.append(val)
+
+                if not steps:
+                    print(
+                        f"Skipping '{benchmark}' for experiment '{experiment_dir}': no numeric metrics found across checkpoints."
+                    )
                     continue
-                steps.append(step)
-                values.append(val)
 
-            if not steps:
-                print(f"Skipping '{benchmark}' for experiment '{experiment_dir}': no numeric metrics found across checkpoints.")
-                continue
+                has_data = True
+                # Create experiment label from directory name
+                exp_label = get_experiment_label(experiment_dir, label_map)
+                ax.plot(steps, values, marker="o", label=exp_label)
 
-            # Create experiment label from directory name
-            exp_label = os.path.basename(experiment_dir.rstrip("/"))
-            exp_label = exp_label.split("_")[-1]
-            plt.plot(steps, values, marker="o", label=exp_label)
+            if has_data:
+                ax.set_xlabel("Checkpoint step")
+                ax.set_ylabel("Metric value")
+                ax.set_title(f"{benchmark}")
+                ax.legend()
+            else:
+                ax.set_title(f"{benchmark} (no data)")
+                ax.axis("off")
 
-        plt.xlabel("Checkpoint step")
-        plt.ylabel("Metric value")
-        plt.title(f"{benchmark}")
-        plt.legend()
-        plt.tight_layout()
+        # Hide unused subplots
+        for idx in range(len(benchmarks), len(axes)):
+            axes[idx].axis("off")
 
-        out_path = os.path.join(output_dir, f"{benchmark}_over_checkpoints.png")
-        plt.savefig(out_path)
-        plt.close()
-        print(f"Saved plot: {out_path}")
+        fig.tight_layout()
+        out_path = os.path.join(output_dir, "all_benchmarks_over_checkpoints.png")
+        fig.savefig(out_path)
+        plt.close(fig)
+        print(f"Saved combined plot: {out_path}")
+    else:
+        # Original behavior: one figure per benchmark
+        for benchmark in benchmarks:
+            # Preparing heatmap figure
+
+            for experiment_dir, data in experiment_data.items():
+                steps: List[int] = []
+                values: List[float] = []
+
+                for step, ckpt_path in data["checkpoints"]:
+                    print("ckpt_path", ckpt_path)
+                    val = read_benchmark_metric(ckpt_path, benchmark, metric_preference)
+                    if val is None:
+                        continue
+                    steps.append(step)
+                    values.append(val)
+
+                if not steps:
+                    print(
+                        f"Skipping '{benchmark}' for experiment '{experiment_dir}': no numeric metrics found across checkpoints."
+                    )
+                    continue
+
+                # Create experiment label from directory name
+                exp_label = get_experiment_label(experiment_dir, label_map)
+                plt.plot(steps, values, marker="o", label=exp_label)
+
+            plt.xlabel("Checkpoint step")
+            plt.ylabel("Metric value")
+            plt.title(f"{benchmark}")
+            plt.legend()
+            plt.tight_layout()
+
+            out_path = os.path.join(output_dir, f"{benchmark}_over_checkpoints.png")
+            plt.savefig(out_path)
+            plt.close()
+            print(f"Saved plot: {out_path}")
 
 
 def heatmap_benchmark_over_checkpoints(
@@ -263,6 +342,8 @@ def heatmap_benchmark_over_checkpoints(
     benchmarks: List[str],
     metric_preference: Sequence[str],
     output_dir: str | None = None,
+    single_figure: bool = False,
+    label_map: Dict[str, str] | None = None,
 ) -> None:
     matplotlib.style.use("seaborn-v0_8-darkgrid")
 
@@ -301,6 +382,132 @@ def heatmap_benchmark_over_checkpoints(
             raise ValueError("Output directory must be specified when plotting multiple experiments")
     os.makedirs(output_dir, exist_ok=True)
 
+    if single_figure and len(benchmarks) > 1:
+        # Collect all benchmark data first
+        all_benchmark_data = {}
+        for benchmark in benchmarks:
+            bench_results = {}
+
+            for data in experiment_data.values():
+                for step, ckpt_path in data["checkpoints"]:
+                    result = read_long_short_benchmark_metric(ckpt_path, benchmark)
+
+                    if len(result) == 0:
+                        continue
+
+                    for bench_name, bench_result in result.items():
+                        if bench_name not in bench_results:
+                            bench_results[bench_name] = []
+
+                        bench_results[bench_name].append(
+                            {
+                                "step": step,
+                                "bench_length": bench_result["seq"],
+                                "bench_value": bench_result["values"],
+                            }
+                        )
+
+            if len(bench_results) > 0:
+                all_benchmark_data[benchmark] = bench_results
+
+        if len(all_benchmark_data) == 0:
+            print("No benchmark data found.")
+            return
+
+        # Create one large figure with subplots
+        total_subplots = sum(len(bench_results) for bench_results in all_benchmark_data.values())
+        ncols = min(2, total_subplots)
+        nrows = (total_subplots + ncols - 1) // ncols
+
+        # Calculate max number of steps across all benchmarks for figure width
+        all_steps_union = set()
+        for bench_results in all_benchmark_data.values():
+            for vals in bench_results.values():
+                for item in vals:
+                    all_steps_union.add(item["step"])
+        max_steps = len(all_steps_union)
+
+        fig, axes = plt.subplots(
+            nrows=nrows,
+            ncols=ncols,
+            figsize=(max(6, max_steps * 0.6) * ncols, 3 * nrows),
+            squeeze=False,
+        )
+        axes = axes.flatten()
+
+        subplot_idx = 0
+        for benchmark, bench_results in all_benchmark_data.items():
+            bench_names = sorted(bench_results.keys())
+            all_steps = sorted({item["step"] for vals in bench_results.values() for item in vals})
+            step_to_idx = {s: i for i, s in enumerate(all_steps)}
+
+            for bench_name in bench_names:
+                if subplot_idx >= len(axes):
+                    break
+
+                ax = axes[subplot_idx]
+                entries = bench_results[bench_name]
+                lengths = sorted({l for e in entries for l in e["bench_length"]})  # noqa: E741
+                length_to_idx = {l: idx for idx, l in enumerate(lengths)}  # noqa: E741
+                grid = np.full((len(lengths), len(all_steps)), np.nan, dtype=float)
+
+                for e in entries:  # noqa: E741
+                    col = step_to_idx.get(e["step"])
+                    if col is None:
+                        continue
+                    for l, v in zip(e["bench_length"], e["bench_value"], strict=True):  # noqa: E741
+                        row = length_to_idx.get(l)
+                        if row is not None:
+                            grid[row, col] = v
+
+                grid_plot = np.flipud(grid)
+                ylabels = [str(l) for l in lengths][::-1]  # noqa: E741
+                xlabels = [str(s) for s in all_steps]  # noqa: E741
+
+                sns.heatmap(
+                    grid_plot,
+                    ax=ax,
+                    cmap="viridis",
+                    mask=np.isnan(grid_plot),
+                    cbar=True,
+                    annot=True,
+                    fmt=".2f",
+                    vmin=0,
+                    annot_kws={"fontsize": 8},
+                    xticklabels=xlabels,
+                    yticklabels=ylabels,
+                )
+
+                ax.set_title(f"{benchmark}: {bench_name}")
+                ax.set_ylabel("Seq length")
+
+                if subplot_idx >= len(axes) - ncols:
+                    ax.set_xlabel("Checkpoint step")
+                    ax.tick_params(axis="x", labelrotation=45)
+                else:
+                    ax.set_xlabel("")
+                    ax.tick_params(axis="x", labelbottom=False)
+
+                mappable = ax.collections[0] if len(ax.collections) > 0 else None
+                if mappable is not None and getattr(mappable, "colorbar", None) is not None:
+                    mappable.colorbar.set_label("Score")
+
+                subplot_idx += 1
+
+        # Hide unused subplots
+        for idx in range(subplot_idx, len(axes)):
+            axes[idx].axis("off")
+
+        fig.suptitle("All Benchmarks")
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+        out_path = os.path.join(output_dir, "all_benchmarks_short_over_checkpoints.png")
+        fig.savefig(out_path)
+        plt.close(fig)
+        print(f"Saved combined plot: {out_path}")
+        return
+
+    # Original behavior: one figure per benchmark
     for benchmark in benchmarks:
         plt.figure()
 
@@ -470,7 +677,40 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Output directory for plots. Required when plotting multiple experiments. Defaults to <experiment_dir>/evaluation_plots for single experiment.",
     )
+    parser.add_argument(
+        "--single-figure",
+        action="store_true",
+        help="Save all specified benchmarks in a single figure with subplots instead of separate figures.",
+    )
+    parser.add_argument(
+        "--label-map",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated mappings of experiment labels to custom labels. "
+            "Format: 'original1:custom1,original2:custom2'. "
+            "Can match by auto-generated label (last part after '_') or full experiment directory path."
+        ),
+    )
     return parser.parse_args()
+
+
+def parse_label_map(label_map_str: str | None) -> Dict[str, str] | None:
+    """Parse label mapping string into a dictionary."""
+    if label_map_str is None:
+        return None
+
+    label_map = {}
+    for mapping in label_map_str.split(","):
+        mapping = mapping.strip()
+        if not mapping:
+            continue
+        if ":" not in mapping:
+            raise ValueError(f"Invalid label mapping format: '{mapping}'. Expected 'original:custom'")
+        original, custom = mapping.split(":", 1)
+        label_map[original.strip()] = custom.strip()
+
+    return label_map if label_map else None
 
 
 def main() -> None:
@@ -480,6 +720,7 @@ def main() -> None:
     long_benchmarks = ["recall", "rerank", "cite", "longqa", "summ", "icl"]
 
     metric_preference = [k.strip() for k in args.metric_keys.split(",") if k.strip()]
+    label_map = parse_label_map(args.label_map)
 
     if args.benchmarks == "all":
         benchmarks: List[str] = []
@@ -496,6 +737,8 @@ def main() -> None:
             benchmarks=benchmarks,
             metric_preference=metric_preference,
             output_dir=args.output_dir,
+            single_figure=args.single_figure,
+            label_map=label_map,
         )
     else:
         heatmap_benchmark_over_checkpoints(
@@ -503,6 +746,8 @@ def main() -> None:
             benchmarks=benchmarks,
             metric_preference=metric_preference,
             output_dir=args.output_dir,
+            single_figure=args.single_figure,
+            label_map=label_map,
         )
 
 

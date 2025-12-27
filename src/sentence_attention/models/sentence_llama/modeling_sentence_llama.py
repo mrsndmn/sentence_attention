@@ -921,11 +921,25 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
         full_causal_mask = None
         full_attention_layers = getattr(self.config, "full_attention_layers", None) or []
         if full_attention_layers:
+
+            full_attention_layers_target_length = target_length
+            full_attention_layers_attention_mask = attention_mask.clone()
+            #
+            if sequence_length == 1:
+                assert attention_mask.shape[0] == 1, "batch size is 1 is only supported now"
+                # its decode stage
+                # create full attention mask for full context length
+                full_attention_layers_target_length = past_key_values.key_cache[full_attention_layers[0]].shape[2] + 1
+                full_attention_layers_attention_mask = torch.ones(
+                    [1, full_attention_layers_target_length], device=attention_mask.device, dtype=attention_mask.dtype
+                )
+
             if "flex" in self.config._attn_implementation:
-                attention_mask_bool = attention_mask.bool()
+                attention_mask_bool = full_attention_layers_attention_mask.bool()
+                diff_q_idx_kv_idx = full_attention_layers_target_length - sequence_length
 
                 def causal(b, h, q_idx, kv_idx):
-                    return (q_idx >= kv_idx) & attention_mask_bool[b, kv_idx]
+                    return (kv_idx <= (q_idx + diff_q_idx_kv_idx)) & attention_mask_bool[b, kv_idx]
 
                 # Sparsity pattern is independent of heads, so we broadcast H=None.
                 full_causal_mask = torch.nn.attention.flex_attention.create_block_mask(
@@ -937,13 +951,12 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                     device=attention_mask.device,
                 )
             else:
-                full_causal_mask = self._prepare_4d_causal_attention_mask_with_cache_position(
-                    attention_mask,
+                full_causal_mask = self._prepare_4d_full_causal_attention_mask(
+                    full_attention_layers_attention_mask,
                     sequence_length=sequence_length,
-                    target_length=target_length,
+                    target_length=full_attention_layers_target_length,
                     dtype=dtype,
                     device=device,
-                    cache_position=cache_position,
                     batch_size=input_tensor.shape[0],
                 )
 
@@ -1088,6 +1101,55 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
                 causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(padding_mask, min_dtype)
 
         return causal_mask
+
+    @staticmethod
+    def _prepare_4d_full_causal_attention_mask(
+        attention_mask: torch.Tensor,
+        sequence_length: int,
+        target_length: int,
+        dtype: torch.dtype,
+        device: torch.device,
+        batch_size: int,
+    ):
+        """
+        Full (dense) causal mask builder that does **not** depend on `cache_position`.
+
+        This is important for Scrooge/kv-compression prefill paths where `cache_position` can be in the original
+        (uncompressed) token index space, while the attention key/value axis is in the compressed cache index space.
+        """
+        if attention_mask is not None and attention_mask.dim() == 4:
+            return attention_mask
+
+        assert attention_mask is not None, "`attention_mask` must be provided to build a full causal mask."
+        assert attention_mask.dim() == 2, "`attention_mask` is expected to be 2-D (batch, seq_len)."
+
+        bs = batch_size
+        q_len = sequence_length
+        k_len = target_length
+
+        min_val = torch.finfo(dtype).min
+        attention_mask_bool = attention_mask.to(dtype=torch.bool)  # [bs, k_len]
+
+        diff_q_idx_k_idx = k_len - q_len
+        q_idx = torch.arange(q_len, device=device).view(1, q_len, 1)  # (1, q_len, 1)
+        k_idx = torch.arange(k_len, device=device).view(1, 1, k_len)  # (1, 1, k_len)
+
+        # Query tokens correspond to the last `q_len` positions in the key/value axis.
+        causal_base = k_idx <= (q_idx + diff_q_idx_k_idx)  # (1, q_len, k_len)
+
+        if q_len < attention_mask_bool.shape[1]:
+            q_valid = attention_mask_bool[:, -q_len:].view(bs, q_len, 1)  # (bs, q_len, 1)
+        else:
+            q_valid = attention_mask_bool.view(bs, q_len, 1)  # (bs, q_len, 1)
+
+        k_valid = attention_mask_bool.view(bs, 1, k_len)  # (bs, 1, k_len)
+        allowed = causal_base & q_valid & k_valid  # (bs, q_len, k_len)
+
+        score_val = torch.tensor(0.0, dtype=dtype, device=device)
+        final_mask = torch.full((bs, 1, q_len, k_len), min_val, dtype=dtype, device=device)
+        final_mask.masked_fill_(allowed.unsqueeze(1), score_val)
+
+        return final_mask
 
     @staticmethod
     def _prepare_4d_causal_attention_mask_with_cache_position_sentence_attention(
