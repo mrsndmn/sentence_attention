@@ -101,7 +101,7 @@ The special magic {magic_object_name} for {query_key} mentioned in the provided 
 
 
 def generate_random_sample(
-    num_examples=200,
+    num_examples=100,
     random_word=None,
     no_answer=False,
     return_answer=False,

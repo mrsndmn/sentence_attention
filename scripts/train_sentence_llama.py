@@ -101,13 +101,26 @@ if __name__ == "__main__":
 
             dataset_shards_limit = training_args.limit_dataset_shards
 
-            fineweb_dataset = load_dataset(
-                "HuggingFaceFW/fineweb-edu",
-                "sample-10BT",
-                num_proc=16,
-                split="train",
-                cache_dir="/workspace-SR004.nfs2/d.tarasov/HF_CACHE",
-            )
+            if training_args.dataset == "fineweb_edu":
+                fineweb_dataset = load_dataset(
+                    "HuggingFaceFW/fineweb-edu",
+                    "sample-10BT",
+                    num_proc=16,
+                    split="train",
+                    cache_dir="/workspace-SR004.nfs2/d.tarasov/HF_CACHE",
+                )
+            elif training_args.dataset == "my_recall":
+                from sentence_attention.evaluation.my_recall import generate_random_sample
+
+                my_recall_path = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/data/my_recall_10k"
+                if not os.path.exists(my_recall_path):
+                    dataset_samples = [{"text": generate_random_sample()} for _ in range(10000)]
+                    fineweb_dataset = datasets.Dataset.from_list(dataset_samples)
+                    fineweb_dataset.save_to_disk(my_recall_path)
+                else:
+                    fineweb_dataset = datasets.Dataset.load_from_disk(my_recall_path)
+            else:
+                raise ValueError("invalid dataset name")
 
             TOTAL_SHARDS = 50  # CONSTANT
             dataset_shards = []
@@ -161,6 +174,12 @@ if __name__ == "__main__":
             labels = input_ids.clone()
             if tokenizer.pad_token_id is not None:
                 labels[labels == tokenizer.pad_token_id] = -100
+                if training_args.dataset == "my_recall":
+                    ams = tokenized_text["attention_mask"].sum(dim=-1).cpu()
+                    for b in range(ams.shape[0]):
+                        # crutch optimize only last N tokens
+                        num_items = ams[b].item() - 10
+                        labels[:, :num_items] = -100
 
             return {
                 **tokenized_text,
