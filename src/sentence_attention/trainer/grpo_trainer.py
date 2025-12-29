@@ -14,16 +14,36 @@ from sentence_attention.models.sentence_llama.modeling_sentence_llama import (
 
 class GRPOTrainer(Trainer):
 
-    def sample_gist_tokens_for_input(self, model, inputs):
+    def sample_gist_tokens_for_input(
+        self,
+        tokenizer,
+        model,
+        inputs,
+        num_generate_samples: int,
+        sampling_temperature: float = 0.8,
+        sampling_top_p: float = 0.95,
+        pretrain_sampling_steps: int = 0,
+        global_step: int = 0,
+        greedy: bool = False,
+    ):
         """
         For each contiguous sequence of gist tokens, sample a new number of gist tokens k in [1, run_len],
         replace that gist sequence with `<end_of_sentence_{i}_{k}>` tokens, and right-pad to preserve tensor shapes.
 
         Always returns one "baseline" sample at index 0 (no compression: k == run_len for every run),
-        and uses sampling for the remaining `self.args.grpo_num_generate_samples - 1` samples.
+        and uses sampling for the remaining `num_generate_samples - 1` samples.
+
+        Args:
+            model: The model to use for sampling
+            inputs: Input dictionary containing input_ids, attention_mask, and special_embeddings_mask
+            num_generate_samples: Number of samples to generate (including baseline)
+            sampling_temperature: Temperature for sampling (must be > 0)
+            sampling_top_p: Top-p for nucleus sampling (must be in (0, 1])
+            pretrain_sampling_steps: Number of steps before switching to model-based sampling
+            global_step: Current global training step
+            greedy: If True, use greedy (argmax) sampling instead of probabilistic sampling
         """
 
-        tokenizer = getattr(self, "processing_class", None) or getattr(self, "tokenizer", None)
         if tokenizer is None:
             raise ValueError("Tokenizer is not available on trainer (expected `processing_class` or `tokenizer`).")
 
@@ -46,21 +66,21 @@ class GRPOTrainer(Trainer):
         if pad_token_id is None:
             pad_token_id = getattr(getattr(model, "config", None), "pad_token_id", 0) or 0
 
-        temperature = float(getattr(self.args, "grpo_sampling_temperature", 0.8))
-        top_p = float(getattr(self.args, "grpo_sampling_top_p", 0.95))
+        temperature = float(sampling_temperature)
+        top_p = float(sampling_top_p)
         if temperature <= 0:
-            raise ValueError("grpo_sampling_temperature must be > 0")
+            raise ValueError("sampling_temperature must be > 0")
         if not (0.0 < top_p <= 1.0):
-            raise ValueError("grpo_sampling_top_p must be in (0, 1]")
+            raise ValueError("sampling_top_p must be in (0, 1]")
 
         # Anneal sampling strategy:
-        # - For the first `grpo_pretrain_sampling_steps`, we still generate multiple samples, but sample k uniformly.
+        # - For the first `pretrain_sampling_steps`, we still generate multiple samples, but sample k uniformly.
         # - After that, we sample k using the model's logits (optionally with nucleus top-p).
-        pretrain_steps = int(getattr(self.args, "grpo_pretrain_sampling_steps", 0))
+        pretrain_steps = int(pretrain_sampling_steps)
         if pretrain_steps < 0:
             pretrain_steps = 0
-        global_step = int(getattr(getattr(self, "state", None), "global_step", 0))
-        model_based_sampling_requested = global_step >= pretrain_steps
+        global_step_val = int(global_step)
+        model_based_sampling_requested = global_step_val >= pretrain_steps
 
         def _resolve_token_id(token_str: str) -> int:
             tok_id = tokenizer.convert_tokens_to_ids(token_str)
@@ -101,9 +121,14 @@ class GRPOTrainer(Trainer):
 
             candidate_ids = first_token_ids_by_k[1 : k_max + 1]  # ids for k=1..k_max
             cand_logits = next_logits.index_select(0, candidate_ids).to(torch.float32) / temperature
-            probs = torch.softmax(cand_logits, dim=-1)
 
-            sampled_pos = int(torch.multinomial(probs.detach().cpu(), num_samples=1).item())
+            if greedy:
+                # Use greedy (argmax) sampling
+                sampled_pos = int(torch.argmax(cand_logits).item())
+            else:
+                # Use probabilistic sampling
+                probs = torch.softmax(cand_logits, dim=-1)
+                sampled_pos = int(torch.multinomial(probs.detach().cpu(), num_samples=1).item())
             return int(sampled_pos)
 
         model_based_sampling_enabled = (
@@ -250,9 +275,8 @@ class GRPOTrainer(Trainer):
         orig_attn_impl = model_config._attn_implementation
         model_config._attn_implementation = "sentence_attention"
 
-        num_generate_samples = self.args.grpo_num_generate_samples
         if num_generate_samples <= 0:
-            raise ValueError("grpo_num_generate_samples must be > 0")
+            raise ValueError("num_generate_samples must be > 0")
 
         # Always return a baseline at index 0 (see compute_loss which assumes this).
         result = [_build_sample(kind="baseline")]
@@ -301,7 +325,17 @@ class GRPOTrainer(Trainer):
 
         unwrapped_model = self.accelerator.unwrap_model(model)
         with torch.no_grad():
-            sampled_inputs = self.sample_gist_tokens_for_input(unwrapped_model, base_inputs)
+            sampled_inputs = self.sample_gist_tokens_for_input(
+                tokenizer=self.processing_class,
+                model=unwrapped_model,
+                inputs=base_inputs,
+                num_generate_samples=self.args.grpo_num_generate_samples,
+                sampling_temperature=getattr(self.args, "grpo_sampling_temperature", 0.8),
+                sampling_top_p=getattr(self.args, "grpo_sampling_top_p", 0.95),
+                pretrain_sampling_steps=getattr(self.args, "grpo_pretrain_sampling_steps", 0),
+                global_step=int(getattr(getattr(self, "state", None), "global_step", 0)),
+                greedy=False,
+            )
         if not isinstance(sampled_inputs, list) or len(sampled_inputs) == 0:
             raise ValueError("sample_gist_tokens_for_input must return a non-empty list of input dicts.")
 
