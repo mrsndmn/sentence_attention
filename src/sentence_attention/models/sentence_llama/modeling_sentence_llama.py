@@ -1281,6 +1281,280 @@ class SentenceLlamaModel(SentenceLlamaPreTrainedModel):
 
         return final_mask
 
+    def sample_gist_tokens_for_input(
+        self,
+        tokenizer,
+        inputs,
+        num_generate_samples: int,
+        sampling_temperature: float = 0.8,
+        sampling_top_p: float = 0.95,
+        pretrain_sampling_steps: int = 0,
+        global_step: int = 0,
+        greedy: bool = False,
+    ):
+        """
+        For each contiguous sequence of gist tokens, sample a new number of gist tokens k in [1, run_len],
+        replace that gist sequence with `<end_of_sentence_{i}_{k}>` tokens, and right-pad to preserve tensor shapes.
+
+        Always returns one "baseline" sample at index 0 (no compression: k == run_len for every run),
+        and uses sampling for the remaining `num_generate_samples - 1` samples.
+
+        Args:
+            model: The model to use for sampling
+            inputs: Input dictionary containing input_ids, attention_mask, and special_embeddings_mask
+            num_generate_samples: Number of samples to generate (including baseline)
+            sampling_temperature: Temperature for sampling (must be > 0)
+            sampling_top_p: Top-p for nucleus sampling (must be in (0, 1])
+            pretrain_sampling_steps: Number of steps before switching to model-based sampling
+            global_step: Current global training step
+            greedy: If True, use greedy (argmax) sampling instead of probabilistic sampling
+        """
+
+        model = self
+
+        if tokenizer is None:
+            raise ValueError("Tokenizer is not available on trainer (expected `processing_class` or `tokenizer`).")
+
+        input_ids: torch.Tensor = inputs["input_ids"]
+        attention_mask: torch.Tensor = inputs["attention_mask"]
+        special_embeddings_mask: torch.Tensor = inputs["special_embeddings_mask"]
+
+        if input_ids.ndim != 2:
+            raise ValueError(f"Expected 2D input_ids, got shape={tuple(input_ids.shape)}")
+        if attention_mask.shape != input_ids.shape or special_embeddings_mask.shape != input_ids.shape:
+            raise ValueError("input_ids, attention_mask, and special_embeddings_mask must have the same shape.")
+
+        # Right padded (pads on the right, always attend to first token).
+        if not (attention_mask[:, 0] == 1).all():
+            raise ValueError("Input must be right padded (attention_mask[:, 0] must be 1).")
+
+        batch_size, seq_len = input_ids.shape
+
+        pad_token_id = getattr(tokenizer, "pad_token_id", None)
+        if pad_token_id is None:
+            pad_token_id = getattr(getattr(model, "config", None), "pad_token_id", 0) or 0
+
+        temperature = float(sampling_temperature)
+        top_p = float(sampling_top_p)
+        if temperature <= 0:
+            raise ValueError("sampling_temperature must be > 0")
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError("sampling_top_p must be in (0, 1]")
+
+        # Anneal sampling strategy:
+        # - For the first `pretrain_sampling_steps`, we still generate multiple samples, but sample k uniformly.
+        # - After that, we sample k using the model's logits (optionally with nucleus top-p).
+        pretrain_steps = int(pretrain_sampling_steps)
+        if pretrain_steps < 0:
+            pretrain_steps = 0
+        global_step_val = int(global_step)
+        model_based_sampling_requested = global_step_val >= pretrain_steps
+
+        def _resolve_token_id(token_str: str) -> int:
+            tok_id = tokenizer.convert_tokens_to_ids(token_str)
+            unk_id = getattr(tokenizer, "unk_token_id", None)
+            if tok_id is None or (
+                unk_id is not None and tok_id == unk_id and token_str != getattr(tokenizer, "unk_token", None)
+            ):
+                raise ValueError(f"Token id not found for {token_str}. Did you call prepare_model_before_training?")
+            return int(tok_id)
+
+        # Precompute ids for variable-length gist tokens once (avoid tokenizer lookups in the hot loop).
+        max_eos = int(getattr(tokenizer, "num_eos_tokens", 0) or 0)
+        if max_eos <= 0:
+            raise ValueError("Tokenizer must expose num_eos_tokens > 0 for GRPO gist sampling.")
+
+        # eos_token_tensors_by_k[k] holds a 1D tensor of length k:
+        #   <end_of_sentence_0_{k}>, <end_of_sentence_1_{k}>, ..., <end_of_sentence_{k-1}_{k}>
+        eos_token_tensors_by_k: list[torch.Tensor] = []
+        eos_spec_tensors_by_k: list[torch.Tensor] = []
+        first_token_id_by_k: list[int] = [0]
+        for k in range(max_eos):
+            ids_k = [_resolve_token_id(f"<end_of_sentence_{i}_{k}>") for i in range(k + 1)]
+            eos_token_tensors_by_k.append(torch.tensor(ids_k, device=input_ids.device, dtype=input_ids.dtype))
+            eos_spec_tensors_by_k.append(torch.ones((k + 1,), device=input_ids.device, dtype=special_embeddings_mask.dtype))
+            first_token_id_by_k.append(int(ids_k[0]))
+
+        first_token_ids_by_k = torch.tensor(first_token_id_by_k, device=input_ids.device, dtype=torch.long)
+
+        def _sample_k_uniform(run_len: int) -> int:
+            k_max = max_eos
+            return int(torch.randint(low=0, high=k_max, size=(1,), device="cpu").item())
+
+        def _sample_k_from_logits(next_logits: torch.Tensor, run_len: int) -> int:
+            # Sample k in [1, min(run_len, max_eos)] based on logits for <end_of_sentence_0_{k}>.
+            k_max = int(min(run_len, max_eos))
+            if k_max <= 0:
+                raise ValueError(f"Invalid run_len={run_len} for gist sampling.")
+
+            candidate_ids = first_token_ids_by_k[1 : k_max + 1]  # ids for k=1..k_max
+            cand_logits = next_logits.index_select(0, candidate_ids).to(torch.float32) / temperature
+
+            if greedy:
+                # Use greedy (argmax) sampling
+                sampled_pos = int(torch.argmax(cand_logits).item())
+            else:
+                # Use probabilistic sampling
+                probs = torch.softmax(cand_logits, dim=-1)
+                sampled_pos = int(torch.multinomial(probs.detach().cpu(), num_samples=1).item())
+            return int(sampled_pos)
+
+        model_based_sampling_enabled = (
+            bool(model_based_sampling_requested) and callable(model) and hasattr(model, "eval") and hasattr(model, "train")
+        )
+
+        def _gist_runs_1d(spec_1d: torch.Tensor) -> list[tuple[int, int]]:
+            # spec_1d: [L] bool. Returns (start, end) with end exclusive.
+            if spec_1d.numel() == 0 or not bool(spec_1d.any().item()):
+                return []
+            prev = torch.zeros_like(spec_1d)
+            prev[1:] = spec_1d[:-1]
+            starts = spec_1d & (~prev)
+            nxt = torch.zeros_like(spec_1d)
+            nxt[:-1] = spec_1d[1:]
+            ends = spec_1d & (~nxt)
+            start_idx = starts.nonzero(as_tuple=False).flatten().tolist()
+            end_idx = ends.nonzero(as_tuple=False).flatten().tolist()
+            if len(start_idx) != len(end_idx):
+                raise ValueError("Invalid gist run structure (mismatched starts/ends).")
+            return [(int(s), int(e) + 1) for s, e in zip(start_idx, end_idx)]
+
+        def _next_logits_for_prefix(prefix_ids_1d: torch.Tensor, prefix_spec_1d: torch.Tensor) -> torch.Tensor | None:
+            """
+            Full-prefill forward (no KV-cache): return logits for the next token given the provided prefix.
+            """
+            if prefix_ids_1d.numel() == 0:
+                return None
+
+            prefix_len = int(prefix_ids_1d.numel())
+            attention = torch.ones((1, prefix_len), device=input_ids.device, dtype=torch.long)
+            special = prefix_spec_1d.to(dtype=special_embeddings_mask.dtype).unsqueeze(0)
+            closest = special_token_mask_to_clothest_token_idx_slow(prefix_spec_1d.to(torch.bool).unsqueeze(0))
+
+            outputs = model(
+                fused_linear_cross_entropy=False,
+                labels=None,
+                input_ids=prefix_ids_1d.unsqueeze(0),
+                attention_mask=attention,
+                special_embeddings_mask=special,
+                clothest_end_of_sentence_token_idx=closest,
+                use_cache=False,
+                logits_to_keep=1,
+                output_attentions=False,
+            )
+            if getattr(outputs, "logits", None) is None:
+                return None
+            return outputs.logits[0, -1, :].detach()
+
+        def _build_sample(*, kind: str) -> dict:
+            if kind not in {"baseline", "sample"}:
+                raise ValueError(f"Invalid sample kind: {kind}")
+
+            new_input_ids = input_ids.new_full((batch_size, seq_len), int(pad_token_id))
+            new_attention_mask = attention_mask.new_zeros((batch_size, seq_len))
+            new_special_mask = special_embeddings_mask.new_zeros((batch_size, seq_len))
+
+            was_training = model.training
+
+            if model_based_sampling_enabled:
+                model.eval()
+
+            with torch.no_grad():
+                for b in range(batch_size):
+                    valid_len = int(attention_mask[b].sum().item())
+
+                    ids_1d = input_ids[b, :valid_len]
+                    spec_1d = special_embeddings_mask[b, :valid_len].to(torch.bool)
+
+                    runs = _gist_runs_1d(spec_1d)
+
+                    prefix_id_parts: list[torch.Tensor] = []
+                    prefix_spec_parts: list[torch.Tensor] = []
+
+                    pos = 0
+                    for run_start, run_end in runs:
+                        if run_start > pos:
+                            seg_ids = ids_1d[pos:run_start]
+                            seg_len = int(seg_ids.numel())
+                            seg_spec = torch.zeros(
+                                (seg_len,),
+                                device=input_ids.device,
+                                dtype=special_embeddings_mask.dtype,
+                            )
+
+                            prefix_id_parts.append(seg_ids)
+                            prefix_spec_parts.append(seg_spec)
+
+                        run_len = int(run_end - run_start)
+                        if kind == "baseline":
+                            k = max_eos - 1
+                        else:
+                            if model_based_sampling_enabled:
+                                prefix_ids = torch.cat(prefix_id_parts, dim=0)
+                                prefix_spec = torch.cat(prefix_spec_parts, dim=0)
+                                next_logits = _next_logits_for_prefix(prefix_ids, prefix_spec)
+                                k = _sample_k_from_logits(next_logits, run_len=run_len)
+                            else:
+                                k = _sample_k_uniform(run_len=run_len)
+
+                        tok_ids = eos_token_tensors_by_k[k]
+                        tok_spec = eos_spec_tensors_by_k[k]
+
+                        prefix_id_parts.append(tok_ids)
+                        prefix_spec_parts.append(tok_spec)
+
+                        pos = run_end
+
+                    if len(runs) == 0:
+                        prefix_id_parts.append(ids_1d)
+                        prefix_spec_parts.append(spec_1d)
+
+                    out_ids = torch.cat(prefix_id_parts, dim=0)
+                    out_spec = torch.cat(prefix_spec_parts, dim=0).to(dtype=special_embeddings_mask.dtype)
+
+                    current_seq_len = min(out_ids.numel(), new_input_ids.shape[-1])
+
+                    new_input_ids[b, :current_seq_len] = out_ids[:current_seq_len]
+                    new_special_mask[b, :current_seq_len] = out_spec[:current_seq_len]
+                    new_attention_mask[b, :current_seq_len] = 1
+
+                    if out_ids.numel() >= new_input_ids.shape[-1]:
+                        continue
+
+            if model_based_sampling_enabled:
+                model.train(was_training)
+
+            result = dict(inputs)
+            result["input_ids"] = new_input_ids
+            result["attention_mask"] = new_attention_mask
+            result["special_embeddings_mask"] = new_special_mask
+            result["clothest_end_of_sentence_token_idx"] = special_token_mask_to_clothest_token_idx_slow(
+                new_special_mask.to(torch.bool) & new_attention_mask.to(torch.bool)
+            )
+
+            result["labels"] = new_input_ids.clone()
+            result["labels"][:, :-1] = result["labels"][:, 1:].clone()
+            result["labels"][new_attention_mask == 0] = -100
+
+            return result
+
+        orig_attn_impl = None
+        model_config = model.config
+        orig_attn_impl = model_config._attn_implementation
+        model_config._attn_implementation = "sentence_attention"
+
+        if num_generate_samples <= 0:
+            raise ValueError("num_generate_samples must be > 0")
+
+        # Always return a baseline at index 0 (see compute_loss which assumes this).
+        result = [_build_sample(kind="baseline")]
+        result.extend(_build_sample(kind="sample") for _ in range(num_generate_samples - 1))
+
+        model_config._attn_implementation = orig_attn_impl
+        # torch.cuda.empty_cache()
+
+        return result
+
 
 # Mostly Copy paste of LlamaForCausalLM
 class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
