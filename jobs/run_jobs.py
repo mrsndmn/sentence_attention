@@ -912,6 +912,7 @@ def run_group_full_4k(
     full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
+    default_limit_shards=7,
 ) -> None:
     ngpus = 1 if ngpus is None else ngpus
     num_nodes = 6 if num_nodes is None else num_nodes
@@ -922,9 +923,6 @@ def run_group_full_4k(
     max_grad_norm = "2.0"
     # lr_scheduler_type = "constant_with_warmup"
     lr_scheduler_type = "cosine_with_min_lr"
-
-    # default_limit_shards = 7
-    default_limit_shards = 7
 
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
@@ -1830,6 +1828,7 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--boundary_predictor_model_checkpoint", default=None)
     parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
     parser.add_argument("--num_nodes", type=int, default=None, help="Override number of nodes/workers")
+    parser.add_argument("--limit_shards", type=int, default=None, help="Limit shards")
 
     return parser
 
@@ -1943,6 +1942,7 @@ def main() -> None:
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            default_limit_shards=args.limit_shards,
         )
     elif args.group == "full_4k_colddown":
         run_group_full_4k_colddown(
@@ -1986,6 +1986,7 @@ def main() -> None:
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
             boundary_predictor_model_checkpoint=args.boundary_predictor_model_checkpoint,
+            default_limit_shards=args.limit_shards,
         )
     elif args.group == "full_16k_colddown":
         run_group_full_16k_colddown(
@@ -2049,6 +2050,7 @@ def main() -> None:
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            default_limit_shards=args.limit_shards,
         )
     elif args.group == "ft-with-bos-token":
         run_group_full_4k(
@@ -2070,6 +2072,7 @@ def main() -> None:
             full_attention_layers=args.full_attention_layers,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            default_limit_shards=args.limit_shards,
         )
 
     return

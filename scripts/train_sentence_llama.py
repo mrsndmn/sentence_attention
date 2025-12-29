@@ -109,6 +109,14 @@ if __name__ == "__main__":
                     split="train",
                     cache_dir="/workspace-SR004.nfs2/d.tarasov/HF_CACHE",
                 )
+            if training_args.dataset == "fineweb_edu_100BT":
+                fineweb_dataset = load_dataset(
+                    "HuggingFaceFW/fineweb-edu",
+                    "sample-100BT",
+                    num_proc=16,
+                    split="train",
+                    cache_dir="/workspace-SR004.nfs2/d.tarasov/HF_CACHE",
+                )
             elif training_args.dataset == "my_recall":
                 from sentence_attention.evaluation.my_recall import generate_random_sample
 
