@@ -109,7 +109,7 @@ if __name__ == "__main__":
                     split="train",
                     cache_dir="/workspace-SR004.nfs2/d.tarasov/HF_CACHE",
                 )
-            if training_args.dataset == "fineweb_edu_100BT":
+            elif training_args.dataset == "fineweb_edu_100BT":
                 fineweb_dataset = load_dataset(
                     "HuggingFaceFW/fineweb-edu",
                     "sample-100BT",
@@ -128,7 +128,7 @@ if __name__ == "__main__":
                 else:
                     fineweb_dataset = datasets.Dataset.load_from_disk(my_recall_path)
             else:
-                raise ValueError("invalid dataset name")
+                raise ValueError(f"invalid dataset name: {training_args.dataset}")
 
             TOTAL_SHARDS = 50  # CONSTANT
             dataset_shards = []
