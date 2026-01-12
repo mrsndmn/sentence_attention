@@ -13,13 +13,21 @@
 # limitations under the License.
 """Tokenization classes for Qwen2."""
 
+import random
 import re
 from typing import Any, Dict, List, Tuple, Union
+
+import nltk
 
 from transformers.models.qwen2.tokenization_qwen2 import Qwen2Tokenizer
 from transformers.tokenization_utils import AddedToken
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from transformers.utils import logging
+
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt", quiet=True)
 
 logger = logging.get_logger(__name__)
 
@@ -142,13 +150,51 @@ class Qwen2TokenizerFastEOS(PreTrainedTokenizerFast):
         self.gist_placement: str = kwargs.get("gist_placement", "sentence")
         self.uniform_interval_tokens: int = kwargs.get("uniform_interval_tokens", 40)
 
-        if self.gist_placement not in {"sentence", "uniform"}:
-            raise ValueError("gist_placement must be one of {'sentence','uniform'}")
+        # New parameters for gist sets and insertion strategy with fixed defaults
+        self.gist_sets: str = kwargs.get("gist_sets", "single")
+        self.gist_insertion_strategy: str = kwargs.get("gist_insertion_strategy", "default")
+        self.num_gist_sets_in_swarm: int = kwargs.get("num_gist_sets_in_swarm", 1)
+
+        if self.gist_placement not in {"sentence", "sentence_nltk", "uniform"}:
+            raise ValueError("gist_placement must be one of {'sentence','sentence_nltk','uniform'}")
         if not isinstance(self.uniform_interval_tokens, int) or self.uniform_interval_tokens <= 0:
             raise ValueError("uniform_interval_tokens must be a positive integer")
+        if self.gist_sets not in {"single", "roll", "swarm"}:
+            raise ValueError("gist_sets must be one of {'single', 'roll', 'swarm'}")
+        if self.gist_insertion_strategy not in {"default", "random"}:
+            raise ValueError("gist_insertion_strategy must be one of {'default', 'random'}")
+        if self.gist_insertion_strategy == "random":
+            if self.gist_placement != "sentence_nltk":
+                raise ValueError("gist_insertion_strategy='random' can only be used with gist_placement='sentence_nltk'")
+            if self.gist_sets not in {"swarm", "roll"}:
+                raise ValueError("gist_insertion_strategy='random' can only be used with gist_sets in {'swarm', 'roll'}")
+
+        self.start_end_of_sentence_token = []
 
         if self.num_eos_tokens >= 1:
-            self.end_of_sentence_tokens_list = [f"<end_of_sentence_{i}>" for i in range(self.num_eos_tokens)]
+            # Initialize tokens based on gist_sets mode
+            if self.gist_sets == "single":
+                self.end_of_sentence_tokens_list = [f"<end_of_sentence_{i}>" for i in range(self.num_eos_tokens)]
+                self.start_end_of_sentence_token.append(self.end_of_sentence_tokens_list[0])
+            elif self.gist_sets == "roll":
+                all_sets_gist_tokens = []
+                for current_num_gist_tokens in range(self.num_eos_tokens):
+                    for gist_i in range(current_num_gist_tokens + 1):
+                        gist_token = f"<end_of_sentence_{gist_i}_{current_num_gist_tokens}>"
+                        all_sets_gist_tokens.append(gist_token)
+                        if gist_i == 0:
+                            self.start_end_of_sentence_token.append(gist_token)
+                self.end_of_sentence_tokens_list = all_sets_gist_tokens
+            elif self.gist_sets == "swarm":
+                all_sets_gist_tokens = []
+                for swarm_i in range(self.num_gist_sets_in_swarm):
+                    for gist_i in range(self.num_eos_tokens):
+                        gist_token = f"<end_of_sentence_{gist_i}_swarm_{swarm_i}>"
+                        all_sets_gist_tokens.append(gist_token)
+                        if gist_i == 0:
+                            self.start_end_of_sentence_token.append(gist_token)
+
+                self.end_of_sentence_tokens_list = all_sets_gist_tokens
         else:
             raise ValueError("num_eos_tokens cant be negative")
 
@@ -159,6 +205,26 @@ class Qwen2TokenizerFastEOS(PreTrainedTokenizerFast):
                 print(f"Added <end_of_sentence> token with ID: {self.convert_tokens_to_ids(end_of_sentence_token)}")
 
             self.end_of_sentence_token_ids.append(self.convert_tokens_to_ids(end_of_sentence_token))
+
+        self.start_end_of_sentence_token_ids = [
+            self.convert_tokens_to_ids(start_eos_token) for start_eos_token in self.start_end_of_sentence_token
+        ]
+
+        # For roll and swarm modes, organize tokens into sets for random selection
+        if self.gist_sets == "roll":
+            self.gist_token_sets: List[List[str]] = []
+            for current_num_gist_tokens in range(self.num_eos_tokens):
+                set_tokens = [
+                    f"<end_of_sentence_{gist_i}_{current_num_gist_tokens}>" for gist_i in range(current_num_gist_tokens + 1)
+                ]
+                self.gist_token_sets.append(set_tokens)
+        elif self.gist_sets == "swarm":
+            self.gist_token_sets: List[List[str]] = []
+            for swarm_i in range(self.num_gist_sets_in_swarm):
+                set_tokens = [f"<end_of_sentence_{gist_i}_swarm_{swarm_i}>" for gist_i in range(self.num_eos_tokens)]
+                self.gist_token_sets.append(set_tokens)
+        else:
+            self.gist_token_sets = None
 
         return
 
@@ -225,24 +291,49 @@ class Qwen2TokenizerFastEOS(PreTrainedTokenizerFast):
 
     def prepare_for_tokenization(self, text: str) -> tuple[str, dict[str, Any]]:
 
+        # When uniform placement is requested, do not add tokens at sentence boundaries.
         if self.gist_placement == "uniform":
             return text
 
-        end_of_sentence_token = "".join(self.end_of_sentence_tokens_list)
-        patterns = [
-            (r"\. ", f". {end_of_sentence_token}"),
-            (r"\? ", f"? {end_of_sentence_token}"),
-            (r"! ", f"! {end_of_sentence_token}"),
-            (r"\.\n", f".\n{end_of_sentence_token}"),
-            (r"\?\n", f"?\n{end_of_sentence_token}"),
-            (r"!\n", f"!\n{end_of_sentence_token}"),
-            (r"\.$", f". {end_of_sentence_token}"),
-            (r"!$", f"!{end_of_sentence_token}"),
-            (r"\?$", f"?{end_of_sentence_token}"),
-        ]
+        if self.gist_placement == "sentence_nltk":
+            sentence_tokenizer = nltk.tokenize.PunktTokenizer()
+            # Get sentence boundaries
+            orig_text_len = len(text)
+            sentence_spans = list(sentence_tokenizer.span_tokenize(text))
+            # Insert tokens at sentence boundaries (in reverse order to preserve indices)
+            text_strip = text.strip()
+            len_text_strip = len(text_strip)
+            for _sent_start, sent_end in reversed(sentence_spans):
+                if sent_end in [orig_text_len, len_text_strip]:
+                    continue
 
-        for pattern, replacement in patterns:
-            text = re.sub(pattern, replacement, text)
+                # Determine which tokens to insert
+                if self.gist_insertion_strategy == "random" and self.gist_token_sets is not None:
+                    # Select a random set of tokens
+                    selected_set = random.choice(self.gist_token_sets)
+                    end_of_sentence_token = "".join(selected_set)
+                else:
+                    # Default: use all default tokens
+                    end_of_sentence_token = "".join(self.end_of_sentence_tokens_list)
+                # Insert tokens at the end of each sentence
+                text = text[:sent_end] + end_of_sentence_token + text[sent_end:]
+        else:
+            # Original regex-based sentence detection for "sentence" placement
+            end_of_sentence_token = "".join(self.end_of_sentence_tokens_list)
+            patterns = [
+                (r"\. ", f". {end_of_sentence_token}"),
+                (r"\? ", f"? {end_of_sentence_token}"),
+                (r"! ", f"! {end_of_sentence_token}"),
+                (r"\.\n", f".\n{end_of_sentence_token}"),
+                (r"\?\n", f"?\n{end_of_sentence_token}"),
+                (r"!\n", f"!\n{end_of_sentence_token}"),
+                (r"\.$", f". {end_of_sentence_token}"),
+                (r"!$", f"!{end_of_sentence_token}"),
+                (r"\?$", f"?{end_of_sentence_token}"),
+            ]
+
+            for pattern, replacement in patterns:
+                text = re.sub(pattern, replacement, text)
 
         return text
 
