@@ -17,6 +17,8 @@ def sort_checkpoints(checkpoints: list[str]):
 
         if not checkpoint.startswith("checkpoint-"):
             continue
+        if checkpoint.endswith("test"):
+            continue
         checkpoints_dirs.append(checkpoint)
 
     return sorted(checkpoints_dirs, key=lambda x: int(x.split("-")[-1]), reverse=True)

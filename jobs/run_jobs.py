@@ -924,6 +924,9 @@ def run_group_full_4k(
     # lr_scheduler_type = "constant_with_warmup"
     lr_scheduler_type = "cosine_with_min_lr"
 
+    if default_limit_shards is None:
+        default_limit_shards = 7
+
     for exp_config in _eos_tuned_checkpoints():
         # TODO check sucessful experiment has already been processed
         model_checkpoint = exp_config["model_checkpoint"]

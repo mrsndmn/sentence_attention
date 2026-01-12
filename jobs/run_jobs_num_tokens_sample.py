@@ -24,6 +24,8 @@ def run_experiments(
     job_description: str = "Num Gist Sample",
     dry: bool = False,
     n_nodes=1,
+    model_checkpoint: str = "/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_8/sentence_Llama-3.2-1B_ft_4k_full_sentence_nltk_gist_sets_roll_strategy_random_num_eos_tokens_8_TWY7SXIJ/checkpoint-10578/",
+    offset_dataset_shards: int = 8,
 ) -> None:
 
     n_gpus = 1
@@ -53,12 +55,12 @@ def run_experiments(
         "--report_to tensorboard --select_train_dataset_items 0 --weight_decay 0.01 --bf16 0 --torch_compile 0  --eval_strategy no  --eval_steps 0 --gradient_checkpointing 0 --save_total_limit 100 "
         "--optim adamw_torch_fused  --logging_steps 1 --add_end_of_sentence_token 1 --disable_tqdm 0 --dataset fineweb_edu --flexible_eos_tokens 0 "
         "--ft_with_bos_token 0 --save_safetensors 1 --dataloader_num_workers 0  --use_liger_kernel 1 --sentence_attention_implementation sentence_attention_flex "
-        " --limit_dataset_shards 7 --offset_dataset_shards 8 "
+        f" --limit_dataset_shards 7 --offset_dataset_shards {offset_dataset_shards} "
         f"--max_steps {max_steps} "
         f"--learning_rate {learning_rate} "
         f"--per_device_train_batch_size {per_device_train_batch_size} "
         f"--gradient_accumulation_steps {gradient_accumulation_steps} "
-        "--model_checkpoint /workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_8/sentence_Llama-3.2-1B_ft_4k_full_sentence_nltk_gist_sets_roll_strategy_random_num_eos_tokens_8_TWY7SXIJ/checkpoint-10578/ "
+        f"--model_checkpoint {model_checkpoint} "
         f"--output_dir /workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments_in_progress/test_test_sentence_Llama-3.2-1B_ft_full_4k_grpo_{random_suffix} "
         f"--logging_dir /workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments_in_progress/test_test_sentence_Llama-3.2-1B_ft_full_4k_grpo_{random_suffix}/logs "
         "--number_of_eos_tokens 8 --gist_placement sentence_nltk --gist_sets roll --gist_insertion_strategy random "
@@ -121,6 +123,12 @@ def _cli() -> argparse.ArgumentParser:
     parser.add_argument("--n_nodes", type=int, default=1)
     parser.add_argument("--max_steps", type=int, default=-1)
     parser.add_argument("--dry", action="store_true")
+    parser.add_argument(
+        "--model_checkpoint",
+        type=str,
+        default="/workspace-SR004.nfs2/d.tarasov/sentence_attention/artifacts/experiments/eos_8/sentence_Llama-3.2-1B_ft_4k_full_sentence_nltk_gist_sets_roll_strategy_random_num_eos_tokens_8_TWY7SXIJ/checkpoint-10578/",
+    )
+    parser.add_argument("--offset_dataset_shards", type=int, default=8)
 
     return parser
 
@@ -144,6 +152,8 @@ def main() -> None:
         },
         n_nodes=args.n_nodes,
         dry=args.dry,
+        model_checkpoint=args.model_checkpoint,
+        offset_dataset_shards=args.offset_dataset_shards,
     )
 
     return

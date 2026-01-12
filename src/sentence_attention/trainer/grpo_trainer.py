@@ -52,11 +52,12 @@ class GRPOTrainer(Trainer):
                 tokenizer=self.processing_class,
                 inputs=base_inputs,
                 num_generate_samples=self.args.grpo_num_generate_samples,
+                add_baseline=self.args.grpo_loss_alpha > 0,
                 sampling_temperature=getattr(self.args, "grpo_sampling_temperature", 0.8),
                 sampling_top_p=getattr(self.args, "grpo_sampling_top_p", 0.95),
                 pretrain_sampling_steps=getattr(self.args, "grpo_pretrain_sampling_steps", 0),
                 global_step=int(getattr(getattr(self, "state", None), "global_step", 0)),
-                greedy=False,
+                greedy=self.args.grpo_loss_alpha == 0,
             )
         if not isinstance(sampled_inputs, list) or len(sampled_inputs) == 0:
             raise ValueError("sample_gist_tokens_for_input must return a non-empty list of input dicts.")
@@ -132,61 +133,75 @@ class GRPOTrainer(Trainer):
         # supervised_denom = supervised_mask.sum().clamp(min=1)
         lm_loss = (token_losses * supervised_mask).sum() / (num_items_in_batch * num_samples)
 
-        # Group rewards/losses per original example, and take reward-weighted LM loss.
-        # Compute non-gist causal LM loss (quality proxy) and shape reward as compression_gain - beta * penalty.
-        # Baseline sample is expected to be sample index 0 (see sample_gist_tokens_for_input).
-        target_is_special = flat_special_mask[:, 1:].bool()  # [N*B, L-1]
-        non_gist_target_mask = (~target_is_special) & target_is_valid  # [N*B, L-1]
-        non_gist_denom = non_gist_target_mask.sum(dim=1).clamp(min=1)
-        non_gist_causal_lm_loss = (token_losses.to(torch.float32) * non_gist_target_mask).sum(dim=1) / non_gist_denom  # [N*B]
-
-        non_gist_loss_grouped = non_gist_causal_lm_loss.view(num_samples, batch_size)  # [N, B]
-        baseline_non_gist_loss = non_gist_loss_grouped[0]  # [B]
-        better_than_baseline = non_gist_loss_grouped < baseline_non_gist_loss.unsqueeze(0)  # [N, B]
-        better_than_baseline[0, :] = False
-        better_than_baseline_percent = (
-            100
-            * better_than_baseline.sum()
-            / (better_than_baseline.numel() * self.accelerator.num_processes * self.args.gradient_accumulation_steps)
-        )
-
-        # Compression signal: fewer gist tokens is better (baseline has all original gist tokens).
-        gist_tokens = (flat_special_mask.bool() & flat_attention_mask.bool()).sum(dim=1)  # [N*B]
-        gist_grouped = gist_tokens.view(num_samples, batch_size).transpose(0, 1).to(torch.float32)  # [B, N]
-        gist_baseline = gist_grouped[:, :1].clamp(min=1.0)  # [B, 1]
-        compression_gain = (gist_baseline - gist_grouped) / (
-            gist_baseline * self.args.gradient_accumulation_steps * self.args.world_size
-        )  # [B, N] in [0, 1]
-
-        # Quality penalty: increase in non-gist CE vs baseline.
-        non_gist_grouped = non_gist_loss_grouped.transpose(0, 1).to(torch.float32)  # [B, N]
-        non_gist_delta = non_gist_grouped - baseline_non_gist_loss.to(torch.float32).unsqueeze(1)  # [B, N]
-        margin = float(self.args.grpo_quality_margin)
-        quality_penalty = torch.relu(non_gist_delta - margin)  # [B, N]
-        beta = float(self.args.grpo_quality_beta)
-
-        reward_grouped = compression_gain - beta * quality_penalty  # [B, N]
-        clip = float(self.args.grpo_reward_clip)
-        if clip > 0:
-            reward_grouped = reward_grouped.clamp(min=-clip, max=clip)
-
-        reward_std = reward_grouped.std(dim=1, keepdim=True).clamp(min=1e-8)
-        advantage = ((reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_std).detach()
-
-        # GRPO loss on the "action" tokens only: first token of each gist-run.
-        global_action_count = num_start_gist_tokens_items_in_batch * num_samples
-        if global_action_count is None:
-            action_count = starts_target.sum(dim=1).clamp(min=1)
-            global_action_count = action_count * self.args.gradient_accumulation_steps * self.args.world_size
-
-        action_nll = (token_losses * starts_target).sum(dim=1) / global_action_count  # [N*B]
-        action_nll_grouped = action_nll.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
-
-        grpo_loss_per_example = (advantage.detach() * action_nll_grouped).mean(dim=1) * float(self.args.grpo_loss_alpha)  # [B]
-
         loss = lm_loss.clone()
-        if use_model_based_sampling and not (reward_std <= 1e-8).all():
-            loss += grpo_loss_per_example.mean()
+
+        grpo_loss_per_example_log = 0
+        better_than_baseline_percent = 0
+
+        gist_tokens = (flat_special_mask.bool() & flat_attention_mask.bool()).sum(dim=1)  # [N*B]
+        total_tokens = flat_attention_mask.sum()
+        gist_tokens_all = gist_tokens.sum()
+        gist_tokens_percent = (gist_tokens_all.float() * 100 / total_tokens).detach()
+
+        if self.args.grpo_loss_alpha > 0:
+            # Group rewards/losses per original example, and take reward-weighted LM loss.
+            # Compute non-gist causal LM loss (quality proxy) and shape reward as compression_gain - beta * penalty.
+            # Baseline sample is expected to be sample index 0 (see sample_gist_tokens_for_input).
+            target_is_special = flat_special_mask[:, 1:].bool()  # [N*B, L-1]
+            non_gist_target_mask = (~target_is_special) & target_is_valid  # [N*B, L-1]
+            non_gist_denom = non_gist_target_mask.sum(dim=1).clamp(min=1)
+            non_gist_causal_lm_loss = (token_losses.to(torch.float32) * non_gist_target_mask).sum(
+                dim=1
+            ) / non_gist_denom  # [N*B]
+
+            non_gist_loss_grouped = non_gist_causal_lm_loss.view(num_samples, batch_size)  # [N, B]
+            baseline_non_gist_loss = non_gist_loss_grouped[0]  # [B]
+            better_than_baseline = non_gist_loss_grouped < baseline_non_gist_loss.unsqueeze(0)  # [N, B]
+            better_than_baseline[0, :] = False
+            better_than_baseline_percent = (
+                100
+                * better_than_baseline.sum()
+                / (better_than_baseline.numel() * self.accelerator.num_processes * self.args.gradient_accumulation_steps)
+            ).detach()
+
+            # Compression signal: fewer gist tokens is better (baseline has all original gist tokens).
+            gist_grouped = gist_tokens.view(num_samples, batch_size).transpose(0, 1).to(torch.float32)  # [B, N]
+            gist_baseline = gist_grouped[:, :1].clamp(min=1.0)  # [B, 1]
+            compression_gain = (gist_baseline - gist_grouped) / (
+                gist_baseline * self.args.gradient_accumulation_steps * self.args.world_size
+            )  # [B, N] in [0, 1]
+
+            # Quality penalty: increase in non-gist CE vs baseline.
+            non_gist_grouped = non_gist_loss_grouped.transpose(0, 1).to(torch.float32)  # [B, N]
+            non_gist_delta = non_gist_grouped - baseline_non_gist_loss.to(torch.float32).unsqueeze(1)  # [B, N]
+            margin = float(self.args.grpo_quality_margin)
+            quality_penalty = torch.relu(non_gist_delta - margin)  # [B, N]
+            beta = float(self.args.grpo_quality_beta)
+
+            reward_grouped = compression_gain - beta * quality_penalty  # [B, N]
+            clip = float(self.args.grpo_reward_clip)
+            if clip > 0:
+                reward_grouped = reward_grouped.clamp(min=-clip, max=clip)
+
+            reward_std = reward_grouped.std(dim=1, keepdim=True).clamp(min=1e-8)
+            advantage = ((reward_grouped - reward_grouped.mean(dim=1, keepdim=True)) / reward_std).detach()
+
+            # GRPO loss on the "action" tokens only: first token of each gist-run.
+            global_action_count = num_start_gist_tokens_items_in_batch * num_samples
+            if global_action_count is None:
+                action_count = starts_target.sum(dim=1).clamp(min=1)
+                global_action_count = action_count * self.args.gradient_accumulation_steps * self.args.world_size
+
+            action_nll = (token_losses * starts_target).sum(dim=1) / global_action_count  # [N*B]
+            action_nll_grouped = action_nll.view(num_samples, batch_size).transpose(0, 1)  # [B, N]
+
+            grpo_loss_per_example = (advantage.detach() * action_nll_grouped).mean(dim=1) * float(
+                self.args.grpo_loss_alpha
+            )  # [B]
+            grpo_loss_per_example_log = grpo_loss_per_example.detach().mean()
+
+            if use_model_based_sampling and not (reward_std <= 1e-8).all():
+                loss += grpo_loss_per_example.mean()
 
         if torch.isnan(loss):
             print("Found nan loss")
@@ -194,10 +209,6 @@ class GRPOTrainer(Trainer):
 
         # Mirror legacy metric naming.
         lm_loss_value = lm_loss.detach()
-
-        total_tokens = flat_attention_mask.sum()
-        gist_tokens_all = gist_tokens.sum()
-        gist_tokens_percent = gist_tokens_all.float() * 100 / total_tokens
 
         # Distribution of "first gist token" types (<end_of_sentence_0_{k}>) as a percent of ALL gist tokens.
         # We define "first gist token" as the first token in each contiguous gist-run in the sampled sequence.
@@ -228,18 +239,25 @@ class GRPOTrainer(Trainer):
         metrics = {
             "lm_loss": lm_loss_value,
             "starts": denom_gist.sum(),
-            "grpo_loss": grpo_loss_per_example.detach().mean(),
-            "grpo_better_than_baseline_percent": better_than_baseline_percent.detach(),
-            "gist_tokens_percent": gist_tokens_percent.detach() / self.args.gradient_accumulation_steps,
-            "grpo_reward_mean": reward_grouped.detach().mean()
-            / self.args.gradient_accumulation_steps
-            / self.accelerator.num_processes,
-            "grpo_reward_std": reward_grouped.detach().std(unbiased=False)
-            / self.args.gradient_accumulation_steps
-            / self.accelerator.num_processes,
-            "grpo_compression_gain_mean": (compression_gain.detach().mean() / self.args.gradient_accumulation_steps),
-            "grpo_non_gist_delta_mean": (non_gist_delta.detach().mean() / self.args.gradient_accumulation_steps),
+            "gist_tokens_percent": gist_tokens_percent / self.args.gradient_accumulation_steps,
         }
+
+        if self.args.grpo_loss_alpha > 0:
+            metrics.update(
+                {
+                    "grpo_loss": grpo_loss_per_example_log,
+                    "grpo_better_than_baseline_percent": better_than_baseline_percent,
+                    "grpo_reward_mean": reward_grouped.detach().mean()
+                    / self.args.gradient_accumulation_steps
+                    / self.accelerator.num_processes,
+                    "grpo_reward_std": reward_grouped.detach().std(unbiased=False)
+                    / self.args.gradient_accumulation_steps
+                    / self.accelerator.num_processes,
+                    "grpo_compression_gain_mean": (compression_gain.detach().mean() / self.args.gradient_accumulation_steps),
+                    "grpo_non_gist_delta_mean": (non_gist_delta.detach().mean() / self.args.gradient_accumulation_steps),
+                }
+            )
+
         metrics.update(first_gist_metrics)
 
         outputs.loss = loss

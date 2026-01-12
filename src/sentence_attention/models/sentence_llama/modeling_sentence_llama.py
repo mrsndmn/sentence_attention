@@ -1339,8 +1339,9 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         if input_ids.shape[1] > 1 and past_key_values.get_seq_length() == 0:
             # Sample gist tokens before prefilling
             tokenizer = kwargs.get("tokenizer")
-            # if tokenizer is not None and False:
-            if tokenizer is not None and True:
+            if False:  # TODO
+                # if tokenizer is not None and False:  # TODO
+                # if tokenizer is not None and True:
                 print("Samling num gist tokens!")
                 inputs_dict = {
                     "input_ids": input_ids,
@@ -1355,13 +1356,16 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                 )
                 if sampled_inputs and len(sampled_inputs) > 0:
                     sampled_input = sampled_inputs[-1]
-                    input_ids = sampled_input["input_ids"]
+                    assert attention_mask.shape[0] == 1, "bs == 1 is only supported"
                     attention_mask = sampled_input["attention_mask"]
-                    special_embeddings_mask = sampled_input["special_embeddings_mask"]
-                    clothest_end_of_sentence_token_idx = sampled_input["clothest_end_of_sentence_token_idx"]
+                    valid_len = attention_mask.sum().item()
+                    attention_mask = attention_mask[:, :valid_len]
+                    input_ids = sampled_input["input_ids"][:, :valid_len]
+                    special_embeddings_mask = sampled_input["special_embeddings_mask"][:, :valid_len]
+                    clothest_end_of_sentence_token_idx = sampled_input["clothest_end_of_sentence_token_idx"][:, :valid_len]
 
             # Prefill
-            breakpoint()
+            # breakpoint()
             initial_input_ids = input_ids.clone()
 
             from sentence_attention.models.sentence_llama.scrooge_prefill import full_prefill_small_kv_cache
@@ -1533,7 +1537,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         current_input_ids = initial_input_ids.clone()
 
         prev_attention_implementation = self.config._attn_implementation
-        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention_flex"
+        DECODE_DEFAULT_ATTN_IMPLEMENTATION = "sentence_attention"
         self.config._attn_implementation = DECODE_DEFAULT_ATTN_IMPLEMENTATION
 
         for _ in range(max_new_tokens):
@@ -1803,6 +1807,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
         pretrain_sampling_steps: int = 0,
         global_step: int = 0,
         greedy: bool = False,
+        add_baseline=True,
     ):
         """
         For each contiguous sequence of gist tokens, sample a new number of gist tokens k in [1, run_len],
@@ -2006,6 +2011,7 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                                 prefix_spec = torch.cat(prefix_spec_parts, dim=0)
                                 next_logits = _next_logits_for_prefix(prefix_ids, prefix_spec)
                                 k = _sample_k_from_logits(next_logits, run_len=run_len)
+                                # print("sample gist tokens k", k)
                             else:
                                 k = _sample_k_uniform(run_len=run_len)
 
@@ -2016,6 +2022,17 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
                         prefix_spec_parts.append(tok_spec)
 
                         pos = run_end
+
+                    if pos < valid_len:
+                        residual_ids = ids_1d[pos:valid_len]
+                        residual_len = int(residual_ids.numel())
+                        residual_spec = torch.zeros(
+                            (residual_len,),
+                            device=input_ids.device,
+                            dtype=special_embeddings_mask.dtype,
+                        )
+                        prefix_id_parts.append(residual_ids)
+                        prefix_spec_parts.append(residual_spec)
 
                     if len(runs) == 0:
                         prefix_id_parts.append(ids_1d)
@@ -2059,8 +2076,11 @@ class SentenceLlamaForCausalLM(SentenceLlamaPreTrainedModel, GenerationMixin):
             raise ValueError("num_generate_samples must be > 0")
 
         # Always return a baseline at index 0 (see compute_loss which assumes this).
-        result = [_build_sample(kind="baseline")]
-        result.extend(_build_sample(kind="sample") for _ in range(num_generate_samples - 1))
+        if add_baseline:
+            result = [_build_sample(kind="baseline")]
+            result.extend(_build_sample(kind="sample") for _ in range(num_generate_samples - 1))
+        else:
+            result = [_build_sample(kind="sample") for _ in range(num_generate_samples)]
 
         model_config._attn_implementation = orig_attn_impl
         # torch.cuda.empty_cache()

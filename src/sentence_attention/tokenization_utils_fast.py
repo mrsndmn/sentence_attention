@@ -316,9 +316,13 @@ class PreTrainedTokenizerFastEOS(PreTrainedTokenizerFast):
             orig_text_len = len(text)
             sentence_spans = list(sentence_tokenizer.span_tokenize(text))
             # Insert tokens at sentence boundaries (in reverse order to preserve indices)
+            # for _sent_start, sent_end in reversed(sentence_spans[:-1]):
+            text_strip = text.strip()
+            len_text_strip = len(text_strip)
             for _sent_start, sent_end in reversed(sentence_spans):
-                if sent_end == orig_text_len:
+                if sent_end in [orig_text_len, len_text_strip]:
                     continue
+
                 # Determine which tokens to insert
                 if self.gist_insertion_strategy == "random" and self.gist_token_sets is not None:
                     # Select a random set of tokens
