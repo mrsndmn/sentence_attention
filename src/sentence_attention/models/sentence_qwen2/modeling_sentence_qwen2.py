@@ -184,14 +184,19 @@ class SentenceQwen2DecoderLayer(nn.Module):
         position_embeddings: Tuple[torch.Tensor, torch.Tensor] | None = None,
         special_embeddings_mask: torch.Tensor | None = None,
         clothest_end_of_sentence_token_idx: torch.Tensor | None = None,
+        full_causal_mask=None,
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Tuple[torch.FloatTensor, Tuple[torch.FloatTensor, torch.FloatTensor] | None]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
 
+        current_attention_mask = attention_mask
+        if self.layer_idx in self.config.full_attention_layers:
+            current_attention_mask = full_causal_mask
+
         hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
-            attention_mask=attention_mask,
+            attention_mask=current_attention_mask,
             position_ids=position_ids,
             past_key_value=past_key_value,
             output_attentions=output_attentions,
@@ -335,6 +340,10 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
     def __init__(self, config: Qwen2Config):
         super().__init__(config)
 
+        # Ensure the attribute always exists, even if the pretrained config.json doesn't have it.
+        if getattr(self.config, "full_attention_layers", None) is None:
+            self.config.full_attention_layers = []
+
         self.config._attn_implementation = "sentence_attention_flex"
 
         self.padding_idx = config.pad_token_id
@@ -433,7 +442,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
                 special_embeddings_mask,
             )
 
-        causal_mask = self._update_causal_mask(
+        causal_mask, full_causal_mask = self._update_causal_mask(
             attention_mask,
             inputs_embeds,
             cache_position,
@@ -482,6 +491,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
                     position_embeddings=position_embeddings,
                     special_embeddings_mask=special_embeddings_mask,
                     clothest_end_of_sentence_token_idx=clothest_end_of_sentence_token_idx,
+                    full_causal_mask=full_causal_mask,
                     **flash_attn_kwargs,
                 )
 
@@ -525,15 +535,15 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
                         " call `tokenizer.padding_side  = 'left'` before tokenizing the input. "
                     )
             if attention_mask is not None and 0.0 in attention_mask:
-                return attention_mask
-            return None
+                return attention_mask, None
+            return None, None
 
         # Flex Attention passthrough for generic flex masks
         if self.config._attn_implementation == "flex_attention":
             if isinstance(attention_mask, torch.Tensor) and is_torch_flex_attn_available():
                 attention_mask = make_flex_block_causal_mask(attention_mask)
             if is_torch_flex_attn_available() and isinstance(attention_mask, BlockMask):
-                return attention_mask
+                return attention_mask, None
 
         # For SDPA, when possible, we will rely on its `is_causal` argument instead of its `attn_mask` argument, in
         # order to dispatch on Flash Attention 2. This feature is not compatible with static cache, as SDPA will fail
@@ -555,7 +565,7 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
                 sliding_window=self.config.sliding_window,
                 is_training=self.training,
             ):
-                return None
+                return None, None
 
         dtype, device = input_tensor.dtype, input_tensor.device
         min_dtype = torch.finfo(dtype).min
@@ -568,6 +578,48 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
             target_length = (
                 attention_mask.shape[-1] if isinstance(attention_mask, torch.Tensor) else past_seen_tokens + sequence_length + 1
             )
+
+        full_causal_mask = None
+        full_attention_layers = getattr(self.config, "full_attention_layers", None) or []
+        if full_attention_layers:
+
+            full_attention_layers_target_length = target_length
+            full_attention_layers_attention_mask = attention_mask.clone()
+            #
+            if sequence_length == 1:
+                assert attention_mask.shape[0] == 1, "batch size is 1 is only supported now"
+                # its decode stage
+                # create full attention mask for full context length
+                full_attention_layers_target_length = past_key_values.key_cache[full_attention_layers[0]].shape[2] + 1
+                full_attention_layers_attention_mask = torch.ones(
+                    [1, full_attention_layers_target_length], device=attention_mask.device, dtype=attention_mask.dtype
+                )
+
+            if "flex" in self.config._attn_implementation:
+                attention_mask_bool = full_attention_layers_attention_mask.bool()
+                diff_q_idx_kv_idx = full_attention_layers_target_length - sequence_length
+
+                def causal(b, h, q_idx, kv_idx):
+                    return (kv_idx <= (q_idx + diff_q_idx_kv_idx)) & attention_mask_bool[b, kv_idx]
+
+                # Sparsity pattern is independent of heads, so we broadcast H=None.
+                full_causal_mask = torch.nn.attention.flex_attention.create_block_mask(
+                    causal,
+                    B=attention_mask.shape[0],
+                    H=None,
+                    Q_LEN=sequence_length,
+                    KV_LEN=target_length,
+                    device=attention_mask.device,
+                )
+            else:
+                full_causal_mask = self._prepare_4d_full_causal_attention_mask(
+                    full_attention_layers_attention_mask,
+                    sequence_length=sequence_length,
+                    target_length=full_attention_layers_target_length,
+                    dtype=dtype,
+                    device=device,
+                    batch_size=input_tensor.shape[0],
+                )
 
         # In case the provided `attention` mask is 2D, we generate a causal mask here (4D).
         if self.config._attn_implementation in ["sentence_attention"]:
@@ -619,8 +671,10 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
             # using left padding. This is required by F.scaled_dot_product_attention memory-efficient attention path.
             # Details: https://github.com/pytorch/pytorch/issues/110213
             causal_mask = AttentionMaskConverter._unmask_unattended(causal_mask, min_dtype)
+            if full_causal_mask is not None:
+                full_causal_mask = AttentionMaskConverter._unmask_unattended(full_causal_mask, min_dtype)
 
-        return causal_mask
+        return causal_mask, full_causal_mask
 
     @staticmethod
     def _prepare_4d_causal_attention_mask_with_cache_position(
@@ -851,6 +905,55 @@ class SentenceQwen2Model(SentenceQwen2PreTrainedModel):
         )
 
         return block_mask
+
+    @staticmethod
+    def _prepare_4d_full_causal_attention_mask(
+        attention_mask: torch.Tensor,
+        sequence_length: int,
+        target_length: int,
+        dtype: torch.dtype,
+        device: torch.device,
+        batch_size: int,
+    ):
+        """
+        Full (dense) causal mask builder that does **not** depend on `cache_position`.
+
+        This is important for Scrooge/kv-compression prefill paths where `cache_position` can be in the original
+        (uncompressed) token index space, while the attention key/value axis is in the compressed cache index space.
+        """
+        if attention_mask is not None and attention_mask.dim() == 4:
+            return attention_mask
+
+        assert attention_mask is not None, "`attention_mask` must be provided to build a full causal mask."
+        assert attention_mask.dim() == 2, "`attention_mask` is expected to be 2-D (batch, seq_len)."
+
+        bs = batch_size
+        q_len = sequence_length
+        k_len = target_length
+
+        min_val = torch.finfo(dtype).min
+        attention_mask_bool = attention_mask.to(dtype=torch.bool)  # [bs, k_len]
+
+        diff_q_idx_k_idx = k_len - q_len
+        q_idx = torch.arange(q_len, device=device).view(1, q_len, 1)  # (1, q_len, 1)
+        k_idx = torch.arange(k_len, device=device).view(1, 1, k_len)  # (1, 1, k_len)
+
+        # Query tokens correspond to the last `q_len` positions in the key/value axis.
+        causal_base = k_idx <= (q_idx + diff_q_idx_k_idx)  # (1, q_len, k_len)
+
+        if q_len < attention_mask_bool.shape[1]:
+            q_valid = attention_mask_bool[:, -q_len:].view(bs, q_len, 1)  # (bs, q_len, 1)
+        else:
+            q_valid = attention_mask_bool.view(bs, q_len, 1)  # (bs, q_len, 1)
+
+        k_valid = attention_mask_bool.view(bs, 1, k_len)  # (bs, 1, k_len)
+        allowed = causal_base & q_valid & k_valid  # (bs, q_len, k_len)
+
+        score_val = torch.tensor(0.0, dtype=dtype, device=device)
+        final_mask = torch.full((bs, 1, q_len, k_len), min_val, dtype=dtype, device=device)
+        final_mask.masked_fill_(allowed.unsqueeze(1), score_val)
+
+        return final_mask
 
 
 class SentenceQwen2ForCausalLM(SentenceQwen2PreTrainedModel, GenerationMixin):
