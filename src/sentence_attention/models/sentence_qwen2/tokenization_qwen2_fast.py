@@ -228,6 +228,10 @@ class Qwen2TokenizerFastEOS(PreTrainedTokenizerFast):
 
         return
 
+    def set_boundary_predictor_model(self, bp_model):
+        print("BP model is not supported for qwen tokenizer")
+        return
+
     @property
     def can_save_slow_tokenizer(self) -> bool:
         """

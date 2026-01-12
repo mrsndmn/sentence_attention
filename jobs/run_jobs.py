@@ -959,7 +959,7 @@ def run_group_full_4k(
         local_save_steps = exp_config.get("save_steps", save_steps)
 
         if model is not None and model.lower() not in model_checkpoint.lower():
-            # print("Model not match")
+            # print("Model not match", model_checkpoint.lower(), model.lower())
             continue
 
         if int(number_of_eos_tokens) not in num_eos_tokens:

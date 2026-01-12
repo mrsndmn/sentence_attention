@@ -165,6 +165,7 @@ QWEN2_INPUTS_DOCSTRING = r"""
 class SentenceQwen2DecoderLayer(nn.Module):
     def __init__(self, config: Qwen2Config, layer_idx: int):
         super().__init__()
+        self.config = config
         self.hidden_size = config.hidden_size
         self.layer_idx = layer_idx
         self.self_attn = SentenceQwen2Attention(config=config, layer_idx=layer_idx)
