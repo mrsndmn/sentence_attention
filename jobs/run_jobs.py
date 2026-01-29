@@ -659,6 +659,7 @@ def run_group_eos_only_my_recall(
     full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
+    flexible_eos_tokens: bool = False,
 ):
 
     models_checkpoints = [
@@ -693,6 +694,7 @@ def run_group_eos_only_my_recall(
         gist_insertion_strategy=gist_insertion_strategy,
         num_gist_sets_in_swarm=num_gist_sets_in_swarm,
         full_attention_layers=full_attention_layers,
+        flexible_eos_tokens=flexible_eos_tokens,
     )
 
 
@@ -716,6 +718,7 @@ def run_group_eos_only(
     full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
+    flexible_eos_tokens: bool = False,
 ) -> None:
     return _run_group_eos_only(
         dry=dry,
@@ -738,6 +741,7 @@ def run_group_eos_only(
         gist_insertion_strategy=gist_insertion_strategy,
         num_gist_sets_in_swarm=num_gist_sets_in_swarm,
         full_attention_layers=full_attention_layers,
+        flexible_eos_tokens=flexible_eos_tokens,
     )
 
 
@@ -769,6 +773,7 @@ def _run_group_eos_only(
     gist_insertion_strategy: str = "default",
     num_gist_sets_in_swarm: int = 1,
     full_attention_layers: List[int] | None = None,
+    flexible_eos_tokens: bool = False,
 ) -> None:
     num_train_epochs = 1
     save_steps = 5000
@@ -887,6 +892,7 @@ def _run_group_eos_only(
                 gist_insertion_strategy=gist_insertion_strategy,
                 num_gist_sets_in_swarm=num_gist_sets_in_swarm,
                 full_attention_layers=full_attention_layers,
+                flexible_eos_tokens="1" if flexible_eos_tokens else "0",
                 **extra_kwargs,
             )
 
@@ -1694,6 +1700,7 @@ def run_group_lora(
     full_attention_layers: List[int] | None = None,
     ngpus: int | None = None,
     num_nodes: int | None = None,
+    flexible_eos_tokens: bool = False,
 ) -> None:
     ngpus = 4 if ngpus is None else ngpus
     num_nodes = 1 if num_nodes is None else num_nodes
@@ -1770,6 +1777,7 @@ def run_group_lora(
             gist_placement=gist_placement,
             uniform_interval_tokens=uniform_interval_tokens,
             full_attention_layers=full_attention_layers,
+            flexible_eos_tokens="1" if flexible_eos_tokens else "0",
         )
 
 
@@ -1828,6 +1836,7 @@ def _cli() -> argparse.ArgumentParser:
         help="0-based layer indices that should use full causal attention (forwarded to train_sentence_llama.py).",
     )
     parser.add_argument("--ft_with_bos_token", action="store_true", help="Enable fine-tuning with BOS token")
+    parser.add_argument("--flexible_eos_tokens", action="store_true", help="Enable flexible EOS tokens")
     parser.add_argument("--boundary_predictor_model_checkpoint", default=None)
     parser.add_argument("--ngpus", type=int, default=None, help="Override GPUs per node (instance type a100.<ngpus>gpu)")
     parser.add_argument("--num_nodes", type=int, default=None, help="Override number of nodes/workers")
@@ -1884,6 +1893,7 @@ def main() -> None:
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
             gist_initialization=args.gist_initialization,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
     elif args.group == "eos-only-my-recall":
         run_group_eos_only_my_recall(
@@ -1904,6 +1914,7 @@ def main() -> None:
             full_attention_layers=args.full_attention_layers,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
     elif args.group == "full_4k_my_recall":
         run_group_full_4k_my_recall(
@@ -1924,6 +1935,7 @@ def main() -> None:
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
     elif args.group == "full_4k":
         run_group_full_4k(
@@ -1946,6 +1958,7 @@ def main() -> None:
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
             default_limit_shards=args.limit_shards,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
     elif args.group == "full_4k_colddown":
         run_group_full_4k_colddown(
@@ -1967,6 +1980,7 @@ def main() -> None:
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
     elif args.group == "full_4k_boundary_predictor":
         run_group_full_4k_boundary_predictor(
@@ -1990,6 +2004,7 @@ def main() -> None:
             num_nodes=args.num_nodes,
             boundary_predictor_model_checkpoint=args.boundary_predictor_model_checkpoint,
             default_limit_shards=args.limit_shards,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
     elif args.group == "full_16k_colddown":
         run_group_full_16k_colddown(
@@ -2011,6 +2026,7 @@ def main() -> None:
             ft_with_bos_token=args.ft_with_bos_token,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
     elif args.group == "lora":
         run_group_lora(
@@ -2031,6 +2047,7 @@ def main() -> None:
             full_attention_layers=args.full_attention_layers,
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
     elif args.group == "full-flexible-eos-tokens":
         run_group_full_4k(
@@ -2038,7 +2055,7 @@ def main() -> None:
             num_eos_tokens=num_eos_tokens,
             in_progress_jobs=in_progress_jobs,
             model=args.model,
-            flexible_eos_tokens=True,
+            flexible_eos_tokens=args.flexible_eos_tokens or True,
             test=args.test,
             resume_from_checkpoint=args.resume_from_checkpoint,
             force=args.force,
@@ -2076,6 +2093,7 @@ def main() -> None:
             ngpus=args.ngpus,
             num_nodes=args.num_nodes,
             default_limit_shards=args.limit_shards,
+            flexible_eos_tokens=args.flexible_eos_tokens,
         )
 
     return

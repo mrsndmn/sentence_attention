@@ -237,7 +237,7 @@ class BolmoXLSTMLayer(mLSTMLayer):
 
             return h
         else:
-            h, _ = super().forward(x)
+            h, _ = super()(x)
             return h
 
 

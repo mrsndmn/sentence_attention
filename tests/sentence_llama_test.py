@@ -101,7 +101,7 @@ def test_sentence_llama_model_generate_with_eos_token_only():
         model.config._attn_implementation = attn_impl
 
         print("input_ids", input_ids)
-        output = model.forward(input_ids, output_hidden_states=True)
+        output = model(input_ids, output_hidden_states=True)
 
         outputs_logits.append(output.logits)
 
